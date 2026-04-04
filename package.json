@@ -1,0 +1,17 @@
+{
+  "name": "bot-alquileres",
+  "version": "1.0.0",
+  "description": "Bot local para gestión de alquileres con registro en Google Sheets",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "google-auth-library": "^9.10.0",
+    "google-spreadsheet": "^4.1.1",
+    "telegraf": "^4.16.3"
+  },
+  "author": "",
+  "license": "ISC"
+}
