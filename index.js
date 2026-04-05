@@ -10,7 +10,7 @@ const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '';
 
 if (!BOT_TOKEN || !SPREADSHEET_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-  console.error('❌ Faltan variables de entorno. Revisa tu archivo .env');
+  console.error('Faltan variables de entorno. Revisa tu archivo .env');
   process.exit(1);
 }
 
@@ -24,52 +24,51 @@ const serviceAccountAuth = new JWT({
 
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 
+const pendingPayments = new Map();
+
+const METODOS_VALIDOS = ['efectivo', 'transferencia', 'tarjeta'];
+const COMANDOS_INGRESO = ['consulta', 'servicio'];
+const COMANDOS_EGRESO = ['gasto'];
+
+function sanitizarInput(texto, maxLength = 200) {
+  if (!texto || typeof texto !== 'string') return '';
+  return texto.slice(0, maxLength).replace(/[<>\"'&]/g, '').trim();
+}
+
+function esMonedaValida(moneda) {
+  return ['$', 'U$', 'USD'].includes(moneda);
+}
+
 bot.use((ctx, next) => {
   if (ctx.from && ctx.from.id === AUTHORIZED_USER_ID) {
     return next();
   }
   if (ctx.from) {
-    console.log(`⚠️ Acceso denegado: ${ctx.from.id} (@${ctx.from.username || 'sin_usuario'})`);
-    ctx.reply('⛔ No tienes autorización para usar este bot.');
+    console.log(`Acceso denegado: ${ctx.from.id}`);
+    ctx.reply('No tienes autorización para usar este bot.');
   }
   return next();
 });
 
 async function obtenerDatosSheet() {
-  console.log('🔍 [DEBUG-READ] 1. Iniciando lectura de Sheet...');
   await doc.loadInfo();
-  console.log('🔍 [DEBUG-READ] 2. Doc cargado:', doc.title);
-  
   const sheet = doc.sheetsByIndex[0];
-  console.log('🔍 [DEBUG-READ] 3. Sheet:', sheet.title);
-  
   const filas = await sheet.getRows();
-  console.log('🔍 [DEBUG-READ] 4. Filas obtenidas:', filas.length);
   
-  if (filas.length > 0) {
-    console.log('🔍 [DEBUG-READ] 5. Primera fila headers:', Object.keys(filas[0]));
-    const rowObj = filas[0].toObject ? filas[0].toObject() : filas[0];
-    console.log('🔍 [DEBUG-READ] 6. Primera fila datos:', JSON.stringify(rowObj));
-  }
-  
-  const datos = filas.map(row => {
+  return filas.map(row => {
     const rowObj = row.toObject ? row.toObject() : row;
     return {
       fecha: rowObj.Fecha || rowObj.fecha || '',
       hora: rowObj.Hora || rowObj.hora || '',
-      paciente: rowObj.Paciente || rowObj.paciente || rowObj.Descripcion || '',
-      monto: parseFloat(rowObj.Monto || rowObj.monto || rowObj.MONTO || 0),
-      estado: rowObj.Estado || rowObj.estado || rowObj.ESTADO || '',
-      idUnico: rowObj.ID_uNico || rowObj.idUnico || ''
+      descripcion: rowObj.Descripcion || rowObj.descripcion || rowObj.Paciente || '',
+      monto: parseFloat(rowObj.Monto || rowObj.monto || 0),
+      estado: rowObj.Estado || rowObj.estado || '',
+      tipo: rowObj.Tipo || rowObj.tipo || '',
+      moneda: rowObj.Moneda || rowObj.moneda || 'Pesos',
+      metodoPago: rowObj.MetodoPago || rowObj.metodopago || '',
+      idUnico: rowObj.ID_uNico || rowObj.idunico || ''
     };
   });
-  
-  console.log('🔍 [DEBUG-READ] 7. Datos parseados:', datos.length);
-  if (datos.length > 0) {
-    console.log('🔍 [DEBUG-READ] 8. Primer dato:', JSON.stringify(datos[0]));
-  }
-  
-  return datos;
 }
 
 function normalizarFecha(fechaStr) {
@@ -113,17 +112,22 @@ function formatFecha(fechaStr) {
   return fechaStr;
 }
 
+function formatMonto(monto, moneda) {
+  const monedaSimbolo = moneda === 'Dólares' ? 'U$' : '$';
+  const montoAbs = Math.abs(monto);
+  return monto < 0 ? `-${monedaSimbolo}${montoAbs.toLocaleString()}` : `${monedaSimbolo}${montoAbs.toLocaleString()}`;
+}
+
 bot.command('start', (ctx) => {
   ctx.reply(
-    '👋 ¡Hola! Soy tu bot de cashflow.\n\n' +
+    '👋 ¡Hola! Soy tu bot de cashflow para consultorio.\n\n' +
     '📝 *Registrar movimiento:*\n' +
-    '`alquiler [descripcion] $15000` (ingreso)\n' +
-    '`alquiler [descripcion] $-500` (gasto)\n\n' +
-    '✅ *Cobrar:*\n' +
-    '`/cobrar ultimo` - Cobra el último pendiente\n\n' +
+    '`consulta Juan Perez $15000 efectivo` (ingreso pesos)\n' +
+    '`servicio Endodoncia U$50 transferencia` (ingreso dólares)\n' +
+    '`gasto Insumos $-500` (egreso)\n\n' +
     '📊 *Reportes:*\n' +
-    '`/caja` - Resumen de caja\n' +
-    '`/turnos` - Movimientos de hoy\n' +
+    '`/balance` - Resumen completo\n' +
+    '`/hoy` - Movimientos de hoy\n' +
     '`/pendientes` - Sin cobrar\n\n' +
     '`/ayuda` - Ver todos los comandos',
     { parse_mode: 'Markdown' }
@@ -134,83 +138,109 @@ bot.command('ayuda', (ctx) => {
   ctx.reply(
     '📖 *Comandos disponibles:*\n\n' +
     '📝 *Registrar movimiento:*\n' +
-    '`alquiler [descripcion] $monto`\n' +
-    'Ejemplo ingreso: `alquiler Juan Perez $15000`\n' +
-    'Ejemplo gasto: `alquiler Compra materiales $-500`\n\n' +
-    '✅ *Cobrar movimiento:*\n' +
-    '`/cobrar ultimo` - Cobra el último pendiente\n' +
-    '`/cobrar Juan` - Cobra uno que coincida\n\n' +
+    '`consulta [paciente] $[monto] [metodo]`\n' +
+    '`servicio [tratamiento] $[monto] [metodo]`\n' +
+    '`gasto [descripcion] $-[monto]`\n\n' +
+    '💵 *Monedas:*\n' +
+    '$ - Pesos | U$ / USD - Dólares\n\n' +
+    '💳 *Método de pago:*\n' +
+    'efectivo / transferencia / tarjeta\n\n' +
     '📊 *Reportes:*\n' +
-    '`/caja` - Resumen de caja\n' +
-    '`/turnos` - Movimientos de hoy\n' +
-    '`/pendientes` - Movimientos sin cobrar\n' +
+    '`/balance` - Resumen completo\n' +
+    '`/hoy` - Movimientos de hoy\n' +
+    '`/pendientes` - Sin cobrar\n' +
     '`/semana` - Resumen semanal\n' +
-    '`/pacientes` - Lista de hoy\n\n' +
-    '`/ayuda` - Este mensaje',
+    '`/mes` - Balance del mes\n' +
+    '`/ingresos` - Solo ingresos\n' +
+    '`/egresos` - Solo gastos\n\n' +
+    '✅ *Cobrar:*\n' +
+    '`/cobrar ultimo` - Cobra el último pendiente\n' +
+    '`/cobrar [nombre]` - Cobra uno que coincida',
     { parse_mode: 'Markdown' }
   );
 });
 
-bot.command('caja', async (ctx) => {
+bot.command('balance', async (ctx) => {
   try {
     await ctx.reply('⏳ Cargando...');
     const datos = await obtenerDatosSheet();
     
-    console.log('🔍 [CAJA] Datos totales:', datos.length);
-    console.log('🔍 [CAJA] Primer registro:', JSON.stringify(datos[0] || 'vacio'));
-    
     const hoy = datos.filter(d => esHoy(d.fecha));
-    console.log('🔍 [CAJA] Filtro hoy:', hoy.length);
     const semana = datos.filter(d => esEstaSemana(d.fecha));
     const mes = datos.filter(d => esEsteMes(d.fecha));
     
-    const totalHoy = hoy.reduce((sum, d) => sum + d.monto, 0);
-    const totalSemana = semana.reduce((sum, d) => sum + d.monto, 0);
-    const totalMes = mes.reduce((sum, d) => sum + d.monto, 0);
+    const totalHoy = hoy.reduce((sum, d) => sum + (d.monto || 0), 0);
+    const totalSemana = semana.reduce((sum, d) => sum + (d.monto || 0), 0);
+    const totalMes = mes.reduce((sum, d) => sum + (d.monto || 0), 0);
     
-    const pendientesHoy = hoy.filter(d => d.estado === 'Pendiente').length;
-    const pendientesMes = mes.filter(d => d.estado === 'Pendiente').length;
+    const ingresosHoy = hoy.filter(d => d.tipo === 'Ingreso').reduce((sum, d) => sum + d.monto, 0);
+    const egresosHoy = hoy.filter(d => d.tipo === 'Egreso').reduce((sum, d) => sum + Math.abs(d.monto), 0);
+    
+    const pendientes = datos.filter(d => d.estado === 'Pendiente');
+    const pendientesHoy = pendientes.filter(d => esHoy(d.fecha));
+    const totalPendiente = pendientes.reduce((sum, d) => sum + (d.monto || 0), 0);
     
     const msg = 
       `💰 *RESUMEN DE CAJA*\n\n` +
-      `📅 *Hoy:* $${totalHoy.toLocaleString()}\n` +
-      `   Turnos: ${hoy.length} | Pendientes: ${pendientesHoy}\n\n` +
-      `📆 *Esta semana:* $${totalSemana.toLocaleString()}\n` +
-      `   Turnos: ${semana.length}\n\n` +
+      `📅 *Hoy:*\n` +
+      `   Ingresos: $${ingresosHoy.toLocaleString()}\n` +
+      `   Egresos: $${egresosHoy.toLocaleString()}\n` +
+      `   Neto: $${(ingresosHoy - egresosHoy).toLocaleString()}\n` +
+      `   Pendientes: ${pendientesHoy.length}\n\n` +
+      `📆 *Esta semana:* $${totalSemana.toLocaleString()}\n\n` +
       `📆 *Este mes:* $${totalMes.toLocaleString()}\n` +
-      `   Turnos: ${mes.length} | Pendientes: ${pendientesMes}`;
+      `   Movimientos: ${mes.length}\n` +
+      `   Pendientes total: ${pendientes.length} ($${totalPendiente.toLocaleString()})`;
     
     ctx.reply(msg, { parse_mode: 'Markdown' });
   } catch (error) {
-    console.error('Error /caja:', error);
+    console.error('Error /balance:', error.message);
     ctx.reply('❌ Error al obtener datos');
   }
 });
 
-bot.command('turnos', async (ctx) => {
+bot.command('hoy', async (ctx) => {
   try {
     await ctx.reply('⏳ Cargando...');
     const datos = await obtenerDatosSheet();
     const hoy = datos.filter(d => esHoy(d.fecha));
     
     if (hoy.length === 0) {
-      return ctx.reply('📭 No hay turnos registrados hoy.');
+      return ctx.reply('📭 No hay movimientos hoy.');
     }
     
-    let msg = `📋 *TURNOS DE HOY*\n\n`;
-    hoy.forEach((d, i) => {
-      const emoji = d.estado === 'Cobrado' ? '✅' : '⏳';
-      msg += `${emoji} ${d.hora} - ${d.paciente}\n`;
-      msg += `   $${d.monto.toLocaleString()}\n\n`;
-    });
+    const ingresos = hoy.filter(d => d.tipo === 'Ingreso');
+    const egresos = hoy.filter(d => d.tipo === 'Egreso');
     
-    const total = hoy.reduce((sum, d) => sum + d.monto, 0);
+    let msg = `📋 *MOVIMIENTOS DE HOY*\n\n`;
+    
+    if (ingresos.length > 0) {
+      msg += `💰 *Ingresos:*\n`;
+      ingresos.forEach(d => {
+        msg += `✅ ${d.descripcion}\n`;
+        msg += `   ${formatMonto(d.monto, d.moneda)} - ${d.metodoPago || 'pendiente'}\n\n`;
+      });
+    }
+    
+    if (egresos.length > 0) {
+      msg += `💸 *Egresos:*\n`;
+      egresos.forEach(d => {
+        msg += `🔻 ${d.descripcion}\n`;
+        msg += `   ${formatMonto(d.monto, d.moneda)} - ${d.metodoPago || 'pendiente'}\n\n`;
+      });
+    }
+    
+    const totalIngresos = ingresos.reduce((sum, d) => sum + d.monto, 0);
+    const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.monto), 0);
+    
     msg += `━━━━━━━━━━━━━━━\n`;
-    msg += `💰 Total: $${total.toLocaleString()}`;
+    msg += `💰 Ingresos: $${totalIngresos.toLocaleString()}\n`;
+    msg += `💸 Egresos: $${totalEgresos.toLocaleString()}\n`;
+    msg += `💵 Neto: $${(totalIngresos - totalEgresos).toLocaleString()}`;
     
     ctx.reply(msg, { parse_mode: 'Markdown' });
   } catch (error) {
-    console.error('Error /turnos:', error);
+    console.error('Error /hoy:', error.message);
     ctx.reply('❌ Error al obtener datos');
   }
 });
@@ -222,18 +252,18 @@ bot.command('pendientes', async (ctx) => {
     const pendientes = datos.filter(d => d.estado === 'Pendiente');
     
     if (pendientes.length === 0) {
-      return ctx.reply('✅ No hay turnos pendientes. ¡Todo cobrado!');
+      return ctx.reply('✅ No hay movimientos pendientes. ¡Todo cobrado!');
     }
     
     const pendientesHoy = pendientes.filter(d => esHoy(d.fecha));
     const pendientesAntiguos = pendientes.filter(d => !esHoy(d.fecha));
     
-    let msg = `⏳ *TURNOS PENDIENTES*\n\n`;
+    let msg = `⏳ *MOVIMIENTOS PENDIENTES*\n\n`;
     
     if (pendientesHoy.length > 0) {
       msg += `📅 *Hoy:*\n`;
       pendientesHoy.forEach(d => {
-        msg += `• ${d.paciente} - $${d.monto.toLocaleString()}\n`;
+        msg += `• ${d.descripcion} - ${formatMonto(d.monto, d.moneda)}\n`;
       });
       msg += `\n`;
     }
@@ -241,20 +271,20 @@ bot.command('pendientes', async (ctx) => {
     if (pendientesAntiguos.length > 0) {
       msg += `📆 *Anteriores:*\n`;
       pendientesAntiguos.slice(0, 10).forEach(d => {
-        msg += `• ${d.paciente} - ${formatFecha(d.fecha)} - $${d.monto.toLocaleString()}\n`;
+        msg += `• ${d.descripcion} - ${formatFecha(d.fecha)} - ${formatMonto(d.monto, d.moneda)}\n`;
       });
       if (pendientesAntiguos.length > 10) {
         msg += `... y ${pendientesAntiguos.length - 10} más\n`;
       }
     }
     
-    const totalPendiente = pendientes.reduce((sum, d) => sum + d.monto, 0);
+    const totalPendiente = pendientes.reduce((sum, d) => sum + (d.monto || 0), 0);
     msg += `\n━━━━━━━━━━━━━━━\n`;
     msg += `💵 Total pendiente: $${totalPendiente.toLocaleString()}`;
     
     ctx.reply(msg, { parse_mode: 'Markdown' });
   } catch (error) {
-    console.error('Error /pendientes:', error);
+    console.error('Error /pendientes:', error.message);
     ctx.reply('❌ Error al obtener datos');
   }
 });
@@ -266,23 +296,27 @@ bot.command('semana', async (ctx) => {
     const semana = datos.filter(d => esEstaSemana(d.fecha));
     
     if (semana.length === 0) {
-      return ctx.reply('📭 No hay turnos esta semana.');
+      return ctx.reply('📭 No hay movimientos esta semana.');
     }
     
-    const total = semana.reduce((sum, d) => sum + d.monto, 0);
-    const pendientes = semana.filter(d => d.estado === 'Pendiente');
-    const cobrados = semana.filter(d => d.estado === 'Cobrado');
-    const totalCobrado = cobrados.reduce((sum, d) => sum + d.monto, 0);
-    const totalPendiente = pendientes.reduce((sum, d) => sum + d.monto, 0);
+    const ingresos = semana.filter(d => d.tipo === 'Ingreso');
+    const egresos = semana.filter(d => d.tipo === 'Egreso');
+    
+    const totalIngresos = ingresos.reduce((sum, d) => sum + d.monto, 0);
+    const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.monto), 0);
     
     const porDia = {};
     semana.forEach(d => {
       const fechaKey = formatFecha(d.fecha);
       if (!porDia[fechaKey]) {
-        porDia[fechaKey] = { cantidad: 0, monto: 0 };
+        porDia[fechaKey] = { cantidad: 0, ingresos: 0, egresos: 0 };
       }
       porDia[fechaKey].cantidad++;
-      porDia[fechaKey].monto += d.monto;
+      if (d.tipo === 'Ingreso') {
+        porDia[fechaKey].ingresos += d.monto;
+      } else {
+        porDia[fechaKey].egresos += Math.abs(d.monto);
+      }
     });
     
     let msg = `📊 *RESUMEN SEMANAL*\n`;
@@ -294,48 +328,113 @@ bot.command('semana', async (ctx) => {
       return dateA - dateB;
     }).forEach(fecha => {
       const info = porDia[fecha];
-      msg += `📅 ${fecha}: ${info.cantidad} turno(s) - $${info.monto.toLocaleString()}\n`;
+      msg += `📅 ${fecha}: ${info.cantidad} mov - $${(info.ingresos - info.egresos).toLocaleString()}\n`;
     });
     
     msg += `\n━━━━━━━━━━━━━━━\n`;
-    msg += `📋 Total turnos: ${semana.length}\n`;
-    msg += `✅ Cobrados: ${cobrados.length} - $${totalCobrado.toLocaleString()}\n`;
-    msg += `⏳ Pendientes: ${pendientes.length} - $${totalPendiente.toLocaleString()}\n\n`;
-    msg += `💰 *Total general: $${total.toLocaleString()}*`;
+    msg += `💰 Ingresos: ${ingresos.length} - $${totalIngresos.toLocaleString()}\n`;
+    msg += `💸 Egresos: ${egresos.length} - $${totalEgresos.toLocaleString()}\n\n`;
+    msg += `💵 *Neto semanal: $${(totalIngresos - totalEgresos).toLocaleString()}*`;
     
     ctx.reply(msg, { parse_mode: 'Markdown' });
   } catch (error) {
-    console.error('Error /semana:', error);
+    console.error('Error /semana:', error.message);
     ctx.reply('❌ Error al obtener datos');
   }
 });
 
-bot.command('pacientes', async (ctx) => {
+bot.command('mes', async (ctx) => {
   try {
     await ctx.reply('⏳ Cargando...');
     const datos = await obtenerDatosSheet();
-    const hoy = datos.filter(d => esHoy(d.fecha));
+    const mes = datos.filter(d => esEsteMes(d.fecha));
     
-    if (hoy.length === 0) {
-      return ctx.reply('📭 No hay movimientos hoy.');
+    if (mes.length === 0) {
+      return ctx.reply('📭 No hay movimientos este mes.');
     }
     
-    const pacientesUnicos = [...new Set(hoy.map(d => d.paciente))];
+    const ingresos = mes.filter(d => d.tipo === 'Ingreso');
+    const egresos = mes.filter(d => d.tipo === 'Egreso');
     
-    let msg = `👥 *MOVIMIENTOS DE HOY*\n\n`;
-    hoy.forEach((d, i) => {
-      const emoji = d.estado === 'Cobrado' ? '✅' : '⏳';
-      const montoStr = d.monto < 0 ? `-$${Math.abs(d.monto).toLocaleString()}` : `$${d.monto.toLocaleString()}`;
-      msg += `${emoji} ${d.paciente}\n`;
-      msg += `   💰 ${montoStr} | ${d.hora}\n\n`;
-    });
+    const totalIngresos = ingresos.reduce((sum, d) => sum + d.monto, 0);
+    const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.monto), 0);
     
-    msg += `━━━━━━━━━━━━━━━\n`;
-    msg += `📊 ${hoy.length} movimiento(s)`;
+    const dolares = mes.filter(d => d.moneda === 'Dólares');
+    const pesos = mes.filter(d => d.moneda === 'Pesos');
+    
+    let msg = `📊 *BALANCE DEL MES*\n`;
+    msg += `━━━━━━━━━━━━━━━━━\n\n`;
+    msg += `💰 Ingresos: ${ingresos.length} - $${totalIngresos.toLocaleString()}\n`;
+    msg += `💸 Egresos: ${egresos.length} - $${totalEgresos.toLocaleString()}\n\n`;
+    msg += `💵 *Neto: $${(totalIngresos - totalEgresos).toLocaleString()}*\n\n`;
+    
+    msg += `📊 *Por moneda:*\n`;
+    msg += `   Pesos: ${pesos.length} movimientos\n`;
+    msg += `   Dólares: ${dolares.length} movimientos`;
     
     ctx.reply(msg, { parse_mode: 'Markdown' });
   } catch (error) {
-    console.error('Error /pacientes:', error);
+    console.error('Error /mes:', error.message);
+    ctx.reply('❌ Error al obtener datos');
+  }
+});
+
+bot.command('ingresos', async (ctx) => {
+  try {
+    await ctx.reply('⏳ Cargando...');
+    const datos = await obtenerDatosSheet();
+    const ingresos = datos.filter(d => d.tipo === 'Ingreso');
+    
+    if (ingresos.length === 0) {
+      return ctx.reply('📭 No hay ingresos registrados.');
+    }
+    
+    const ultimos = ingresos.slice(-20).reverse();
+    
+    let msg = `💰 *ÚLTIMOS INGRESOS*\n\n`;
+    ultimos.forEach(d => {
+      msg += `✅ ${d.descripcion}\n`;
+      msg += `   ${formatMonto(d.monto, d.moneda)} - ${d.metodoPago || 'sin método'}\n`;
+      msg += `   ${formatFecha(d.fecha)} ${d.hora}\n\n`;
+    });
+    
+    const total = ingresos.reduce((sum, d) => sum + d.monto, 0);
+    msg += `━━━━━━━━━━━━━━━\n`;
+    msg += `💵 Total ingresos: $${total.toLocaleString()}`;
+    
+    ctx.reply(msg, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error /ingresos:', error.message);
+    ctx.reply('❌ Error al obtener datos');
+  }
+});
+
+bot.command('egresos', async (ctx) => {
+  try {
+    await ctx.reply('⏳ Cargando...');
+    const datos = await obtenerDatosSheet();
+    const egresos = datos.filter(d => d.tipo === 'Egreso');
+    
+    if (egresos.length === 0) {
+      return ctx.reply('📭 No hay egresos registrados.');
+    }
+    
+    const ultimos = egresos.slice(-20).reverse();
+    
+    let msg = `💸 *ÚLTIMOS EGRESOS*\n\n`;
+    ultimos.forEach(d => {
+      msg += `🔻 ${d.descripcion}\n`;
+      msg += `   ${formatMonto(d.monto, d.moneda)} - ${d.metodoPago || 'sin método'}\n`;
+      msg += `   ${formatFecha(d.fecha)} ${d.hora}\n\n`;
+    });
+    
+    const total = egresos.reduce((sum, d) => sum + Math.abs(d.monto), 0);
+    msg += `━━━━━━━━━━━━━━━\n`;
+    msg += `💵 Total egresos: $${total.toLocaleString()}`;
+    
+    ctx.reply(msg, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error /egresos:', error.message);
     ctx.reply('❌ Error al obtener datos');
   }
 });
@@ -360,13 +459,13 @@ bot.command('cobrar', async (ctx) => {
     if (args.length > 0 && args[0] === 'ultimo') {
       filaActual = pendientes[pendientes.length - 1];
     } else {
-      const texto = ctx.message.text.replace('/cobrar', '').trim();
+      const texto = ctx.message.text.replace('/cobrar', '').trim().toLowerCase();
       filaActual = pendientes.find(f => 
-        (f.Paciente || f.paciente || '').toLowerCase().includes(texto.toLowerCase())
+        (f.Descripcion || f.descripcion || '').toLowerCase().includes(texto)
       );
       if (!filaActual && texto) {
         filaActual = pendientes.find(f => 
-          (f.ID_uNico || f.idUnico || '') === texto
+          (f.ID_uNico || f.idunico || '') === texto
         );
       }
     }
@@ -374,116 +473,182 @@ bot.command('cobrar', async (ctx) => {
     if (!filaActual) {
       let msg = `⏳ *Movimientos pendientes:*\n\n`;
       pendientes.slice(-5).forEach((f, i) => {
-        const monto = parseFloat(f.Monto || f.monto || 0);
-        const montoStr = monto < 0 ? `-$${Math.abs(monto).toLocaleString()}` : `$${monto.toLocaleString()}`;
-        msg += `• ${f.Paciente || f.paciente} - ${montoStr}\n`;
+        msg += `• ${f.Descripcion || f.descripcion}\n`;
       });
-      msg += `\nUsa: `/cobrar [nombre]` `;
+      msg += `\nUsa: /cobrar [nombre]`;
       return ctx.reply(msg, { parse_mode: 'Markdown' });
     }
     
     filaActual.Estado = 'Cobrado';
     await filaActual.save();
     
-    const monto = parseFloat(filaActual.Monto || filaActual.monto || 0);
-    const montoStr = monto < 0 ? `-$${Math.abs(monto).toLocaleString()}` : `$${monto.toLocaleString()}`;
-    
     ctx.reply(
       `✅ *¡Marcado como cobrado!*\n\n` +
-      `📝 ${filaActual.Paciente || filaActual.paciente}\n` +
-      `💰 ${montoStr}`,
+      `📝 ${filaActual.Descripcion || filaActual.descripcion}`,
       { parse_mode: 'Markdown' }
     );
     
   } catch (error) {
-    console.error('Error /cobrar:', error);
+    console.error('Error /cobrar:', error.message);
     ctx.reply('❌ Error al actualizar estado.');
   }
 });
 
-const regexMsg = /^(?:alquiler\s+)?(.+?)\s+\$(-?\d+(?:\.\d{1,2})?)$/i;
+const regexMsg = /^(consulta|servicio|gasto)\s+(.+?)\s+(?:\$|U\$|USD)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
   
   if (text.startsWith('/')) return;
   
+  if (pendingPayments.has(ctx.from.id)) {
+    const metodo = text.toLowerCase().trim();
+    if (METODOS_VALIDOS.includes(metodo)) {
+      const pendingData = pendingPayments.get(ctx.from.id);
+      try {
+        await doc.loadInfo();
+        const sheet = doc.sheetsByIndex[0];
+        
+        const now = new Date();
+        const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+        const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+        
+        const rowData = {
+          'Fecha': fechaStr,
+          'Hora': horaStr,
+          'Descripcion': pendingData.descripcion,
+          'Monto': pendingData.monto,
+          'Estado': 'Cobrado',
+          'Tipo': pendingData.tipo,
+          'Moneda': pendingData.moneda,
+          'MetodoPago': metodo,
+          'ID_unico': `mov_${Date.now()}`
+        };
+        
+        await sheet.addRow(rowData);
+        
+        const tipoEmoji = pendingData.tipo === 'Ingreso' ? '💰' : '💸';
+        
+        ctx.reply(
+          `${tipoEmoji} *¡${pendingData.tipo} registrado!*\n\n` +
+          `📝 Descripción: ${pendingData.descripcion}\n` +
+          `💰 Monto: ${formatMonto(pendingData.monto, pendingData.moneda)}\n` +
+          `💳 Método: ${metodo}\n` +
+          `📅 Fecha: ${fechaStr}`,
+          { parse_mode: 'Markdown' }
+        );
+        
+        pendingPayments.delete(ctx.from.id);
+      } catch (error) {
+        console.error('Error al guardar:', error.message);
+        ctx.reply('❌ Error al guardar en Google Sheets.');
+        pendingPayments.delete(ctx.from.id);
+      }
+      return;
+    } else {
+      ctx.reply('⚠️ Método no válido. Responde: efectivo / transferencia / tarjeta');
+      return;
+    }
+  }
+  
   const match = text.match(regexMsg);
   if (!match) {
     return ctx.reply(
       '⚠️ Formato no válido.\n\n' +
-      'Usa: `alquiler [descripcion] $monto`\n' +
-      'Ejemplo ingreso: `alquiler Juan Perez $15000`\n' +
-      'Ejemplo gasto: `alquiler Luz $-500`\n\n' +
-      'O prueba: `/ayuda`',
+      'Usa: `consulta [paciente] $[monto] [metodo]`\n' +
+      'Ejemplo: `consulta Juan Perez $15000 efectivo`\n\n' +
+      'O: `/ayuda`',
       { parse_mode: 'Markdown' }
     );
   }
-
-  const paciente = match[1].trim();
-  const amountStr = match[2];
-  const amount = parseFloat(amountStr);
-
-  if (isNaN(amount) || amount === 0) {
+  
+  const comando = match[1].toLowerCase();
+  const descripcion = sanitizarInput(match[2]);
+  const monto = parseFloat(match[3]);
+  
+  let tipo = '';
+  let moneda = 'Pesos';
+  
+  const textOriginal = text.toLowerCase();
+  if (textOriginal.includes('u$') || textOriginal.includes('usd')) {
+    moneda = 'Dólares';
+  }
+  
+  if (COMANDOS_INGRESO.includes(comando)) {
+    tipo = 'Ingreso';
+  } else if (COMANDOS_EGRESO.includes(comando)) {
+    tipo = 'Egreso';
+    if (monto > 0) monto = -monto;
+  }
+  
+  const metodoIndicado = match[4] ? match[4].toLowerCase() : null;
+  
+  if (!metodoIndicado) {
+    pendingPayments.set(ctx.from.id, {
+      descripcion,
+      monto,
+      tipo,
+      moneda
+    });
+    
+    ctx.reply(
+      `💳 *¿Cómo pagaste?*\n\n` +
+      `Responde: efectivo / transferencia / tarjeta`,
+      { parse_mode: 'Markdown' }
+    );
+    return;
+  }
+  
+  if (isNaN(monto) || monto === 0) {
     return ctx.reply('❌ Error: El monto no puede ser 0.');
   }
-
+  
   try {
     await ctx.reply('⏳ Registrando...');
     
-    console.log('🔍 [DEBUG] 1. Iniciando proceso de guardado...');
-    
     await doc.loadInfo();
-    console.log('🔍 [DEBUG] 2. Doc info cargada:', doc.title);
-    
     const sheet = doc.sheetsByIndex[0];
-    console.log('🔍 [DEBUG] 3. Sheet obtenido:', sheet.title);
     
     const now = new Date();
     const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
     const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const idUnico = `turno_${Date.now()}`;
     
     const rowData = {
       'Fecha': fechaStr,
       'Hora': horaStr,
-      'Paciente': paciente,
-      'Monto': amount,
-      'Estado': 'Pendiente',
-      'ID_uNico': idUnico
+      'Descripcion': descripcion,
+      'Monto': monto,
+      'Estado': 'Cobrado',
+      'Tipo': tipo,
+      'Moneda': moneda,
+      'MetodoPago': metodoIndicado,
+      'ID_unico': `mov_${Date.now()}`
     };
     
-    console.log('🔍 [DEBUG] 4. Datos a guardar:', JSON.stringify(rowData, null, 2));
+    await sheet.addRow(rowData);
     
-    const result = await sheet.addRow(rowData);
-    console.log('✅ [DEBUG] 5. Fila guardada! Resultado:', result);
-
-    const tipoTexto = amount < 0 ? 'Gasto' : 'Ingreso';
-    const tipoEmoji = amount < 0 ? '💸' : '💰';
-    const montoFormateado = amount < 0 ? `-$${Math.abs(amount).toLocaleString()}` : `$${amount.toLocaleString()}`;
-
+    const tipoTexto = tipo === 'Ingreso' ? 'Ingreso' : 'Gasto';
+    const tipoEmoji = tipo === 'Ingreso' ? '💰' : '💸';
+    
     ctx.reply(
       `${tipoEmoji} *¡${tipoTexto} registrado!*\n\n` +
-      `📝 Descripción: ${paciente}\n` +
-      `💰 Monto: ${montoFormateado}\n` +
-      `📅 Fecha: ${fechaStr}\n` +
-      `🕐 Hora: ${horaStr}\n` +
-      `📌 Estado: Pendiente`,
+      `📝 Descripción: ${descripcion}\n` +
+      `💰 Monto: ${formatMonto(monto, moneda)}\n` +
+      `💳 Método: ${metodoIndicado}\n` +
+      `📅 Fecha: ${fechaStr}`,
       { parse_mode: 'Markdown' }
     );
-
+    
   } catch (error) {
-    console.error('❌ [DEBUG] Error al guardar:', error);
-    console.error('❌ [DEBUG] Error message:', error.message);
-    console.error('❌ [DEBUG] Error response:', error.response?.data);
+    console.error('Error al guardar:', error.message);
     ctx.reply('❌ Error al guardar en Google Sheets.');
   }
 });
 
 bot.launch().then(() => {
-  console.log('✅ Bot iniciado y escuchando...');
+  console.log('Bot iniciado correctamente');
 }).catch(err => {
-  console.error('❌ Error al iniciar:', err);
+  console.error('Error al iniciar:', err);
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
