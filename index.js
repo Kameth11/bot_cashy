@@ -530,7 +530,7 @@ bot.command('mes', async (ctx) => {
     const mes = datos.filter(d => esEsteMes(d.fecha));
 
     if (mes.length === 0) {
-      return ctx.reply('📭 No hay movimientos este mes.');
+      return ctx.reply('📭 No hay movimientos este mes. :(');
     }
 
     const ingresos = mes.filter(d => d.tipo === 'Ingreso');
