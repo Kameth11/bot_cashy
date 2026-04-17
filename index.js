@@ -68,9 +68,9 @@ function esAdminOriginal(userId) {
 
 function obtenerClientePorUserId(userId) {
   for (const [ownerId, cliente] of Object.entries(clientes)) {
-    if (parseInt(ownerId) === userId) return { ownerId, ...cliente };
+    if (parseInt(ownerId) === userId) return { userId: ownerId, ownerId: null, ...cliente };
     if (cliente.usuarios && cliente.usuarios.includes(userId)) {
-      return { ownerId, ...cliente };
+      return { userId: ownerId, ownerId: ownerId, ...cliente };
     }
   }
   return null;
@@ -117,6 +117,8 @@ const COMANDOS_EGRESO = ['gasto'];
 const pendingDeletes = new Map();
 const pendingEdits = new Map();
 const pendingCotizaciones = new Map();
+const pendingLimpiezas = new Map();
+const docsCache = new Map();
 
 async function obtenerCotizacionDolar() {
   try {
@@ -177,12 +179,13 @@ async function obtenerDatosSheet(userId) {
     return [];
   }
 
-  const docCliente = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
-  await docCliente.loadInfo();
+  invalidateCache(userId);
+  const docCliente = await getDocCliente(userId, true);
   const sheet = docCliente.sheetsByIndex[0];
+  await sheet.loadCells();
   const filas = await sheet.getRows();
 
-  return filas.map(row => {
+  const datos = filas.map(row => {
     const rowObj = row.toObject ? row.toObject() : row;
     return {
       fecha: rowObj.Fecha || rowObj.fecha || '',
@@ -197,20 +200,37 @@ async function obtenerDatosSheet(userId) {
       idUnico: rowObj.ID_unico || rowObj.ID_uNico || rowObj.idunico || ''
     };
   });
+
+  return datos.filter(d => 
+    d.fecha && d.fecha.trim() !== '' &&
+    d.descripcion && d.descripcion.trim() !== '' &&
+    d.monto && d.monto !== 0
+  );
 }
 
-async function getDocCliente(userId) {
+async function getDocCliente(userId, fresh = false) {
   const sheetId = getSheetId(userId);
   if (!sheetId) return null;
-  const docCliente = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
-  await docCliente.loadInfo();
-  return docCliente;
+  
+  if (fresh || !docsCache.has(userId)) {
+    const docCliente = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
+    await docCliente.loadInfo();
+    docsCache.set(userId, docCliente);
+  }
+  
+  return docsCache.get(userId);
+}
+
+function invalidateCache(userId) {
+  docsCache.delete(userId);
 }
 
 async function getSheetCliente(userId) {
-  const docCliente = await getDocCliente(userId);
+  const docCliente = await getDocCliente(userId, true);
   if (!docCliente) return null;
-  return docCliente.sheetsByIndex[0];
+  const sheet = docCliente.sheetsByIndex[0];
+  await sheet.loadCells();
+  return sheet;
 }
 
 function normalizarFecha(fechaStr) {
@@ -252,6 +272,12 @@ function esEsteMes(fechaStr) {
 function formatFecha(fechaStr) {
   if (!fechaStr) return '';
   return fechaStr;
+}
+
+function generarIDUnico() {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  return `mov_${timestamp}_${random}`;
 }
 
 function formatMonto(monto, moneda) {
@@ -332,7 +358,8 @@ bot.command('ayuda', (ctx) => {
     '✏️ *Editar:*\n' +
     '`/editar [nombre]` - Editar descripción y monto\n\n' +
     '🗑️ *Eliminar:*\n' +
-    '`/eliminar [nombre]` - Eliminar movimiento\n\n' +
+    '`/eliminar [nombre]` - Eliminar movimiento\n' +
+    '`/listar` - Ver todos los movimientos\n\n' +
     '💵 *Dólar:*\n' +
     '`/dolar` - Ver cotización actual\n' +
     '`/actualizardolar` - Actualizar cotización',
@@ -523,6 +550,194 @@ bot.command('semana', async (ctx) => {
   }
 });
 
+bot.command('debug', async (ctx) => {
+  try {
+    await ctx.reply('🔍 *DIAGNÓSTICO DEL SISTEMA*\n\n⏳ Analizando...');
+
+    const userId = ctx.from.id;
+    const sheetId = getSheetId(userId);
+
+    if (!sheetId) {
+      return ctx.reply('❌ No tienes un Sheet configurado. Usa /start.');
+    }
+
+    const datosRaw = await obtenerDatosSheet(userId);
+    const totalFilas = datosRaw.length;
+
+    const conFecha = datosRaw.filter(d => d.fecha && d.fecha.trim() !== '');
+    const conDescripcion = datosRaw.filter(d => d.descripcion && d.descripcion.trim() !== '');
+    const conMonto = datosRaw.filter(d => d.monto && d.monto !== 0);
+    const filasValidas = datosRaw.filter(d => 
+      d.fecha && d.fecha.trim() !== '' &&
+      d.descripcion && d.descripcion.trim() !== '' &&
+      d.monto && d.monto !== 0
+    );
+
+    const mes = filasValidas.filter(d => esEsteMes(d.fecha));
+    const hoy = filasValidas.filter(d => esHoy(d.fecha));
+
+    let msg = `🔍 *DIAGNÓSTICO*\n\n`;
+    msg += `📄 *Sheet ID:* \`${sheetId}\`\n`;
+    msg += `👤 *User ID:* ${userId}\n\n`;
+    msg += `📊 *ESTADÍSTICAS DE FILAS*\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `Total filas leídas: ${totalFilas}\n`;
+    msg += `Con fecha: ${conFecha.length}\n`;
+    msg += `Con descripción: ${conDescripcion.length}\n`;
+    msg += `Con monto válido: ${conMonto.length}\n`;
+    msg += `✅ *Filas válidas (con todo): ${filasValidas.length}*\n\n`;
+    msg += `📅 *DEL MES ACTUAL*\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `Movimientos: ${mes.length}\n`;
+    msg += `Total: $${mes.reduce((sum, d) => sum + d.monto, 0).toLocaleString()}\n\n`;
+    msg += `📆 *HOY*\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `Movimientos: ${hoy.length}\n`;
+    msg += `Total: $${hoy.reduce((sum, d) => sum + d.monto, 0).toLocaleString()}`;
+
+    await ctx.reply(msg, { parse_mode: 'Markdown' });
+
+    const analisisMensual = {};
+    filasValidas.forEach(d => {
+      const fecha = normalizarFecha(d.fecha);
+      if (fecha) {
+        const clave = `${fecha.getFullYear()}-${(fecha.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (!analisisMensual[clave]) {
+          analisisMensual[clave] = { count: 0, total: 0 };
+        }
+        analisisMensual[clave].count++;
+        analisisMensual[clave].total += d.monto;
+      }
+    });
+
+    if (Object.keys(analisisMensual).length > 0) {
+      let msg2 = `📅 *ANÁLISIS POR MES*\n`;
+      msg2 += `━━━━━━━━━━━━━━━━━━━━\n`;
+      
+      const mesesOrdenados = Object.keys(analisisMensual).sort().reverse();
+      mesesOrdenados.forEach(mes => {
+        const [anio, mesNum] = mes.split('-');
+        const nombresMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                              'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const nombreMes = nombresMeses[parseInt(mesNum) - 1];
+        const datos = analisisMensual[mes];
+        const esMesActual = mes === `${new Date().getFullYear()}-${(new Date().getMonth() + 1).toString().padStart(2, '0')}`;
+        
+        msg2 += `\n📆 ${nombreMes} ${anio}${esMesActual ? ' *(MES ACTUAL)*' : ''}\n`;
+        msg2 += `   Movimientos: ${datos.count}\n`;
+        msg2 += `   Total: $${datos.total.toLocaleString()}`;
+      });
+      
+      await ctx.reply(msg2, { parse_mode: 'Markdown' });
+    }
+
+    if (filasValidas.length > 0) {
+      let msg3 = `📋 *TODOS LOS MOVIMIENTOS*\n`;
+      msg3 += `━━━━━━━━━━━━━━━━━━━━\n`;
+      msg3 += `(${filasValidas.length} movimientos en total)\n\n`;
+      
+      const hoy = new Date();
+      filasValidas.forEach((d, i) => {
+        const fecha = normalizarFecha(d.fecha);
+        const esDeEsteMes = fecha && esEsteMes(d.fecha);
+        const marker = esDeEsteMes ? '✅' : '📅';
+        
+        msg3 += `${marker} ${i + 1}. ${d.descripcion.substring(0, 40)}\n`;
+        msg3 += `   💰 ${formatMonto(d.monto, d.moneda)} | ${d.fecha}\n`;
+        if (i < filasValidas.length - 1) msg3 += '\n';
+      });
+      
+      await ctx.reply(msg3, { parse_mode: 'Markdown' });
+    }
+
+    if (totalFilas > filasValidas.length) {
+      const filasInvalidas = totalFilas - filasValidas.length;
+      let msg4 = `⚠️ *FILAS INVÁLIDAS ENCONTRADAS*\n`;
+      msg4 += `━━━━━━━━━━━━━━━━━━━━\n`;
+      msg4 += `Hay ${filasInvalidas} filas que no tienen todos los datos necesarios.\n\n`;
+      msg4 += `💡 *Solución:* Usa /limpiar para eliminar estas filas del Sheet.`;
+      await ctx.reply(msg4, { parse_mode: 'Markdown' });
+    }
+
+  } catch (error) {
+    console.error('Error /debug:', error.message, error.stack);
+    await ctx.reply('❌ Error en el diagnóstico. Revisa los logs.');
+  }
+});
+
+bot.command('limpiar', async (ctx) => {
+  try {
+    const userId = ctx.from.id;
+    const sheetId = getSheetId(userId);
+
+    if (!sheetId) {
+      return ctx.reply('❌ No tienes un Sheet configurado. Usa /start.');
+    }
+
+    await ctx.reply('🧹 *LIMPIEZA DEL SHEET*\n\n⏳ Analizando filas...');
+
+    const sheet = await getSheetCliente(userId);
+    const filasRaw = await sheet.getRows();
+    const totalFilas = filasRaw.length;
+
+    const filasInvalidas = [];
+    
+    filasRaw.forEach((fila, index) => {
+      const rowObj = fila.toObject ? fila.toObject() : fila;
+      const fecha = rowObj.Fecha || rowObj.fecha || '';
+      const descripcion = rowObj.Descripcion || rowObj.descripcion || rowObj.Paciente || '';
+      const monto = parseFloat(rowObj.Monto || rowObj.monto || 0);
+
+      const esValida = fecha && fecha.trim() !== '' && 
+                      descripcion && descripcion.trim() !== '' && 
+                      monto && monto !== 0;
+
+      if (!esValida) {
+        filasInvalidas.push({ fila, index });
+      }
+    });
+
+    if (filasInvalidas.length === 0) {
+      return ctx.reply('✅ *¡Todo limpio!*\n\nNo hay filas inválidas en tu Sheet.');
+    }
+
+    pendingLimpiezas.set(userId, { filas: filasInvalidas, sheet });
+
+    let msg = `🧹 *FILAS A ELIMINAR*\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `📊 Total filas: ${totalFilas}\n`;
+    msg += `❌ Filas inválidas: ${filasInvalidas.length}\n\n`;
+    msg += `*Detalles:*\n`;
+
+    if (filasInvalidas.length <= 10) {
+      filasInvalidas.forEach((item, i) => {
+        const rowObj = item.fila.toObject ? item.fila.toObject() : item.fila;
+        const fecha = rowObj.Fecha || rowObj.fecha || '(vacía)';
+        const desc = rowObj.Descripcion || rowObj.descripcion || rowObj.Paciente || '(vacía)';
+        const monto = rowObj.Monto || rowObj.monto || '0';
+        msg += `\n${i + 1}. Fila #${item.index + 1}\n`;
+        msg += `   📅: ${fecha} | 💰: $${monto}\n`;
+        msg += `   📝: ${desc.substring(0, 50)}`;
+      });
+    } else {
+      msg += `Primeras 5:\n`;
+      filasInvalidas.slice(0, 5).forEach((item, i) => {
+        msg += `${i + 1}. Fila #${item.index + 1}\n`;
+      });
+      msg += `\n...y ${filasInvalidas.length - 5} más`;
+    }
+
+    msg += `\n\n⚠️ *¿Confirmas la eliminación?*\n`;
+    msg += `Responde *sí* para eliminar o *no* para cancelar.`;
+
+    await ctx.reply(msg, { parse_mode: 'Markdown' });
+
+  } catch (error) {
+    console.error('Error /limpiar:', error.message, error.stack);
+    await ctx.reply('❌ Error al analizar el Sheet. Revisa los logs.');
+  }
+});
+
 bot.command('mes', async (ctx) => {
   try {
     await ctx.reply('⏳ Cargando...');
@@ -628,7 +843,7 @@ bot.command('cobrar', async (ctx) => {
     if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
     const filas = await sheet.getRows();
 
-    const pendientes = filas.filter(f => (f.Estado || f.estado) === 'Pendiente');
+    const pendientes = filas.filter(f => (f.get('Estado') || f.get('estado')) === 'Pendiente');
 
     if (pendientes.length === 0) {
       return ctx.reply('✅ No hay movimientos pendientes.');
@@ -641,11 +856,11 @@ bot.command('cobrar', async (ctx) => {
     } else {
       const texto = ctx.message.text.replace('/cobrar', '').trim().toLowerCase();
       filaActual = pendientes.find(f =>
-        (f.Descripcion || f.descripcion || '').toLowerCase().includes(texto)
+        (f.get('Descripcion') || f.get('descripcion') || '').toLowerCase().includes(texto)
       );
       if (!filaActual && texto) {
         filaActual = pendientes.find(f =>
-          (f.ID_uNico || f.idunico || '') === texto
+          (f.get('ID_uNico') || f.get('idunico') || '') === texto
         );
       }
     }
@@ -653,18 +868,18 @@ bot.command('cobrar', async (ctx) => {
     if (!filaActual) {
       let msg = `⏳ *Movimientos pendientes:*\n\n`;
       pendientes.slice(-5).forEach((f, i) => {
-        msg += `• ${f.Descripcion || f.descripcion}\n`;
+        msg += `• ${f.get('Descripcion') || f.get('descripcion')}\n`;
       });
       msg += `\nUsa: /cobrar [nombre]`;
       return ctx.reply(msg, { parse_mode: 'Markdown' });
     }
 
-    filaActual.Estado = 'Cobrado';
+    filaActual.set('Estado', 'Cobrado');
     await filaActual.save();
 
     ctx.reply(
       `✅ *¡Marcado como cobrado!*\n\n` +
-      `📝 ${filaActual.Descripcion || filaActual.descripcion}`,
+      `📝 ${filaActual.get('Descripcion') || filaActual.get('descripcion')}`,
       { parse_mode: 'Markdown' }
     );
 
@@ -683,59 +898,218 @@ bot.command('eliminar', async (ctx) => {
     }
 
     const texto = ctx.message.text.replace('/eliminar', '').trim().toLowerCase();
+    console.log('DEBUG /eliminar - Buscando:', texto);
 
     const sheet = await getSheetCliente(ctx.from.id);
     if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
     const filas = await sheet.getRows();
 
+    console.log('DEBUG /eliminar - Total filas:', filas.length);
+    
+    if (filas.length > 0) {
+      const primeraFila = filas[0].toObject ? filas[0].toObject() : filas[0];
+      console.log('DEBUG /eliminar - Columnas disponibles:', Object.keys(primeraFila));
+      console.log('DEBUG /eliminar - Primera fila:', primeraFila);
+    }
+
     let filaActual = null;
     const coincidencias = [];
 
     filas.forEach((f, index) => {
-      const desc = (f.Descripcion || f.descripcion || '').toLowerCase();
-      const id = (f.ID_unico || f.ID_uNico || f.idunico || '').toLowerCase();
+      const desc = (
+        f.get('Descripcion') || 
+        f.get('descripcion') || 
+        f.get('Paciente') || 
+        f.get('paciente') || 
+        f.get('Nombre') || 
+        f.get('nombre') || 
+        ''
+      ).toLowerCase();
+      
+      const id = (
+        f.get('ID_Unico') || 
+        f.get('ID_unico') || 
+        f.get('ID_uNico') || 
+        f.get('idunico') || 
+        ''
+      ).toLowerCase();
+
+      console.log(`DEBUG /eliminar - Fila ${index}: desc="${desc}", id="${id}"`);
 
       if (id === texto || desc.includes(texto)) {
+        console.log(`DEBUG /eliminar - ¡COINCIDENCIA en fila ${index}!`);
         coincidencias.push({ fila: f, index });
       }
     });
 
+    console.log('DEBUG /eliminar - Coincidencias encontradas:', coincidencias.length);
+
     if (coincidencias.length === 0) {
-      return ctx.reply('❌ No se encontró ningún movimiento con ese nombre o ID.');
+      let msg = '❌ No se encontró ningún movimiento con ese nombre o ID.\n\n';
+      msg += '📋 *Últimos 5 movimientos:*\n\n';
+      
+      const ultimosMovimientos = filas.slice(-5).reverse();
+      ultimosMovimientos.forEach((f, i) => {
+        const desc = f.get('Descripcion') || f.get('descripcion') || f.get('Paciente') || f.get('paciente') || f.get('Nombre') || f.get('nombre') || 'Sin descripción';
+        const monto = f.get('Monto') || f.get('monto') || '0';
+        const fecha = f.get('Fecha') || f.get('fecha') || '';
+        msg += `${i + 1}. ${desc}\n`;
+        msg += `   $${monto} - ${fecha}\n\n`;
+      });
+      
+      msg += '💡 *Tip:* Intenta copiar parte del nombre exacto de arriba.';
+      
+      return ctx.reply(msg, { parse_mode: 'Markdown' });
     }
 
     if (coincidencias.length > 1) {
-      let msg = `⚠️ *Varias coincidencias:*\n\n`;
+      let msg = `⚠️ *Varias coincidencias (${coincidencias.length}):*\n\n`;
       coincidencias.slice(0, 5).forEach((c, i) => {
         const f = c.fila;
-        msg += `${i + 1}. ${f.Descripcion || f.descripcion}\n`;
-        msg += `   ${formatMonto(parseFloat(f.Monto || f.monto || 0), f.Moneda || f.moneda || 'Pesos')} - ${f.Fecha || f.fecha}\n\n`;
+        const desc = f.get('Descripcion') || f.get('descripcion') || f.get('Paciente') || f.get('paciente') || f.get('Nombre') || f.get('nombre') || 'Sin descripción';
+        msg += `${i + 1}. ${desc}\n`;
+        msg += `   ${formatMonto(parseFloat(f.get('Monto') || f.get('monto') || 0), f.get('Moneda') || f.get('moneda') || 'Pesos')} - ${f.get('Fecha') || f.get('fecha')}\n\n`;
       });
-      msg += `\nEspecificá mejor: /eliminar [ID completo]`;
+      msg += `\nEspecificá mejor el nombre o usa /listar para ver todos.`;
       return ctx.reply(msg, { parse_mode: 'Markdown' });
     }
 
     filaActual = coincidencias[0].fila;
 
-    const monto = parseFloat(filaActual.Monto || filaActual.monto || 0);
-    const moneda = filaActual.Moneda || filaActual.moneda || 'Pesos';
-    const desc = filaActual.Descripcion || filaActual.descripcion || '';
-    const id = filaActual.ID_unico || filaActual.ID_uNico || filaActual.idunico || '';
+    const monto = parseFloat(filaActual.get('Monto') || filaActual.get('monto') || 0);
+    const moneda = filaActual.get('Moneda') || filaActual.get('moneda') || 'Pesos';
+    const desc = filaActual.get('Descripcion') || filaActual.get('descripcion') || filaActual.get('Paciente') || filaActual.get('paciente') || filaActual.get('Nombre') || filaActual.get('nombre') || 'Sin descripción';
+    const id = filaActual.get('ID_Unico') || filaActual.get('ID_unico') || filaActual.get('ID_uNico') || filaActual.get('idunico') || 'sin-id';
+    const fecha = filaActual.get('Fecha') || filaActual.get('fecha') || 'N/A';
+    const hora = filaActual.get('Hora') || filaActual.get('hora') || 'N/A';
+    const tipo = filaActual.get('Tipo') || filaActual.get('tipo') || 'N/A';
+    const metodo = filaActual.get('MetodoPago') || filaActual.get('metodopago') || 'N/A';
+    const estado = filaActual.get('Estado') || filaActual.get('estado') || 'N/A';
 
-    pendingDeletes.set(ctx.from.id, { fila: filaActual, sheet, desc, monto, moneda, id });
+    pendingDeletes.set(ctx.from.id, { 
+      fila: filaActual,
+      index: coincidencias[0].index,
+      sheet, 
+      desc, 
+      monto, 
+      moneda, 
+      id,
+      fecha,
+      hora,
+      tipo,
+      metodo,
+      estado
+    });
 
-    ctx.reply(
-      `⚠️ *¿Eliminar este movimiento?*\n\n` +
-      `📝 ${desc}\n` +
-      `💰 ${formatMonto(monto, moneda)}\n` +
-      `🆔 ${id}\n\n` +
-      `Responde *sí* para confirmar o *no* para cancelar.`,
-      { parse_mode: 'Markdown' }
-    );
+    let msg = `⚠️ *¿ELIMINAR ESTE MOVIMIENTO?*\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `📝 ${desc}\n`;
+    msg += `💰 ${formatMonto(monto, moneda)}\n`;
+    msg += `📅 ${fecha} ${hora}\n`;
+    msg += `🏷️ Tipo: ${tipo}\n`;
+    msg += `💳 Método: ${metodo}\n`;
+    msg += `📊 Estado: ${estado}\n`;
+    msg += `🆔 ${id}\n`;
+    msg += `📄 Fila: #${coincidencias[0].index + 1} del Sheet\n\n`;
+    msg += `⚠️ *¿Confirmas la eliminación?*\n`;
+    msg += `Responde *sí* para confirmar o *no* para cancelar.`;
+
+    ctx.reply(msg, { parse_mode: 'Markdown' });
 
   } catch (error) {
-    console.error('Error /eliminar:', error.message);
-    ctx.reply('❌ Error al buscar movimiento.');
+    console.error('Error /eliminar:', error.message, error.stack);
+    ctx.reply('❌ Error al buscar movimiento. Verifica los logs.');
+  }
+});
+
+bot.command('listar', async (ctx) => {
+  try {
+    await ctx.reply('⏳ Cargando movimientos...');
+    
+    const sheet = await getSheetCliente(ctx.from.id);
+    if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
+    
+    const filas = await sheet.getRows();
+    
+    console.log('DEBUG /listar - Total filas:', filas.length);
+    
+    if (filas.length === 0) {
+      return ctx.reply('📭 No hay movimientos en el sheet.');
+    }
+    
+    if (filas.length > 0) {
+      const primeraFila = filas[0].toObject ? filas[0].toObject() : filas[0];
+      console.log('DEBUG /listar - Columnas:', Object.keys(primeraFila));
+    }
+    
+    let msg = `📋 *Movimientos (últimos 10):*\n\n`;
+    
+    const ultimosMovimientos = filas.slice(-10).reverse();
+    ultimosMovimientos.forEach((f, i) => {
+      const desc = f.get('Descripcion') || f.get('descripcion') || f.get('Paciente') || f.get('paciente') || f.get('Nombre') || f.get('nombre') || 'Sin descripción';
+      const monto = f.get('Monto') || f.get('monto') || '0';
+      const fecha = f.get('Fecha') || f.get('fecha') || '';
+      const id = f.get('ID_Unico') || f.get('ID_unico') || f.get('ID_uNico') || f.get('idunico') || 'sin-id';
+      
+      msg += `${i + 1}. ${desc}\n`;
+      msg += `   $${monto} - ${fecha}\n`;
+      msg += `   ID: \`${id}\`\n\n`;
+    });
+    
+    msg += `\n💡 Usa /eliminar [nombre] para eliminar uno.`;
+    
+    ctx.reply(msg, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error /listar:', error.message, error.stack);
+    ctx.reply('❌ Error al listar movimientos. Verifica los logs.');
+  }
+});
+
+bot.command('regenerar_ids', async (ctx) => {
+  try {
+    await ctx.reply('🔄 Buscando filas sin ID...');
+    
+    const sheet = await getSheetCliente(ctx.from.id);
+    if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
+    
+    const filas = await sheet.getRows();
+    
+    let actualizados = 0;
+    let yaTenianId = 0;
+    
+    for (let i = 0; i < filas.length; i++) {
+      const f = filas[i];
+      
+      const idActual = f.get('ID_Unico') || f.get('ID_unico') || '';
+      
+      if (!idActual || idActual === 'undefined' || idActual === 'null' || idActual.trim() === '') {
+        const nuevoId = generarIDUnico();
+        f.set('ID_Unico', nuevoId);
+        await f.save();
+        actualizados++;
+        console.log(`✅ Fila ${i + 1}: ID guardado -> ${nuevoId}`);
+      } else {
+        yaTenianId++;
+      }
+    }
+    
+    let msg = `✨ *Regeneración de IDs completada*\n\n`;
+    msg += `📊 *Resumen:*\n`;
+    msg += `• IDs generados: ${actualizados}\n`;
+    msg += `• Ya tenían ID: ${yaTenianId}\n`;
+    msg += `• Total filas: ${filas.length}\n\n`;
+    
+    if (actualizados > 0) {
+      msg += `✅ Los ${actualizados} movimientos ahora tienen ID único.\n`;
+      msg += `Usa /listar para verificarlos.`;
+    } else {
+      msg += `💡 Todos los movimientos ya tenían ID.`;
+    }
+    
+    ctx.reply(msg, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error /regenerar_ids:', error.message, error.stack);
+    ctx.reply('❌ Error al regenerar IDs. Verifica los logs.');
   }
 });
 
@@ -766,8 +1140,8 @@ bot.command('editar', async (ctx) => {
     const coincidencias = [];
 
     filas.forEach((f) => {
-      const desc = (f.Descripcion || f.descripcion || '').toLowerCase();
-      const id = (f.ID_unico || f.ID_uNico || f.idunico || '').toLowerCase();
+      const desc = (f.get('Descripcion') || f.get('descripcion') || '').toLowerCase();
+      const id = (f.get('ID_Unico') || f.get('ID_unico') || f.get('ID_uNico') || f.get('idunico') || '').toLowerCase();
 
       if (id === texto || desc.includes(texto)) {
         coincidencias.push(f);
@@ -783,8 +1157,8 @@ bot.command('editar', async (ctx) => {
     if (coincidencias.length > 1) {
       let msg = `⚠️ *Varias coincidencias:*\n\n`;
       coincidencias.slice(0, 5).forEach((c, i) => {
-        msg += `${i + 1}. ${c.Descripcion || c.descripcion}\n`;
-        msg += `   ${formatMonto(parseFloat(c.Monto || c.monto || 0), c.Moneda || c.moneda || 'Pesos')} - ${c.Fecha || c.fecha}\n\n`;
+        msg += `${i + 1}. ${c.get('Descripcion') || c.get('descripcion')}\n`;
+        msg += `   ${formatMonto(parseFloat(c.get('Monto') || c.get('monto') || 0), c.get('Moneda') || c.get('moneda') || 'Pesos')} - ${c.get('Fecha') || c.get('fecha')}\n\n`;
       });
       msg += `\nEspecificá mejor: /editar [ID completo]`;
       return ctx.reply(msg, { parse_mode: 'Markdown' });
@@ -792,10 +1166,10 @@ bot.command('editar', async (ctx) => {
 
     filaActual = coincidencias[0];
 
-    const montoActual = parseFloat(filaActual.Monto || filaActual.monto || 0);
-    const moneda = filaActual.Moneda || filaActual.moneda || 'Pesos';
-    const descripcionActual = filaActual.Descripcion || filaActual.descripcion || '';
-    const tipo = filaActual.Tipo || filaActual.tipo || 'Ingreso';
+    const montoActual = parseFloat(filaActual.get('Monto') || filaActual.get('monto') || 0);
+    const moneda = filaActual.get('Moneda') || filaActual.get('moneda') || 'Pesos';
+    const descripcionActual = filaActual.get('Descripcion') || filaActual.get('descripcion') || '';
+    const tipo = filaActual.get('Tipo') || filaActual.get('tipo') || 'Ingreso';
 
     pendingEdits.set(ctx.from.id, {
       fila: filaActual,
@@ -823,6 +1197,40 @@ bot.command('editar', async (ctx) => {
 
 const regexMsg = /^(consulta|servicio|gasto)\s+(.+?)\s+(?:\$|U\$|USD)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
+bot.command('reiniciar', async (ctx) => {
+  const userId = ctx.from.id;
+
+  if (!esAdminOriginal(userId)) {
+    return ctx.reply('⚠️ Solo el owner puede usar este comando.');
+  }
+
+  const cliente = obtenerClientePorUserId(userId);
+  delete clientes[userId];
+  guardarClientes(clientes);
+
+  if (cliente && cliente.sheetId) {
+    try {
+      const docToClear = new GoogleSpreadsheet(cliente.sheetId, serviceAccountAuth);
+      await docToClear.loadInfo();
+      const sheetToClear = docToClear.sheetsByIndex[0];
+      const rows = await sheetToClear.getRows();
+      for (const row of rows) {
+        await row.delete();
+      }
+      ctx.reply('✅ Listo. usa /start');
+    } catch (error) {
+      console.error('Error sheet:', error.message);
+      ctx.reply('✅ Datos borrados. usa /start');
+    }
+  } else {
+    ctx.reply('✅ Listo. usa /start');
+  }
+});
+
+const pendingReinicios = new Map();
+
+const CODIGO_EXPIRACION_HORAS = 24;
+
 bot.command('cancelar', (ctx) => {
   const userId = ctx.from.id;
   pendingRegistros.delete(userId);
@@ -830,10 +1238,9 @@ bot.command('cancelar', (ctx) => {
   pendingEdits.delete(userId);
   pendingCotizaciones.delete(userId);
   pendingIntentosEmail.delete(userId);
+  pendingReinicios.delete(userId);
   ctx.reply('❌ Proceso cancelado.');
 });
-
-const CODIGO_EXPIRACION_HORAS = 24;
 
 bot.command('codigo', (ctx) => {
   const userId = ctx.from.id;
@@ -969,6 +1376,61 @@ bot.on('text', async (ctx) => {
 
   if (text.startsWith('/')) return;
 
+  if (pendingReinicios.has(userId)) {
+    const respuesta = text.toLowerCase().trim();
+    if (respuesta === 'sí' || respuesta === 'si' || respuesta === 's' || respuesta === 'yes' || respuesta === 'y') {
+      const cliente = obtenerClientePorUserId(userId);
+
+      delete clientes[userId];
+      guardarClientes(clientes);
+
+      if (cliente && cliente.sheetId) {
+        try {
+          const docToClear = new GoogleSpreadsheet(cliente.sheetId, serviceAccountAuth);
+          await docToClear.loadInfo();
+          const sheetToClear = docToClear.sheetsByIndex[0];
+          const rows = await sheetToClear.getRows();
+          for (const row of rows) {
+            await row.delete();
+          }
+          ctx.reply(
+            '✅ *Registro reiniciado*\n\n' +
+            'Se borraron:\n' +
+            '• Tus datos locales\n' +
+            '• Todos los movimientos del sheet\n\n' +
+            'Usa /start para registrarte de nuevo.',
+            { parse_mode: 'Markdown' }
+          );
+        } catch (error) {
+          console.error('Error al limpiar sheet:', error.message);
+          ctx.reply(
+            '✅ *Registro reiniciado*\n\n' +
+            'Se borraron tus datos locales.\n' +
+            '⚠️ No se pudo limpiar el sheet (verifica que esté compartido).\n\n' +
+            'Usa /start para registrarte de nuevo.',
+            { parse_mode: 'Markdown' }
+          );
+        }
+      } else {
+        ctx.reply(
+          '✅ *Registro reiniciado*\n\n' +
+          'Tus datos han sido borrados.\n' +
+          'No tenías sheet configurado.\n\n' +
+          'Usa /start para registrarte de nuevo.',
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      pendingReinicios.delete(userId);
+    } else if (respuesta === 'no' || respuesta === 'n') {
+      pendingReinicios.delete(userId);
+      ctx.reply('❌ Reinicio cancelado.');
+    } else {
+      ctx.reply('⚠️ Responde *sí* o *no*');
+    }
+    return;
+  }
+
   if (pendingRegistros.has(userId)) {
     const registro = pendingRegistros.get(userId);
 
@@ -996,7 +1458,7 @@ bot.on('text', async (ctx) => {
       }
 
       resetIntentosEmail(userId);
-      pendingRegistros.set(userId, { step: 'sheetId', email: email });
+      pendingRegistros.set(userId, { step: 'sheetId', email: email, telegramUserId: userId });
 
       return ctx.reply(
         '✅ *Email verificado!*\n\n' +
@@ -1065,6 +1527,7 @@ bot.on('text', async (ctx) => {
         const datosCliente = {
           sheetId: sheetId,
           email: registro.email,
+          telegramUserId: registro.telegramUserId,
           usuarios: [],
           creadoEn: new Date().toISOString()
         };
@@ -1126,13 +1589,15 @@ bot.on('text', async (ctx) => {
   if (pendingDeletes.has(ctx.from.id)) {
     const respuesta = text.toLowerCase().trim();
     if (respuesta === 'sí' || respuesta === 'si' || respuesta === 's' || respuesta === 'yes' || respuesta === 'y') {
-      const { fila } = pendingDeletes.get(ctx.from.id);
+      const { fila, index, desc } = pendingDeletes.get(ctx.from.id);
       try {
+        console.log(`DEBUG: Eliminando fila ${index} - ${desc}`);
         await fila.delete();
-        ctx.reply('✅ *Movimiento eliminado*', { parse_mode: 'Markdown' });
+        invalidateCache(ctx.from.id);
+        ctx.reply('✅ *Movimiento eliminado*\n\n' + `📝 ${desc}`, { parse_mode: 'Markdown' });
       } catch (error) {
-        console.error('Error al eliminar:', error.message);
-        ctx.reply('❌ Error al eliminar movimiento.');
+        console.error('Error al eliminar:', error.message, error.stack);
+        ctx.reply('❌ Error al eliminar movimiento. Verifica los logs.');
       }
     } else if (respuesta === 'no' || respuesta === 'n') {
       ctx.reply('❌ Eliminación cancelada.');
@@ -1141,6 +1606,54 @@ bot.on('text', async (ctx) => {
       return;
     }
     pendingDeletes.delete(ctx.from.id);
+    return;
+  }
+
+  if (pendingLimpiezas.has(ctx.from.id)) {
+    const respuesta = text.toLowerCase().trim();
+    if (respuesta === 'sí' || respuesta === 'si' || respuesta === 's' || respuesta === 'yes' || respuesta === 'y') {
+      const { filas } = pendingLimpiezas.get(ctx.from.id);
+      try {
+        await ctx.reply(`⏳ Eliminando ${filas.length} filas...`);
+        
+        let eliminadas = 0;
+        let errores = 0;
+        
+        for (const item of filas) {
+          try {
+            await item.fila.delete();
+            eliminadas++;
+            console.log(`DEBUG: Eliminada fila #${item.index + 1}`);
+          } catch (error) {
+            errores++;
+            console.error(`Error al eliminar fila #${item.index + 1}:`, error.message);
+          }
+        }
+        
+        pendingLimpiezas.delete(ctx.from.id);
+        invalidateCache(ctx.from.id);
+        
+        let msg = `✅ *LIMPIEZA COMPLETADA*\n\n`;
+        msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+        msg += `✅ Eliminadas: ${eliminadas} filas\n`;
+        if (errores > 0) {
+          msg += `❌ Errores: ${errores}\n`;
+        }
+        msg += `\n💡 Usa /debug para verificar que todo esté limpio.`;
+        
+        await ctx.reply(msg, { parse_mode: 'Markdown' });
+      } catch (error) {
+        console.error('Error en limpieza:', error.message, error.stack);
+        pendingLimpiezas.delete(ctx.from.id);
+        await ctx.reply('❌ Error durante la limpieza. Intenta de nuevo.');
+      }
+    } else if (respuesta === 'no' || respuesta === 'n') {
+      pendingLimpiezas.delete(ctx.from.id);
+      await ctx.reply('✅ Limpieza cancelada. Ninguna fila fue eliminada.');
+    } else {
+      await ctx.reply('⚠️ Responde *sí* o *no* para confirmar.');
+      return;
+    }
     return;
   }
 
@@ -1170,6 +1683,9 @@ bot.on('text', async (ctx) => {
 
       const montoPesos = Math.round(Math.abs(monto) * cotizacion * 100) / 100;
 
+      const cliente = obtenerClientePorUserId(userId);
+      const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || userId) : userId;
+
       const rowData = {
         'Fecha': fechaStr,
         'Hora': horaStr,
@@ -1179,8 +1695,9 @@ bot.on('text', async (ctx) => {
         'Tipo': tipo,
         'Moneda': moneda,
         'MetodoPago': metodoIndicado,
-        'ID_unico': `mov_${Date.now()}`,
-        'MontoPesos': montoPesos
+        'ID_Unico': generarIDUnico(),
+        'MontoPesos': montoPesos,
+        'ID_Origen': idOrigen
       };
 
       await sheet.addRow(rowData, { insert: true });
@@ -1274,20 +1791,20 @@ bot.on('text', async (ctx) => {
 
           const fila = editData.fila;
           if (editData.descripcion !== editData.descripcionOriginal) {
-            fila.Descripcion = editData.descripcion;
+            fila.set('Descripcion', editData.descripcion);
           }
           if (editData.nuevoMonto !== editData.montoOriginal) {
-            fila.Monto = editData.nuevoMonto;
+            fila.set('Monto', editData.nuevoMonto);
             if (editData.moneda === 'Dólares') {
-              fila.MontoPesos = convertirAPesos(editData.nuevoMonto, editData.moneda);
+              fila.set('MontoPesos', convertirAPesos(editData.nuevoMonto, editData.moneda));
             }
           }
           await fila.save();
 
           ctx.reply(
             `✅ *Movimiento actualizado*\n\n` +
-            `📝 ${fila.Descripcion}\n` +
-            `💰 ${formatMonto(parseFloat(fila.Monto), editData.moneda)}`
+            `📝 ${fila.get('Descripcion')}\n` +
+            `💰 ${formatMonto(parseFloat(fila.get('Monto')), editData.moneda)}`
           );
         } catch (error) {
           console.error('Error al editar:', error.message);
@@ -1321,6 +1838,9 @@ bot.on('text', async (ctx) => {
           montoPesos = convertirAPesos(pendingData.monto, pendingData.moneda);
         }
 
+        const cliente = obtenerClientePorUserId(userId);
+        const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || userId) : userId;
+
         const rowData = {
           'Fecha': fechaStr,
           'Hora': horaStr,
@@ -1330,8 +1850,9 @@ bot.on('text', async (ctx) => {
           'Tipo': pendingData.tipo,
           'Moneda': pendingData.moneda,
           'MetodoPago': metodo,
-          'ID_unico': `mov_${Date.now()}`,
-          'MontoPesos': montoPesos
+          'ID_Unico': generarIDUnico(),
+          'MontoPesos': montoPesos,
+          'ID_Origen': idOrigen
         };
 
         await sheet.addRow(rowData, { insert: true });
@@ -1447,6 +1968,9 @@ bot.on('text', async (ctx) => {
     if (!cotizacionDolar) await obtenerCotizacionDolar();
     const montoPesos = convertirAPesos(monto, moneda);
 
+    const cliente = obtenerClientePorUserId(ctx.from.id);
+    const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || ctx.from.id) : ctx.from.id;
+
     const rowData = {
       'Fecha': fechaStr,
       'Hora': horaStr,
@@ -1456,8 +1980,9 @@ bot.on('text', async (ctx) => {
       'Tipo': tipo,
       'Moneda': moneda,
       'MetodoPago': metodoIndicado,
-      'ID_unico': `mov_${Date.now()}`,
-      'MontoPesos': montoPesos
+      'ID_Unico': generarIDUnico(),
+      'MontoPesos': montoPesos,
+      'ID_Origen': idOrigen
     };
 
     await sheet.addRow(rowData, { insert: true });
@@ -1518,6 +2043,36 @@ bot.command('actualizardolar', async (ctx) => {
   } catch (error) {
     ctx.reply('❌ Error al actualizar cotización.');
   }
+});
+
+bot.command('help', async (ctx) => {
+  const helpMsg = `📚 *Manual de comandos*
+
+*📝 Registrar movimientos:*
+/agregar - Agregar ingreso o gasto
+
+*📋 Ver movimientos:*
+/listar - Últimos 10 movimientos
+/estado - Resumen financiero (totales)
+
+*✏️ Editar movimientos:*
+/eliminar [nombre/ID] - Eliminar movimiento
+/editar [nombre/ID] - Editar movimiento
+
+*💱 Moneda:*
+/dolar - Ver cotizaciones del dólar
+
+*⚙️ Configuración:*
+/configurar - Configurar tu Google Sheet
+/regenerar_ids - Generar IDs faltantes
+
+*💡 Tips:*
+• Usa /eliminar o /editar seguido del nombre o ID
+• Los IDs únicos permiten buscar con precisión
+• /regenerar_ids llena IDs en movimientos antiguos
+
+_Usa /agregar para registrar un movimiento_`;
+  ctx.reply(helpMsg, { parse_mode: 'Markdown' });
 });
 
 bot.launch().then(async () => {
