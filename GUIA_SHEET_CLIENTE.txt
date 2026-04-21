@@ -1,0 +1,161 @@
+═══════════════════════════════════════════════════════════════════════════════
+            GUÍA RÁPIDA: CONFIGURAR SHEET NUEVO PARA CLIENTE
+═══════════════════════════════════════════════════════════════════════════════
+
+RESUMEN DEL FLUJO:
+Tu bot现有的 ya está funcionando. El cliente se registra como usuario nuevo,
+configura su PROPIO sheet, y vos desde tu bot ves SUS datos cuando te habla.
+
+═══════════════════════════════════════════════════════════════════════════════
+PASO 1: AGREGAR EL EMAIL DEL CLIENTE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Abrir el archivo .env en el proyecto
+2. Buscar la línea ALLOWED_EMAILS
+3. Agregar el email del cliente (separado por coma)
+
+   ANTES:  ALLOWED_EMAILS=juan@tuempresa.com,maria@tuempresa.com
+   DESPUÉS: ALLOWED_EMAILS=juan@tuempresa.com,maria@tuempresa.com,cliente@empresa.com
+
+4. Guardar el archivo .env
+5. Reiniciar el bot (Ctrl+C y luego npm start)
+
+═══════════════════════════════════════════════════════════════════════════════
+PASO 2: EL CLIENTE CREA SU GOOGLE SHEET
+═══════════════════════════════════════════════════════════════════════════════
+
+1. El cliente va a: sheets.google.com
+2. Click en "Nuevo" > "Hoja de cálculo"
+3. Nombrarla algo como: "Cashflow - [Nombre del cliente]"
+4. Click en "Compartir" (botón azul arriba a la derecha)
+
+═══════════════════════════════════════════════════════════════════════════════
+PASO 3: COMPARTIR EL SHEET CON LA SERVICE ACCOUNT
+═══════════════════════════════════════════════════════════════════════════════
+
+1. En la ventana de "Compartir", agregar este email:
+
+   automatizaciones@gen-lang-client-0696090484.iam.gserviceaccount.com
+
+2. Cambiar el rol a "Editor" (importante: debe ser Editor, no Lector)
+3. Click en "Enviar"
+
+NOTA: Este email está en tu .env como GOOGLE_SERVICE_ACCOUNT_EMAIL
+
+═══════════════════════════════════════════════════════════════════════════════
+PASO 4: PREPARAR LAS COLUMNAS DEL SHEET
+═══════════════════════════════════════════════════════════════════════════════
+
+En la primera fila del sheet, crear estas columnas (exactamente así):
+
+   A              B         C            D        E         F        G          H             I           J            K
+   Fecha        Hora    Descripcion   Monto    Estado    Tipo    Moneda   MetodoPago    ID_unico   MontoPesos   ID_Origen
+
+Copiar y pegar esta fila exacta en la primera fila del sheet:
+═══════════════════════════════════════════════════════════════════════════════
+Fecha	Hora	Descripcion	Monto	Estado	Tipo	Moneda	MetodoPago	ID_unico	MontoPesos	ID_Origen
+═══════════════════════════════════════════════════════════════════════════════
+
+IMPORTANTE: Los encabezados deben ser exactamente esos nombres.
+            Si ponés "Descripcion" con acento, el bot no lo lee bien.
+
+═══════════════════════════════════════════════════════════════════════════════
+PASO 5: EL CLIENTE SE REGISTRA EN EL BOT
+═══════════════════════════════════════════════════════════════════════════════
+
+1. El cliente abre Telegram y busca tu bot
+2. Envía /start
+3. El bot le pide su email corporativo
+4. El cliente ingresa el email que agregaste en PASSO 1
+5. El bot le dice que configure su Google Sheet
+6. El cliente va a su sheet > Compartir > Copiar link
+7. El cliente extrae el ID de la URL:
+
+   URL: docs.google.com/spreadsheets/d/1abc123DEF456GHI789jkl012345/edit
+   ID:  1abc123DEF456GHI789jkl012345
+
+8. El cliente copia ese ID y lo pega en el chat del bot
+9. Listo! Ya está registrado
+
+═══════════════════════════════════════════════════════════════════════════════
+PASO 6: VERIFICAR QUE FUNCIONA
+═══════════════════════════════════════════════════════════════════════════════
+
+El cliente puede probar:
+- /start (ver comandos)
+- /hoy (ver si está vacío o tiene datos)
+- /ayuda (ver todas las opciones)
+
+Para probar el registro de movimientos:
+- "consulta Juan Perez $15000 efectivo"
+- "servicio Limpieza $8000 transferencia"
+- "gasto Materiales $-2000"
+
+═══════════════════════════════════════════════════════════════════════════════
+CÓMO VER LOS DATOS DEL CLIENTE
+═══════════════════════════════════════════════════════════════════════════════
+
+⚠️ IMPORTANTE: El bot está diseñado para que CADA usuario vea solo sus datos.
+
+Si vos (admin) querés ver los datos del cliente, tenés estas opciones:
+
+OPCION A - Que el cliente te envíe screenshots (más simple)
+OPCION B - Agregar tu user_id como usuario autorizado del cliente (más complejo)
+
+Para la Opción B:
+1. Pedirle al cliente que use el comando /codigo en el bot
+2. El cliente te pasa el código de 6 letras
+3. Vos usás /unir [codigo]
+4. Ahora ves su sheet cuando hablás con el bot
+
+═══════════════════════════════════════════════════════════════════════════════
+RESOLUCIÓN DE PROBLEMAS
+═══════════════════════════════════════════════════════════════════════════════
+
+ERROR: "Email no autorizado"
+→ El email no está en ALLOWED_EMAILS del .env
+→ O el bot no se reinició después de agregar el email
+
+ERROR: "No se encontró sheetId"
+→ El cliente no completó el registro correctamente
+→ O el ID del sheet está mal
+
+ERROR: "No pude acceder al sheet con ese ID"
+→ El sheet no está compartido con la service account
+→ O el ID copiado es incorrecto
+
+ERROR: "No hay movimientos"
+→ El sheet está vacío (normal al principio)
+→ O las columnas no tienen los nombres exactos
+
+═══════════════════════════════════════════════════════════════════════════════
+COMANDOS ÚTILES DEL BOT
+═══════════════════════════════════════════════════════════════════════════════
+
+/start         - Mensaje de bienvenida y ayuda rápida
+/balance       - Resumen completo (hoy, semana, mes)
+/hoy           - Movimientos del día
+/semana        - Resumen de la semana
+/mes           - Balance del mes
+/pendientes    - Ver cobros pendientes
+/ingresos      - Lista de ingresos
+/egresos       - Lista de gastos
+/cobrar [nombre] - Marcar un pendiente como cobrado
+/eliminar [nombre] - Eliminar un movimiento
+/editar [nombre] - Editar descripción o monto
+/dolar         - Ver cotización actual
+/codigo        - Generar código para agregar usuarios (solo owner)
+/misusuarios   - Ver usuarios autorizados (solo owner)
+/cancelar      - Cancelar cualquier proceso activo
+/ayuda         - Ver todos los comandos
+
+═══════════════════════════════════════════════════════════════════════════════
+NOTAS IMPORTANTES
+═══════════════════════════════════════════════════════════════════════════════
+
+• El cliente tiene su PROPIO sheet - no ve los tuyos, vos no ves los suyos
+• Los datos se guardan en tiempo real en el sheet
+• El bot convierte dólares a pesos usando la cotización de Bluelytics
+• Cada movimiento tiene un ID único para poder editarlo/eliminarlo
+
+═══════════════════════════════════════════════════════════════════════════════
