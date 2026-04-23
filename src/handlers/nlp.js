@@ -1,0 +1,243 @@
+const { bot } = require('../lib/telegraf');
+const geminiService = require('../services/gemini.service');
+const cmd = require('../services/command.service');
+const state = require('../state');
+const { getSheetCliente } = require('../services/sheet.service');
+const { formatMonto } = require('../utils/formatter');
+
+const INTENT_HANDLERS = {
+  ver_balance: async (ctx, entities) => {
+    await ctx.reply('⏳ Calculando...');
+    const msg = await cmd.ejecutarBalance(ctx.from.id);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  ver_hoy: async (ctx, entities) => {
+    await ctx.reply('⏳ Cargando...');
+    const msg = await cmd.ejecutarHoy(ctx.from.id);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  ver_semana: async (ctx, entities) => {
+    await ctx.reply('⏳ Cargando...');
+    const msg = await cmd.ejecutarSemana(ctx.from.id);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  ver_mes: async (ctx, entities) => {
+    await ctx.reply('⏳ Cargando...');
+    const msg = await cmd.ejecutarMes(ctx.from.id);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  ver_ingresos: async (ctx, entities) => {
+    await ctx.reply('⏳ Cargando...');
+    const msg = await cmd.ejecutarIngresos(ctx.from.id);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  ver_egresos: async (ctx, entities) => {
+    await ctx.reply('⏳ Cargando...');
+    const msg = await cmd.ejecutarEgresos(ctx.from.id);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  ver_pendientes: async (ctx, entities) => {
+    await ctx.reply('⏳ Cargando...');
+    const msg = await cmd.ejecutarPendientes(ctx.from.id);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  ver_dolar: async (ctx, entities) => {
+    await ctx.reply('⏳ Obteniendo cotización...');
+    const msg = await cmd.ejecutarDolar();
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  actualizardolar: async (ctx, entities) => {
+    await ctx.reply('⏳ Actualizando cotización...');
+    const msg = await cmd.ejecutarActualizarDolar();
+    return ctx.reply(msg);
+  },
+
+  ver_ayuda: async (ctx, entities) => {
+    return ctx.reply(
+      '📖 *Comandos disponibles:*\n\n' +
+      '📝 *Registrar movimiento:*\n' +
+      '`consulta Juan Perez $15000 efectivo` (ingreso pesos)\n' +
+      '`servicio Endodoncia U$50 transferencia` (ingreso dólares)\n' +
+      '`gasto Insumos $-500` (egreso)\n\n' +
+      '💬 *También podés escribir en lenguaje natural:*\n' +
+      '`cobré 15000 de Juan Perez en efectivo`\n' +
+      '`gasté 5000 en alquiler`\n' +
+      '`cuánto tengo?`\n' +
+      '`pendientes`\n\n' +
+      '📊 *Reportes:*\n' +
+      '`/balance` - Resumen completo\n' +
+      '`/hoy` - Movimientos de hoy\n' +
+      '`/pendientes` - Sin cobrar\n' +
+      '`/semana` - Resumen semanal\n' +
+      '`/mes` - Balance del mes\n' +
+      '`/ingresos` - Solo ingresos\n' +
+      '`/egresos` - Solo gastos\n\n' +
+      '✅ *Cobrar:*\n' +
+      '`/cobrar ultimo` - Cobra el último pendiente\n' +
+      '`/cobrar [nombre]` - Cobra uno que coincida\n\n' +
+      '✏️ *Editar:*\n' +
+      '`/editar [nombre]` - Editar descripción y monto\n\n' +
+      '🗑️ *Eliminar:*\n' +
+      '`/eliminar [nombre]` - Eliminar movimiento\n' +
+      '`/listar` - Ver todos los movimientos\n\n' +
+      '💵 *Dólar:*\n' +
+      '`/dolar` - Ver cotización actual\n' +
+      '`/actualizardolar` - Actualizar cotización',
+      { parse_mode: 'Markdown' }
+    );
+  },
+
+  listar_movimientos: async (ctx, entities) => {
+    await ctx.reply('⏳ Cargando movimientos...');
+    const msg = await cmd.ejecutarListar(ctx.from.id);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  cobrar_movimiento: async (ctx, entities) => {
+    await ctx.reply('⏳ Buscando...');
+    const nombre = entities.nombre || null;
+    const msg = await cmd.ejecutarCobrar(ctx.from.id, nombre);
+    return ctx.reply(msg, { parse_mode: 'Markdown' });
+  },
+
+  editar_movimiento: async (ctx, entities) => {
+    const nombre = entities.nombre || null;
+    if (!nombre) {
+      return ctx.reply('📝 *Editar movimiento*\n\nUso: /editar [ID o nombre]\n\nPodrás modificar:\n• Descripción\n• Monto');
+    }
+    const result = await cmd.ejecutarEditar(ctx.from.id, nombre);
+    if (typeof result === 'string') {
+      return ctx.reply(result, { parse_mode: 'Markdown' });
+    }
+    if (result && result.fila) {
+      const montoActual = parseFloat(result.fila.get('Monto') || result.fila.get('monto') || 0);
+      const moneda = result.fila.get('Moneda') || result.fila.get('moneda') || 'Pesos';
+      const descripcionActual = result.fila.get('Descripcion') || result.fila.get('descripcion') || '';
+      const tipo = result.fila.get('Tipo') || result.fila.get('tipo') || 'Ingreso';
+
+      state.pendingEdits.set(ctx.from.id, {
+        fila: result.fila,
+        descripcionOriginal: descripcionActual,
+        descripcion: descripcionActual,
+        montoOriginal: montoActual,
+        nuevoMonto: montoActual,
+        moneda,
+        tipo,
+        step: 'descripcion'
+      });
+
+      return ctx.reply(
+        `📝 *Editar movimiento*\n\n` +
+        `📝 Descripción actual: *${descripcionActual}*\n\n` +
+        'Escribí la nueva descripción (o escribí "- -" para mantener la actual)',
+        { parse_mode: 'Markdown' }
+      );
+    }
+    return ctx.reply('❌ Error al buscar movimiento.');
+  },
+
+  eliminar_movimiento: async (ctx, entities) => {
+    const nombre = entities.nombre || null;
+    if (!nombre) {
+      return ctx.reply('⚠️ Decime el nombre del movimiento que querés eliminar.\nEjemplo: "borrar insumos" o /eliminar [nombre]');
+    }
+    const result = await cmd.ejecutarEliminar(ctx.from.id, nombre);
+    if (typeof result === 'string') {
+      return ctx.reply(result, { parse_mode: 'Markdown' });
+    }
+    if (result && result.fila) {
+      const { fila, index, sheet, coincidencias } = result;
+      const monto = parseFloat(fila.get('Monto') || fila.get('monto') || 0);
+      const moneda = fila.get('Moneda') || fila.get('moneda') || 'Pesos';
+      const desc = fila.get('Descripcion') || fila.get('descripcion') || fila.get('Paciente') || fila.get('paciente') || fila.get('Nombre') || fila.get('nombre') || 'Sin descripción';
+      const id = fila.get('ID_Unico') || fila.get('ID_unico') || fila.get('ID_uNico') || fila.get('idunico') || 'sin-id';
+      const fecha = fila.get('Fecha') || fila.get('fecha') || 'N/A';
+      const hora = fila.get('Hora') || fila.get('hora') || 'N/A';
+      const tipo = fila.get('Tipo') || fila.get('tipo') || 'N/A';
+      const metodo = fila.get('MetodoPago') || fila.get('metodopago') || 'N/A';
+      const estado = fila.get('Estado') || fila.get('estado') || 'N/A';
+
+      state.pendingDeletes.set(ctx.from.id, {
+        fila,
+        index: coincidencias[0].index,
+        sheet,
+        desc,
+        monto,
+        moneda,
+        id,
+        fecha,
+        hora,
+        tipo,
+        metodo,
+        estado
+      });
+
+      let msg = `⚠️ *¿ELIMINAR ESTE MOVIMIENTO?*\n\n`;
+      msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+      msg += `📝 ${desc}\n`;
+      msg += `💰 ${formatMonto(monto, moneda)}\n`;
+      msg += `📅 ${fecha} ${hora}\n`;
+      msg += `🏷️ Tipo: ${tipo}\n`;
+      msg += `💳 Método: ${metodo}\n`;
+      msg += `📊 Estado: ${estado}\n`;
+      msg += `🆔 ${id}\n\n`;
+      msg += `⚠️ *¿Confirmas la eliminación?*\n`;
+      msg += `Responde *sí* para confirmar o *no* para cancelar.`;
+
+      return ctx.reply(msg, { parse_mode: 'Markdown' });
+    }
+    return ctx.reply('❌ Error al buscar movimiento.');
+  },
+
+  registrar_movimiento: async (ctx, entities) => {
+    const resultado = await cmd.registrarMovimientoDesdeNLP(ctx.from.id, {
+      tipo: entities.tipo || 'ingreso',
+      descripcion: entities.descripcion || null,
+      monto: entities.monto || null,
+      moneda: entities.moneda || 'Pesos',
+      metodo_pago: entities.metodo_pago || null
+    });
+
+    if (resultado.necesitaInfo) {
+      return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
+    }
+
+    if (resultado.error) {
+      return ctx.reply(resultado.error);
+    }
+
+    if (resultado.success) {
+      return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
+    }
+
+    return ctx.reply('❌ Error al registrar movimiento.');
+  }
+};
+
+async function handleNLPIntent(ctx, nlpResult) {
+  const { intent, entities } = nlpResult;
+
+  const handler = INTENT_HANDLERS[intent];
+  if (!handler) {
+    return false;
+  }
+
+  try {
+    await handler(ctx, entities || {});
+    return true;
+  } catch (error) {
+    console.error(`Error en handler NLP para intent "${intent}":`, error.message);
+    ctx.reply('❌ Ocurrió un error al procesar tu mensaje. Intentá de nuevo o usa /ayuda.');
+    return true;
+  }
+}
+
+module.exports = { handleNLPIntent };

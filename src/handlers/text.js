@@ -8,6 +8,8 @@ const { getSheetCliente, invalidateCache } = require('../services/sheet.service'
 const { generarIDUnico, convertirAPesos } = require('../services/movimiento.service');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const { formatMonto, sanitizarInput } = require('../utils/formatter');
+const geminiService = require('../services/gemini.service');
+const { handleNLPIntent } = require('../handlers/nlp');
 
 const regexMsg = /^(consulta|servicio|gasto)\s+(.+?)\s+(?:\$|U\$|USD)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
@@ -533,11 +535,24 @@ bot.on('text', async (ctx) => {
 
   const match = text.match(regexMsg);
   if (!match) {
+    try {
+      const nlpResult = await geminiService.parseMessage(userId, text);
+      if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
+        const handled = await handleNLPIntent(ctx, nlpResult);
+        if (handled) return;
+      }
+    } catch (nlpError) {
+      console.error('Error NLP fallback:', nlpError.message);
+    }
+
     return ctx.reply(
-      '⚠️ Formato no válido.\n\n' +
-      'Usa: `consulta [paciente] $[monto] [metodo]`\n' +
-      'Ejemplo: `consulta Juan Perez $15000 efectivo`\n\n' +
-      'O: `/ayuda`',
+      '⚠️ No entendí tu mensaje.\n\n' +
+      'Podés escribir en lenguaje natural:\n' +
+      '`cobré 15000 de Juan Perez en efectivo`\n' +
+      '`gasté 5000 en alquiler`\n' +
+      '`cuánto tengo?`\n\n' +
+      'O usa el formato: `consulta [paciente] $[monto] [metodo]`\n\n' +
+      'Usa /ayuda para ver todos los comandos.',
       { parse_mode: 'Markdown' }
     );
   }

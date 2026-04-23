@@ -16,6 +16,8 @@ const METODOS_VALIDOS = ['efectivo', 'transferencia', 'tarjeta'];
 const COMANDOS_INGRESO = ['consulta', 'servicio'];
 const COMANDOS_EGRESO = ['gasto'];
 
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
 const CODIGO_EXPIRACION_HORAS = 24;
 
 if (!BOT_TOKEN || !SPREADSHEET_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
@@ -37,4 +39,6 @@ module.exports = {
   COMANDOS_INGRESO,
   COMANDOS_EGRESO,
   CODIGO_EXPIRACION_HORAS,
+  GEMINI_API_KEY,
+  GEMINI_MODEL,
 };
