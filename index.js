@@ -5,6 +5,7 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const OpenAI = require('openai');
 
 let cotizacionDolar = null;
 let cotizacionFecha = null;
@@ -17,6 +18,10 @@ const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_P
 const COTIZACION_DEFAULT = process.env.COTIZACION_DEFAULT ? parseFloat(process.env.COTIZACION_DEFAULT) : null;
 const ALLOWED_EMAILS = process.env.ALLOWED_EMAILS ? process.env.ALLOWED_EMAILS.split(',').map(e => e.trim().toLowerCase()) : [];
 const MAX_INTENTOS_EMAIL = 3;
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 const CLIENTES_FILE = path.join(__dirname, 'clientes.json');
 
@@ -118,6 +123,7 @@ const pendingDeletes = new Map();
 const pendingEdits = new Map();
 const pendingCotizaciones = new Map();
 const pendingLimpiezas = new Map();
+const pendingAgendaConfirm = new Map();
 const docsCache = new Map();
 
 async function obtenerCotizacionDolar() {
@@ -152,6 +158,160 @@ function sanitizarInput(texto, maxLength = 200) {
 
 function esMonedaValida(moneda) {
   return ['$', 'U$', 'USD'].includes(moneda);
+}
+
+async function parsearConIA(texto) {
+  if (!openai) return null;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Sos un parser de mensajes de texto para un bot de cashflow argentino. Tu UNICA funcion es interpretar mensajes sobre movimientos de dinero y devolver JSON estructurado.
+
+REGLAS:
+- "lucas" = 1000 pesos. "300 lucas" = 300000, "5 lucas" = 5000, "1 lucas" = 1000
+- "palos" = 1000 pesos. Igual que lucas.
+- "guita", "mangos", "pesos" = pesos argentinos
+- "billetes" puede significar pesos o dolares segun el contexto
+- "le entro a [nombre]" = ingreso del nombre mencionado
+- "me pago [nombre]", "cobro de [nombre]" = ingreso
+- "gaste", "pague", "salio", "costo" = egreso
+- Si dice "credito" o "debito" sin mas contexto, asumir "tarjeta"
+- "efectivo", "transferencia", "transferi", "bizum", "mp", "mercadopago", " Mercado Pago" = metodos de pago
+- "U$", "USD", "dolares", "verdes" = moneda dolares
+- "$" o sin simbolo = moneda pesos
+- Si el monto es negativo o dice "gasto"/"egreso", el tipo es "Egreso" y el monto debe ser negativo
+- Si dice "consulta" o "servicio" al inicio, tipo = "Ingreso"
+- Si dice "gasto" al inicio, tipo = "Egreso"
+
+FORMATO DE RESPUESTA (JSON unico, sin texto adicional):
+- Si es un movimiento: {"tipo": "Ingreso"|"Egreso", "descripcion": "string", "monto": number, "moneda": "Pesos"|"Dlares", "metodo": "efectivo"|"transferencia"|"tarjeta"|null}
+- Si NO es un movimiento (saludo, pregunta, etc): {"tipo": "no_movimiento"}
+
+EJEMPLOS:
+"le entro a diego 300 lucas por transferencia" -> {"tipo":"Ingreso","descripcion":"Diego","monto":300000,"moneda":"Pesos","metodo":"transferencia"}
+"gaste 5 palos en insumos efectivo" -> {"tipo":"Egreso","descripcion":"Insumos","monto":-5000,"moneda":"Pesos","metodo":"efectivo"}
+"cobro de maria 1500 USD credito" -> {"tipo":"Ingreso","descripcion":"Maria","monto":1500,"moneda":"Dlares","metodo":"tarjeta"}
+"hola" -> {"tipo":"no_movimiento"}
+"consulta Juan Perez $15000 efectivo" -> {"tipo":"Ingreso","descripcion":"Juan Perez","monto":15000,"moneda":"Pesos","metodo":"efectivo"}`
+        },
+        {
+          role: 'user',
+          content: texto
+        }
+      ],
+      temperature: 0,
+      max_tokens: 200
+    });
+
+    const content = response.choices[0].message.content.trim();
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (parsed.tipo === 'no_movimiento') return { tipo: 'no_movimiento' };
+
+    if (!parsed.tipo || !parsed.descripcion || parsed.monto === undefined) return null;
+
+    if (parsed.moneda === 'Dlares') parsed.moneda = 'Dólares';
+    if (!parsed.moneda) parsed.moneda = 'Pesos';
+    if (!parsed.metodo) parsed.metodo = null;
+
+    if (parsed.tipo === 'Egreso' && parsed.monto > 0) {
+      parsed.monto = -parsed.monto;
+    }
+
+    if (!['Ingreso', 'Egreso'].includes(parsed.tipo)) return null;
+    if (parsed.monto === 0) return null;
+
+    parsed.descripcion = parsed.descripcion.charAt(0).toUpperCase() + parsed.descripcion.slice(1);
+
+    return parsed;
+  } catch (error) {
+    console.error('Error en parsearConIA:', error.message);
+    return null;
+  }
+}
+
+async function procesarFotoAgenda(photoBuffer) {
+  if (!openai) return null;
+
+  try {
+    const base64Image = photoBuffer.toString('base64');
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Sos un parser de imagenes de agendas/turneros para un bot argentino. Tu funcion es leer fotos de agendas y extraer todos los turnos/citas del dia.
+
+REGLAS:
+- Extraer TODOS los turnos visibles en la imagen
+- Si no se puede leer parte de un dato, usar null
+- La fecha si no esta explicita, asumir la fecha de hoy
+- Los nombres de clientes deben estar capitalizados (Primera letra mayuscula)
+- Los servicios deben estar capitalizados
+
+FORMATO DE RESPUESTA (JSON unico, sin texto adicional):
+{"turnos": [{"hora": "09:00", "cliente": "Maria Lopez", "servicio": "Corte", "estado": "Pendiente"}]}
+
+Si no se puede leer ningun turno: {"turnos": []}
+Si la imagen no es una agenda: {"error": "no_es_agenda"}`
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/jpeg;base64,${base64Image}`
+              }
+            }
+          ]
+        }
+      ],
+      temperature: 0,
+      max_tokens: 1000
+    });
+
+    const content = response.choices[0].message.content.trim();
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    if (parsed.error === 'no_es_agenda') {
+      return { error: 'no_es_agenda' };
+    }
+
+    if (!parsed.turnos || !Array.isArray(parsed.turnos)) return null;
+
+    return { turnos: parsed.turnos };
+  } catch (error) {
+    console.error('Error en procesarFotoAgenda:', error.message);
+    return null;
+  }
+}
+
+async function crearTabAgendaSiNoExiste(docCliente) {
+  try {
+    let agendaSheet = docCliente.sheetsByTitle['Agenda'];
+    if (!agendaSheet) {
+      agendaSheet = await docCliente.addSheet({
+        title: 'Agenda',
+        headerValues: ['Fecha', 'Hora', 'Cliente', 'Servicio', 'Estado']
+      });
+      console.log('Tab Agenda creado');
+    }
+    return agendaSheet;
+  } catch (error) {
+    console.error('Error al crear tab Agenda:', error.message);
+    return null;
+  }
 }
 
 bot.use((ctx, next) => {
@@ -340,10 +500,16 @@ bot.command('ayuda', (ctx) => {
     '`consulta [paciente] $[monto] [metodo]`\n' +
     '`servicio [tratamiento] $[monto] [metodo]`\n' +
     '`gasto [descripcion] $-[monto]`\n\n' +
+    '🤖 *También podés escribir en lenguaje natural:*\n' +
+    '"le entro a Diego 300 lucas transferencia"\n' +
+    '"gaste 5 palos en insumos efectivo"\n' +
+    '"cobro de Maria 1500 USD credito"\n\n' +
+    '📸 *Foto de agenda:*\n' +
+    'Enviale una foto de tu agenda y registro los turnos automaticamente!\n\n' +
     '💵 *Monedas:*\n' +
-    '$ - Pesos | U$ / USD - Dólares\n\n' +
-    '💳 *Método de pago:*\n' +
-    'efectivo / transferencia / tarjeta\n\n' +
+    '$ - Pesos | U$ / USD - Dolares | lucas/palos = miles\n\n' +
+    '💳 *Metodos de pago:*\n' +
+    'efectivo / transferencia / tarjeta / credito / debito\n\n' +
     '📊 *Reportes:*\n' +
     '`/balance` - Resumen completo\n' +
     '`/hoy` - Movimientos de hoy\n' +
@@ -353,16 +519,16 @@ bot.command('ayuda', (ctx) => {
     '`/ingresos` - Solo ingresos\n' +
     '`/egresos` - Solo gastos\n\n' +
     '✅ *Cobrar:*\n' +
-    '`/cobrar ultimo` - Cobra el último pendiente\n' +
+    '`/cobrar ultimo` - Cobra el ultimo pendiente\n' +
     '`/cobrar [nombre]` - Cobra uno que coincida\n\n' +
     '✏️ *Editar:*\n' +
-    '`/editar [nombre]` - Editar descripción y monto\n\n' +
+    '`/editar [nombre]` - Editar descripcion y monto\n\n' +
     '🗑️ *Eliminar:*\n' +
     '`/eliminar [nombre]` - Eliminar movimiento\n' +
     '`/listar` - Ver todos los movimientos\n\n' +
-    '💵 *Dólar:*\n' +
-    '`/dolar` - Ver cotización actual\n' +
-    '`/actualizardolar` - Actualizar cotización',
+    '💵 *Dolar:*\n' +
+    '`/dolar` - Ver cotizacion actual\n' +
+    '`/actualizardolar` - Actualizar cotizacion',
     { parse_mode: 'Markdown' }
   );
 });
@@ -1239,6 +1405,7 @@ bot.command('cancelar', (ctx) => {
   pendingCotizaciones.delete(userId);
   pendingIntentosEmail.delete(userId);
   pendingReinicios.delete(userId);
+  pendingAgendaConfirm.delete(userId);
   ctx.reply('❌ Proceso cancelado.');
 });
 
@@ -1818,6 +1985,72 @@ bot.on('text', async (ctx) => {
     }
   }
 
+  if (pendingAgendaConfirm.has(ctx.from.id)) {
+    const respuesta = text.toLowerCase().trim();
+    if (respuesta === 'sí' || respuesta === 'si' || respuesta === 's' || respuesta === 'yes' || respuesta === 'y') {
+      const agendaData = pendingAgendaConfirm.get(ctx.from.id);
+      try {
+        const userId = ctx.from.id;
+        const sheetId = getSheetId(userId);
+        if (!sheetId) {
+          pendingAgendaConfirm.delete(ctx.from.id);
+          return ctx.reply('❌ No tienes un Sheet configurado.');
+        }
+
+        const docCliente = await getDocCliente(userId, true);
+        if (!docCliente) {
+          pendingAgendaConfirm.delete(ctx.from.id);
+          return ctx.reply('❌ Error al acceder a tu Sheet.');
+        }
+
+        const agendaSheet = await crearTabAgendaSiNoExiste(docCliente);
+        if (!agendaSheet) {
+          pendingAgendaConfirm.delete(ctx.from.id);
+          return ctx.reply('❌ Error al crear/acceder al tab Agenda.');
+        }
+
+        const now = new Date();
+        const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+
+        let guardados = 0;
+        for (const turno of agendaData.turnos) {
+          try {
+            await agendaSheet.addRow({
+              'Fecha': fechaStr,
+              'Hora': turno.hora || '',
+              'Cliente': turno.cliente || '',
+              'Servicio': turno.servicio || '',
+              'Estado': turno.estado || 'Pendiente'
+            }, { insert: true });
+            guardados++;
+          } catch (rowError) {
+            console.error('Error al guardar turno:', rowError.message);
+          }
+        }
+
+        pendingAgendaConfirm.delete(ctx.from.id);
+        invalidateCache(ctx.from.id);
+
+        ctx.reply(
+          `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
+          `📅 Fecha: ${fechaStr}\n` +
+          `📊 Ver en tu Google Sheet (tab "Agenda")`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (error) {
+        console.error('Error al guardar agenda:', error.message);
+        pendingAgendaConfirm.delete(ctx.from.id);
+        ctx.reply('❌ Error al guardar los turnos en la agenda.');
+      }
+    } else if (respuesta === 'no' || respuesta === 'n') {
+      pendingAgendaConfirm.delete(ctx.from.id);
+      ctx.reply('❌ Turnos descartados.');
+    } else {
+      ctx.reply('⚠️ Responde *sí* o *no* para confirmar los turnos.');
+    }
+    return;
+  }
+
   if (pendingPayments.has(ctx.from.id)) {
     const metodo = text.toLowerCase().trim();
     if (METODOS_VALIDOS.includes(metodo)) {
@@ -1887,10 +2120,126 @@ bot.on('text', async (ctx) => {
   }
 
   const match = text.match(regexMsg);
+
+  let iaResult = null;
+  if (!match && openai) {
+    try {
+      await ctx.reply('🤔 Entendiendo...');
+      iaResult = await parsearConIA(text);
+      if (iaResult && iaResult.tipo === 'no_movimiento') {
+        return ctx.reply(
+          '⚠️ No entendí eso como un movimiento.\n\n' +
+          'Probá con:\n' +
+          '• "le entro a Diego 300 lucas transferencia"\n' +
+          '• "gaste 5 palos en insumos efectivo"\n' +
+          '• "cobro de Maria 1500 USD credito"\n\n' +
+          'O usa el formato: `consulta [nombre] $[monto] [metodo]`\n' +
+          'Ejemplo: `consulta Juan $15000 efectivo`',
+          { parse_mode: 'Markdown' }
+        );
+      }
+    } catch (e) {
+      console.error('Error IA fallback:', e.message);
+      iaResult = null;
+    }
+  }
+
+  if (iaResult && iaResult.tipo !== 'no_movimiento') {
+    const { tipo, descripcion, monto, moneda, metodo: metodoIA } = iaResult;
+
+    if (moneda === 'Dólares') {
+      pendingCotizaciones.set(ctx.from.id, {
+        comando: tipo === 'Ingreso' ? 'consulta' : 'gasto',
+        descripcion,
+        monto,
+        tipo,
+        moneda,
+        metodoIndicado: metodoIA
+      });
+
+      return ctx.reply(
+        `💵 *Movimiento en dólares*\n\n` +
+        `📝 ${tipo}: ${descripcion}\n` +
+        `💰 Monto: U$${Math.abs(monto).toLocaleString()}\n\n` +
+        `Ingresá la cotización del dólar (ej: 1250):`
+      );
+    }
+
+    if (!metodoIA) {
+      pendingPayments.set(ctx.from.id, {
+        descripcion,
+        monto,
+        tipo,
+        moneda
+      });
+
+      return ctx.reply(
+        `💳 *¿Cómo pagaste?*\n\n` +
+        `📝 ${tipo}: ${descripcion}\n` +
+        `💰 Monto: ${formatMonto(monto, moneda)}\n\n` +
+        `Responde: efectivo / transferencia / tarjeta`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    try {
+      await ctx.reply('⏳ Registrando...');
+
+      const sheet = await getSheetCliente(ctx.from.id);
+      if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
+
+      const now = new Date();
+      const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+      const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+      if (!cotizacionDolar) await obtenerCotizacionDolar();
+      const montoPesos = convertirAPesos(monto, moneda);
+
+      const cliente = obtenerClientePorUserId(ctx.from.id);
+      const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || ctx.from.id) : ctx.from.id;
+
+      const rowData = {
+        'Fecha': fechaStr,
+        'Hora': horaStr,
+        'Descripcion': descripcion,
+        'Monto': monto,
+        'Estado': 'Cobrado',
+        'Tipo': tipo,
+        'Moneda': moneda,
+        'MetodoPago': metodoIA,
+        'ID_Unico': generarIDUnico(),
+        'MontoPesos': montoPesos,
+        'ID_Origen': idOrigen
+      };
+
+      await sheet.addRow(rowData, { insert: true });
+
+      const tipoTexto = tipo === 'Ingreso' ? 'Ingreso' : 'Gasto';
+      const tipoEmoji = tipo === 'Ingreso' ? '💰' : '💸';
+
+      ctx.reply(
+        `${tipoEmoji} *¡${tipoTexto} registrado!*\n\n` +
+        `📝 Descripción: ${descripcion}\n` +
+        `💰 Monto: ${formatMonto(monto, moneda)}\n` +
+        `💳 Método: ${metodoIA}\n` +
+        `📅 Fecha: ${fechaStr}`,
+        { parse_mode: 'Markdown' }
+      );
+
+    } catch (error) {
+      console.error('Error al guardar (IA):', error.message);
+      ctx.reply('❌ Error al guardar en Google Sheets.');
+    }
+    return;
+  }
+
   if (!match) {
     return ctx.reply(
       '⚠️ Formato no válido.\n\n' +
-      'Usa: `consulta [paciente] $[monto] [metodo]`\n' +
+      'Podés escribir de forma natural:\n' +
+      '• "le entro a Diego 300 lucas transferencia"\n' +
+      '• "gaste 5 palos en insumos efectivo"\n\n' +
+      'O usar el formato: `consulta [paciente] $[monto] [metodo]`\n' +
       'Ejemplo: `consulta Juan Perez $15000 efectivo`\n\n' +
       'O: `/ayuda`',
       { parse_mode: 'Markdown' }
@@ -2073,6 +2422,81 @@ bot.command('help', async (ctx) => {
 
 _Usa /agregar para registrar un movimiento_`;
   ctx.reply(helpMsg, { parse_mode: 'Markdown' });
+});
+
+bot.on('photo', async (ctx) => {
+  const userId = ctx.from.id;
+
+  if (!openai) {
+    return ctx.reply('⚠️ La función de lectura de imágenes no está configurada. Agregá OPENAI_API_KEY al archivo .env');
+  }
+
+  const cliente = obtenerClientePorUserId(userId);
+  if (!cliente && !esAdminOriginal(userId)) {
+    return ctx.reply('⚠️ No tienes una cuenta registrada.\n\nUsa /start para registrarte.');
+  }
+
+  if (pendingAgendaConfirm.has(userId) || pendingRegistros.has(userId) ||
+      pendingDeletes.has(userId) || pendingEdits.has(userId) ||
+      pendingCotizaciones.has(userId) || pendingPayments.has(userId) ||
+      pendingLimpiezas.has(userId) || pendingReinicios.has(userId)) {
+    return ctx.reply('⚠️ Tenés un proceso pendiente. Usá /cancelar primero.');
+  }
+
+  try {
+    await ctx.reply('📸 Procesando agenda...');
+
+    const photos = ctx.message.photo;
+    const photo = photos[photos.length - 1];
+    const fileId = photo.file_id;
+
+    const fileLink = await ctx.telegram.getFileLink(fileId);
+    const fileUrl = fileLink.href;
+
+    const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+    const photoBuffer = Buffer.from(response.data, 'binary');
+
+    const resultado = await procesarFotoAgenda(photoBuffer);
+
+    if (!resultado) {
+      return ctx.reply('❌ No pude procesar la imagen. Intenta con otra foto más clara.');
+    }
+
+    if (resultado.error === 'no_es_agenda') {
+      return ctx.reply(
+        '⚠️ La imagen no parece ser una agenda o turnero.\n\n' +
+        'Enviale una foto de una agenda con turnos para que los registre.'
+      );
+    }
+
+    if (!resultado.turnos || resultado.turnos.length === 0) {
+      return ctx.reply('📭 No encontré turnos en la imagen. Probá con una foto más clara.');
+    }
+
+    let msg = `📅 *Turnos encontrados:*\n\n`;
+    resultado.turnos.forEach((turno, i) => {
+      msg += `${i + 1}. `;
+      if (turno.hora) msg += `⏰ ${turno.hora} - `;
+      msg += `👤 ${turno.cliente || 'Sin nombre'}`;
+      if (turno.servicio) msg += ` (${turno.servicio})`;
+      msg += '\n';
+    });
+
+    msg += `\n━━━━━━━━━━━━━━━\n`;
+    msg += `📊 Total: ${resultado.turnos.length} turno${resultado.turnos.length !== 1 ? 's' : ''}\n\n`;
+    msg += `¿Querés guardar estos turnos en tu agenda?\n`;
+    msg += `Responde *sí* o *no*`;
+
+    pendingAgendaConfirm.set(ctx.from.id, {
+      turnos: resultado.turnos
+    });
+
+    ctx.reply(msg, { parse_mode: 'Markdown' });
+
+  } catch (error) {
+    console.error('Error al procesar foto:', error.message);
+    ctx.reply('❌ Error al procesar la imagen. Intenta de nuevo.');
+  }
 });
 
 bot.launch().then(async () => {
