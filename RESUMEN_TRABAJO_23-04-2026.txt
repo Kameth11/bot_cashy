@@ -1,0 +1,175 @@
+================================================================================
+                    CASHY BOT - RESUMEN DE TRABAJO
+                    Fecha: 23/04/2026
+================================================================================
+
+LO QUE YA FUNCIONABA (MVP original):
+------------------------------------
+- Bot de Telegram con Telegraf (Node.js)
+- Registro de movimientos con regex: "consulta Juan $15000 efectivo"
+- CRUD completo: agregar, editar, eliminar, limpiar movimientos
+- Reportes: /balance, /hoy, /semana, /mes, /ingresos, /egresos, /pendientes
+- Conversion USD/ARS con Bluelytics
+- Multi-usuario con Google Sheets separados
+- Auth por email + codigo de invitacion
+- Confirmaciones (eliminar, editar, cotizacion USD)
+
+LO QUE IMPLEMENTAMOS HOY:
+--------------------------
+1. INTELLIGENCIA ARTIFICIAL - LENGUAJE NATURAL (NLP)
+   - Archivo: index.js (funcion parsearConIA)
+   - Modelo: GPT-4o-mini de OpenAI
+   - Entiende jerga argentina:
+     * "lucas" = 1000 pesos (300 lucas = 300.000)
+     * "palos" = 1000 pesos
+     * "guita", "mangos" = pesos
+     * "le entro a Diego" = ingreso de Diego
+     * "credito/debito" = tarjeta
+     * "U$", "USD", "verdes" = dolares
+   - Flujo: Si el regex no matchea -> intenta con IA -> si no es movimiento, muestra ayuda
+   - El regex original sigue andando como fallback
+
+2. LECTURA DE FOTOS DE AGENDA (Vision API)
+   - Archivo: index.js (funcion procesarFotoAgenda)
+   - Modelo: GPT-4o-mini Vision
+   - Flujo: mandas foto -> bot lee los turnos -> confirma -> guarda en tab "Agenda"
+   - Crea automaticamente el tab "Agenda" en el Google Sheet
+   - Columnas del tab Agenda: Fecha, Hora, Cliente, Servicio, Estado
+
+3. CREACION AUTOMATICA DE TAB AGENDA
+   - Funcion: crearTabAgendaSiNoExiste()
+   - Si el tab "Agenda" no existe, lo crea con los headers
+   - Se ejecuta automaticamente cuando confirmas turnos de una foto
+
+4. OTROS CAMBIOS
+   - package.json creado con dependencias (openai, telegraf, google-spreadsheet, etc.)
+   - .env.example actualizado con OPENAI_API_KEY
+   - Comando /ayuda actualizado con las nuevas features
+   - Comando /cancelar ahora limpia pendingAgendaConfirm tambien
+
+ARCHIVOS MODIFICADOS:
+---------------------
+- index.js          -> Agregado NLP, Vision, agenda handler, ayuda actualizado
+- package.json       -> CREADO - dependencias del proyecto
+- .env.example       -> Agregado OPENAI_API_KEY
+
+================================================================================
+                    PARA ARRANCAR MAÑANA
+================================================================================
+
+PASO 1: CONFIGURAR OPENAI API KEY
+----------------------------------
+1. Ir a https://platform.openai.com/api-keys
+2. Crear una API key (o usar una existente)
+3. Agregar al archivo .env:
+   OPENAI_API_KEY=sk-tu_key_aqui
+
+PASO 2: PROBAR LENGUAJE NATURAL
+---------------------------------
+Mensajes de prueba para mandarle al bot:
+- "le entro a diego 300 lucas por transferencia"
+  -> Deberia crear: Ingreso, Diego, $300.000, transferencia
+- "gaste 5 palos en insumos efectivo"
+  -> Deberia crear: Egreso, Insumos, -$5.000, efectivo
+- "cobro de maria 1500 USD credito"
+  -> Deberia pedir cotizacion, luego crear: Ingreso, Maria, U$1.500, tarjeta
+- "hola"
+  -> Deberia responder: "No entendi eso como un movimiento"
+
+PASO 3: PROBAR FOTO DE AGENDA
+------------------------------
+1. Mandarle una foto de una agenda/turnero al bot
+2. Deberia reconocer los turnos y mostrarlos
+3. Confirmar con "si" para guardar en tab Agenda
+
+PASO 4: VERIFICAR TAB AGENDA EN SHEET
+--------------------------------------
+1. Ir al Google Sheet
+2. Verificar que se creo el tab "Agenda"
+3. Verificar las columnas: Fecha, Hora, Cliente, Servicio, Estado
+
+================================================================================
+                    COSAS QUE FALTAN / MEJORAR
+================================================================================
+
+PRIORIDAD ALTA:
+1. PROBAR TODO - Esto esta recien implementado, NO fue testeado todavia
+2. Verificar que el .env tenga OPENAI_API_KEY configurado
+3. Probar que npm start levante sin errores
+
+PRIORIDAD MEDIA:
+4. Manejar errores de la API de OpenAI (timeout, rate limits, etc.)
+5. Agregar log de costos de OpenAI (cuantos tokens se usan por mensaje)
+6. El tab "Agenda" todavia no tiene comandos para consultar los turnos
+   -> Agregar /turnos o /agenda para ver los turnos del dia
+7. Validar que la foto sea legible (feedback al usuario si sale borrosa)
+
+PRIORIDAD BAJA:
+8. Agregar comando /eliminarturno para borrar un turno de la agenda
+9. Agregar notificacion de turnos del dia (cron job que mande recordatorios)
+10. Mejorar el prompt de Vision para distintos formatos de agenda
+11. Agregar soporte para multiples fotos (si mandas varias paginas)
+12. Considerar migrar el index.js monolitico a la estructura src/ modular
+
+================================================================================
+                    ESTRUCTURA ACTUAL DEL PROYECTO
+================================================================================
+
+bot_cashy/
+  index.js              <- Archivo principal (TODO aca)
+  package.json          <- Dependencias (NUEVO)
+  .env                   <- Variables de entorno (NO commitear)
+  .env.example          <- Template de .env
+  .gitignore
+  clientes.json          <- Datos de usuarios (NO commitear)
+  GUIA_SHEET_CLIENTE.txt <- Guia para clientes
+  README.md
+  node_modules/          <- Instalado con npm install
+  src/                   <- Version modular (no se uso, se uso index.js)
+
+DEPENDENCIAS:
+  - telegraf        (Telegram bot)
+  - google-spreadsheet (Google Sheets)
+  - google-auth-library (Auth Google)
+  - openai          (IA - NLP + Vision) (NUEVA)
+  - axios           (HTTP requests)
+  - dotenv          (variables de entorno)
+
+================================================================================
+                    FLUJOS DE DATOS
+================================================================================
+
+FLUJO 1: TEXTO (Lenguaje natural)
+  Usuario escribe texto
+    -> No es comando "/" ?
+      -> Hay estado pendiente? (editar, eliminar, etc.) -> manejar estado
+      -> No hay estado pendiente:
+        -> Intentar regex (formato: "consulta Juan $15000 efectivo")
+          -> Match? -> Registrar movimiento
+          -> No match?
+            -> Intentar IA (parsearConIA)
+              -> Es movimiento? -> Registrar con datos de la IA
+              -> No es movimiento? -> Mostrar ayuda
+
+FLUJO 2: FOTO (Agenda)
+  Usuario manda foto
+    -> Bot descarga la imagen de Telegram
+    -> Manda a OpenAI Vision API
+    -> Extrae turnos (hora, cliente, servicio)
+    -> Muestra resumen al usuario
+    -> Usuario confirma ("si")
+      -> Crea tab "Agenda" si no existe
+      -> Guarda turnos en Google Sheets
+
+FLUJO 3: REGEX (Original - sigue andando)
+  "consulta Juan Perez $15000 efectivo"
+    -> Regex match -> Registrar directamente (sin IA)
+
+COSTO ESTIMADO DE OPENAI:
+  - GPT-4o-mini texto: ~$0.15 / 1M input tokens, ~$0.60 / 1M output
+  - GPT-4o-mini vision: ~$0.15 / 1M input tokens
+  - Cada mensaje de texto: ~$0.0001 (0.01 centavos)
+  - Cada foto: ~$0.001 (0.1 centavos)
+  - Mensualmente con 500 msgs + 50 fotos: menos de $1 USD/mes
+
+================================================================================
