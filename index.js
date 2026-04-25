@@ -1853,6 +1853,8 @@ bot.on('text', async (ctx) => {
       const cliente = obtenerClientePorUserId(userId);
       const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || userId) : userId;
 
+      const idUnico = generarIDUnico();
+
       const rowData = {
         'Fecha': fechaStr,
         'Hora': horaStr,
@@ -1862,7 +1864,7 @@ bot.on('text', async (ctx) => {
         'Tipo': tipo,
         'Moneda': moneda,
         'MetodoPago': metodoIndicado,
-        'ID_Unico': generarIDUnico(),
+        'ID_Unico': idUnico,
         'MontoPesos': montoPesos,
         'ID_Origen': idOrigen
       };
@@ -1878,7 +1880,8 @@ bot.on('text', async (ctx) => {
         `💰 Monto: U$${Math.abs(monto).toLocaleString()} (cotización: $${cotizacion.toLocaleString()})\n` +
         `💵 En pesos: $${montoPesos.toLocaleString()}\n` +
         `💳 Método: ${metodoIndicado}\n` +
-        `📅 Fecha: ${fechaStr}`,
+        `📅 Fecha: ${fechaStr}\n` +
+        `🆔 ID: \`${idUnico}\``,
         { parse_mode: 'Markdown' }
       );
     } else {
@@ -2074,6 +2077,8 @@ bot.on('text', async (ctx) => {
         const cliente = obtenerClientePorUserId(userId);
         const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || userId) : userId;
 
+        const idUnico = generarIDUnico();
+
         const rowData = {
           'Fecha': fechaStr,
           'Hora': horaStr,
@@ -2083,7 +2088,7 @@ bot.on('text', async (ctx) => {
           'Tipo': pendingData.tipo,
           'Moneda': pendingData.moneda,
           'MetodoPago': metodo,
-          'ID_Unico': generarIDUnico(),
+          'ID_Unico': idUnico,
           'MontoPesos': montoPesos,
           'ID_Origen': idOrigen
         };
@@ -2102,7 +2107,8 @@ bot.on('text', async (ctx) => {
           `📝 Descripción: ${pendingData.descripcion}\n` +
           `💰 Monto: ${mensajeMonto}\n` +
           `💳 Método: ${metodo}\n` +
-          `📅 Fecha: ${fechaStr}`,
+          `📅 Fecha: ${fechaStr}\n` +
+          `🆔 ID: \`${idUnico}\``,
           { parse_mode: 'Markdown' }
         );
 
@@ -2198,6 +2204,8 @@ bot.on('text', async (ctx) => {
       const cliente = obtenerClientePorUserId(ctx.from.id);
       const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || ctx.from.id) : ctx.from.id;
 
+      const idUnico = generarIDUnico();
+
       const rowData = {
         'Fecha': fechaStr,
         'Hora': horaStr,
@@ -2207,7 +2215,7 @@ bot.on('text', async (ctx) => {
         'Tipo': tipo,
         'Moneda': moneda,
         'MetodoPago': metodoIA,
-        'ID_Unico': generarIDUnico(),
+        'ID_Unico': idUnico,
         'MontoPesos': montoPesos,
         'ID_Origen': idOrigen
       };
@@ -2222,7 +2230,8 @@ bot.on('text', async (ctx) => {
         `📝 Descripción: ${descripcion}\n` +
         `💰 Monto: ${formatMonto(monto, moneda)}\n` +
         `💳 Método: ${metodoIA}\n` +
-        `📅 Fecha: ${fechaStr}`,
+        `📅 Fecha: ${fechaStr}\n` +
+        `🆔 ID: \`${idUnico}\``,
         { parse_mode: 'Markdown' }
       );
 
@@ -2320,6 +2329,8 @@ bot.on('text', async (ctx) => {
     const cliente = obtenerClientePorUserId(ctx.from.id);
     const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || ctx.from.id) : ctx.from.id;
 
+    const idUnico = generarIDUnico();
+
     const rowData = {
       'Fecha': fechaStr,
       'Hora': horaStr,
@@ -2329,7 +2340,7 @@ bot.on('text', async (ctx) => {
       'Tipo': tipo,
       'Moneda': moneda,
       'MetodoPago': metodoIndicado,
-      'ID_Unico': generarIDUnico(),
+      'ID_Unico': idUnico,
       'MontoPesos': montoPesos,
       'ID_Origen': idOrigen
     };
@@ -2344,7 +2355,8 @@ bot.on('text', async (ctx) => {
       `📝 Descripción: ${descripcion}\n` +
       `💰 Monto: ${formatMonto(monto, moneda)}\n` +
       `💳 Método: ${metodoIndicado}\n` +
-      `📅 Fecha: ${fechaStr}`,
+      `📅 Fecha: ${fechaStr}\n` +
+      `🆔 ID: \`${idUnico}\``,
       { parse_mode: 'Markdown' }
     );
 

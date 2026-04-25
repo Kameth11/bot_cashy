@@ -1,6 +1,7 @@
 // Entry point - loads all modules and launches the bot
 const { bot } = require('./lib/telegraf');
 const { obtenerCotizacionDolar } = require('./services/cotizacion.service');
+const { initModel } = require('./services/gemini.service');
 const state = require('./state');
 
 // Load middleware (must be first, before commands)
@@ -31,13 +32,18 @@ require('./handlers/commands/unir');
 require('./handlers/commands/misusuarios');
 require('./handlers/commands/reiniciar');
 require('./handlers/commands/regenerar_ids');
+require('./handlers/commands/palabras');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');
 
+// Load callback action handlers (for inline buttons)
+require('./handlers/actions');
+
 // Launch bot
 bot.launch().then(async () => {
   console.log('Bot iniciado correctamente');
+  initModel();
   await obtenerCotizacionDolar();
   console.log(`Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
 }).catch(err => {
@@ -46,5 +52,13 @@ bot.launch().then(async () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
 
 module.exports = { bot };

@@ -18,6 +18,7 @@ const pendingEdits = new Map();
 const pendingCotizaciones = new Map();
 const pendingLimpiezas = new Map();
 const pendingReinicios = new Map();
+const pendingDescripcion = new Map();
 const docsCache = new Map();
 
 module.exports = {
@@ -34,5 +35,6 @@ module.exports = {
   pendingCotizaciones,
   pendingLimpiezas,
   pendingReinicios,
+  pendingDescripcion,
   docsCache,
 };

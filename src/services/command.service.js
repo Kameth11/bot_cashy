@@ -1,4 +1,6 @@
 const { obtenerDatosSheet, getSheetCliente, invalidateCache } = require('./sheet.service');
+const db = require('./db.service');
+
 const { esHoy, esEstaSemana, esEsteMes, normalizarFecha } = require('../utils/date');
 const { formatMonto, formatFecha } = require('../utils/formatter');
 const { obtenerCotizacionDolar } = require('./cotizacion.service');
@@ -267,9 +269,7 @@ async function ejecutarActualizarDolar() {
 }
 
 async function ejecutarCobrar(userId, nombre) {
-  const sheet = await getSheetCliente(userId);
-  if (!sheet) return '❌ Error: No tienes un sheet configurado.';
-  const filas = await sheet.getRows();
+  const filas = await db.getRows(userId);
 
   const pendientes = filas.filter(f => (f.get('Estado') || f.get('estado')) === 'Pendiente');
 
@@ -311,10 +311,7 @@ async function ejecutarEditar(userId, nombre) {
     return '📝 *Editar movimiento*\n\nUso: /editar [ID o nombre]\n\nPodrás modificar:\n• Descripción\n• Monto';
   }
 
-  const sheet = await getSheetCliente(userId);
-  if (!sheet) return null;
-
-  const filas = await sheet.getRows();
+  const filas = await db.getRows(userId);
   const textoLower = nombre.toLowerCase();
 
   const coincidencias = [];
@@ -348,9 +345,7 @@ async function ejecutarEliminar(userId, nombre) {
     return '⚠️ Uso: /eliminar [ID o nombre]\n\nEjemplo: /eliminar consulta Juan';
   }
 
-  const sheet = await getSheetCliente(userId);
-  if (!sheet) return '❌ Error: No tienes un sheet configurado.';
-  const filas = await sheet.getRows();
+  const filas = await db.getRows(userId);
 
   const textoLower = nombre.toLowerCase();
   const coincidencias = [];
@@ -395,14 +390,11 @@ async function ejecutarEliminar(userId, nombre) {
     return msg;
   }
 
-  return { fila: coincidencias[0].fila, index: coincidencias[0].index, sheet, coincidencias };
+  return { fila: coincidencias[0].fila, index: coincidencias[0].index, coincidencias };
 }
 
 async function ejecutarListar(userId) {
-  const sheet = await getSheetCliente(userId);
-  if (!sheet) return '❌ Error: No tienes un sheet configurado.';
-
-  const filas = await sheet.getRows();
+  const filas = await db.getRows(userId);
 
   if (filas.length === 0) {
     return '📭 No hay movimientos en el sheet.';
@@ -435,6 +427,12 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
   }
 
   if (!descripcion) {
+    state.pendingDescripcion.set(userId, {
+      tipo: tipo || 'ingreso',
+      monto: parseFloat(monto),
+      moneda: moneda || 'Pesos',
+      metodo_pago: metodo_pago || null
+    });
     return { necesitaInfo: true, campo: 'descripcion', mensaje: '📝 ¿De quién o qué concepto es el movimiento?' };
   }
 
@@ -448,7 +446,7 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     tipoFinal = 'Ingreso';
   }
 
-  const monedaFinal = moneda === 'Dólares' ? 'Dólares' : 'Pesos';
+  const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares' : 'Pesos';
 
   if (monedaFinal === 'Dólares') {
     state.pendingCotizaciones.set(userId, {
@@ -483,9 +481,6 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     };
   }
 
-  const sheet = await getSheetCliente(userId);
-  if (!sheet) return { error: '❌ Error: No tienes un sheet configurado.' };
-
   const now = new Date();
   const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
   const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -496,6 +491,8 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
   const cliente = obtenerClientePorUserId(userId);
   const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || userId) : userId;
 
+  const idUnico = generarIDUnico();
+
   const rowData = {
     'Fecha': fechaStr,
     'Hora': horaStr,
@@ -505,12 +502,12 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     'Tipo': tipoFinal,
     'Moneda': monedaFinal,
     'MetodoPago': metodo_pago,
-    'ID_Unico': generarIDUnico(),
+    'ID_Unico': idUnico,
     'MontoPesos': montoPesos,
     'ID_Origen': idOrigen
   };
 
-  await sheet.addRow(rowData, { insert: true });
+  await db.addRow(userId, rowData);
 
   const tipoTexto = tipoFinal === 'Ingreso' ? 'Ingreso' : 'Gasto';
   const tipoEmoji = tipoFinal === 'Ingreso' ? '💰' : '💸';
@@ -522,7 +519,8 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       `📝 Descripción: ${descripcion}\n` +
       `💰 Monto: ${formatMonto(montoFinal, monedaFinal)}\n` +
       `💳 Método: ${metodo_pago}\n` +
-      `📅 Fecha: ${fechaStr}`
+      `📅 Fecha: ${fechaStr}\n` +
+      `🆔 ID: \`${idUnico}\``
     )
   };
 }

@@ -4,58 +4,50 @@ const cmd = require('../services/command.service');
 const state = require('../state');
 const { getSheetCliente } = require('../services/sheet.service');
 const { formatMonto } = require('../utils/formatter');
+const { confirmButtons } = require('./actions');
 
 const INTENT_HANDLERS = {
   ver_balance: async (ctx, entities) => {
-    await ctx.reply('⏳ Calculando...');
     const msg = await cmd.ejecutarBalance(ctx.from.id);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   ver_hoy: async (ctx, entities) => {
-    await ctx.reply('⏳ Cargando...');
     const msg = await cmd.ejecutarHoy(ctx.from.id);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   ver_semana: async (ctx, entities) => {
-    await ctx.reply('⏳ Cargando...');
     const msg = await cmd.ejecutarSemana(ctx.from.id);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   ver_mes: async (ctx, entities) => {
-    await ctx.reply('⏳ Cargando...');
     const msg = await cmd.ejecutarMes(ctx.from.id);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   ver_ingresos: async (ctx, entities) => {
-    await ctx.reply('⏳ Cargando...');
     const msg = await cmd.ejecutarIngresos(ctx.from.id);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   ver_egresos: async (ctx, entities) => {
-    await ctx.reply('⏳ Cargando...');
     const msg = await cmd.ejecutarEgresos(ctx.from.id);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   ver_pendientes: async (ctx, entities) => {
-    await ctx.reply('⏳ Cargando...');
     const msg = await cmd.ejecutarPendientes(ctx.from.id);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   ver_dolar: async (ctx, entities) => {
-    await ctx.reply('⏳ Obteniendo cotización...');
     const msg = await cmd.ejecutarDolar();
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   actualizardolar: async (ctx, entities) => {
-    await ctx.reply('⏳ Actualizando cotización...');
     const msg = await cmd.ejecutarActualizarDolar();
     return ctx.reply(msg);
   },
@@ -96,13 +88,11 @@ const INTENT_HANDLERS = {
   },
 
   listar_movimientos: async (ctx, entities) => {
-    await ctx.reply('⏳ Cargando movimientos...');
     const msg = await cmd.ejecutarListar(ctx.from.id);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
   },
 
   cobrar_movimiento: async (ctx, entities) => {
-    await ctx.reply('⏳ Buscando...');
     const nombre = entities.nombre || null;
     const msg = await cmd.ejecutarCobrar(ctx.from.id, nombre);
     return ctx.reply(msg, { parse_mode: 'Markdown' });
@@ -188,11 +178,12 @@ const INTENT_HANDLERS = {
       msg += `🏷️ Tipo: ${tipo}\n`;
       msg += `💳 Método: ${metodo}\n`;
       msg += `📊 Estado: ${estado}\n`;
-      msg += `🆔 ${id}\n\n`;
-      msg += `⚠️ *¿Confirmas la eliminación?*\n`;
-      msg += `Responde *sí* para confirmar o *no* para cancelar.`;
+      msg += `🆔 ${id}`;
 
-      return ctx.reply(msg, { parse_mode: 'Markdown' });
+      return ctx.reply(msg, {
+        parse_mode: 'Markdown',
+        ...confirmButtons('confirm_delete', 'cancel_delete')
+      });
     }
     return ctx.reply('❌ Error al buscar movimiento.');
   },

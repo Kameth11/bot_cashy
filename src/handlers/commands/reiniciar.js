@@ -1,36 +1,33 @@
 const { bot } = require('../../lib/telegraf');
-const { GoogleSpreadsheet, serviceAccountAuth } = require('../../lib/google');
-const { esAdminOriginal, obtenerClientePorUserId } = require('../../auth');
-const clienteService = require('../../services/cliente.service');
+const { esAdminOriginal } = require('../../auth');
+const state = require('../../state');
+const { confirmButtons } = require('../actions');
 
 bot.command('reiniciar', async (ctx) => {
+  try {
   const userId = ctx.from.id;
 
   if (!esAdminOriginal(userId)) {
-    return ctx.reply('⚠️ Solo el owner puede usar este comando.');
+    return ctx.reply('⚠️ Solo el owner puede usar este comando.').catch(() => {});
   }
 
-  const cliente = obtenerClientePorUserId(userId);
-  const clientes = clienteService.clientes;
-  delete clientes[userId];
-  clienteService.guardarClientes(clientes);
+  state.pendingReinicios.set(userId, true);
 
-  if (cliente && cliente.sheetId) {
-    try {
-      const docToClear = new GoogleSpreadsheet(cliente.sheetId, serviceAccountAuth);
-      await docToClear.loadInfo();
-      const sheetToClear = docToClear.sheetsByIndex[0];
-      const rows = await sheetToClear.getRows();
-      for (const row of rows) {
-        await row.delete();
-      }
-      ctx.reply('✅ Listo. usa /start');
-    } catch (error) {
-      console.error('Error sheet:', error.message);
-      ctx.reply('✅ Datos borrados. usa /start');
+  await ctx.reply(
+    '⚠️ *¿REINICIAR REGISTRO?*\n\n' +
+    '━━━━━━━━━━━━━━━━━━━━\n' +
+    'Se borrará:\n' +
+    '• Tus datos locales\n' +
+    '• Todos los movimientos del sheet\n\n' +
+    '⚠️ *Esta acción es irreversible.*',
+    {
+      parse_mode: 'Markdown',
+      ...confirmButtons('confirm_reset', 'cancel_reset')
     }
-  } else {
-    ctx.reply('✅ Listo. usa /start');
+  );
+  } catch (error) {
+    console.error('Error /reiniciar:', error.message);
+    ctx.reply('❌ Error al reiniciar.').catch(() => {});
   }
 });
 

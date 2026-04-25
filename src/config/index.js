@@ -17,8 +17,12 @@ const COMANDOS_INGRESO = ['consulta', 'servicio'];
 const COMANDOS_EGRESO = ['gasto'];
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 const CODIGO_EXPIRACION_HORAS = 24;
+
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+const USE_SUPABASE = process.env.USE_SUPABASE === 'true';
 
 if (!BOT_TOKEN || !SPREADSHEET_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
   console.error('Faltan variables de entorno. Revisa tu archivo .env');
@@ -41,4 +45,7 @@ module.exports = {
   CODIGO_EXPIRACION_HORAS,
   GEMINI_API_KEY,
   GEMINI_MODEL,
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  USE_SUPABASE,
 };

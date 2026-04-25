@@ -1,6 +1,7 @@
 const { bot } = require('../../lib/telegraf');
 const { getSheetId, getSheetCliente } = require('../../services/sheet.service');
 const state = require('../../state');
+const { confirmButtons } = require('../actions');
 
 bot.command('limpiar', async (ctx) => {
   try {
@@ -64,10 +65,12 @@ bot.command('limpiar', async (ctx) => {
       msg += `\n...y ${filasInvalidas.length - 5} más`;
     }
 
-    msg += `\n\n⚠️ *¿Confirmas la eliminación?*\n`;
-    msg += `Responde *sí* para eliminar o *no* para cancelar.`;
+    msg += `\n\n⚠️ *¿Confirmas la eliminación?*`;
 
-    await ctx.reply(msg, { parse_mode: 'Markdown' });
+    await ctx.reply(msg, {
+      parse_mode: 'Markdown',
+      ...confirmButtons('confirm_clean', 'cancel_clean')
+    });
 
   } catch (error) {
     console.error('Error /limpiar:', error.message, error.stack);

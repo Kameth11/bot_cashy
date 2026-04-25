@@ -2,6 +2,8 @@ const { bot } = require('../lib/telegraf');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 
 bot.use((ctx, next) => {
+  if (!ctx.from) return next();
+
   const userId = ctx.from.id;
 
   if (esAdminOriginal(userId)) {
@@ -13,9 +15,7 @@ bot.use((ctx, next) => {
     return next();
   }
 
-  if (ctx.from) {
-    console.log(`Usuario no registrado: ${userId}`);
-  }
+  console.log(`Usuario no registrado: ${userId}`);
   return next();
 });
 

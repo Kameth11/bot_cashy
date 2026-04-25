@@ -1,86 +1,38 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config');
 
-const SYSTEM_PROMPT = `Sos un parser de mensajes para un bot de cashflow de Telegram. Analizá el mensaje del usuario y devolvé SOLO un JSON con el intent y entidades detectadas. No agregues explicaciones ni markdown.
+const SYSTEM_PROMPT = `Eres un parser. Tu UNICA salida es un JSON objeto, sin texto antes o despues.
 
-Intents posibles:
-- registrar_movimiento: cuando el usuario quiere registrar un ingreso, servicio o gasto
-- ver_balance: cuando pregunta por su balance/resumen/caja
-- ver_hoy: cuando pregunta por movimientos de hoy
-- ver_semana: cuando pregunta por resumen semanal
-- ver_mes: cuando pregunta por resumen mensual
-- ver_ingresos: cuando quiere listar ingresos
-- ver_egresos: cuando quiere listar gastos
-- ver_pendientes: cuando pregunta por cobros pendientes o qué falta cobrar
-- cobrar_movimiento: cuando quiere marcar algo como cobrado
-- editar_movimiento: cuando quiere editar un movimiento
-- eliminar_movimiento: cuando quiere borrar/eliminar un movimiento
-- ver_dolar: cuando pregunta por la cotización del dólar
-- actualizardolar: cuando quiere actualizar la cotización del dólar
-- ver_ayuda: cuando pide ayuda o no sabe cómo usar el bot
-- listar_movimientos: cuando quiere ver todos los movimientos
+Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, desconocido
 
-Para registrar_movimiento, extraer estas entidades:
-- tipo: "ingreso", "servicio" o "gasto" (si no está claro, inferir por contexto)
-- descripcion: texto descriptivo breve (nombre de paciente, concepto, etc.)
-- monto: número (si no está en el mensaje, poner null)
-- moneda: "Pesos" o "Dólares" (si menciona dólares/USD/U$, poner "Dólares"; default "Pesos")
-- metodo_pago: "efectivo", "transferencia" o "tarjeta" (si no está, poner null)
+registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null)
+cobrar/editar/eliminar_movimiento: nombre(string|null)
+Todos los demas intents: entities vacio {}
 
-Para cobrar/editar/eliminar_movimiento, extraer:
-- nombre: texto para buscar el movimiento (poner null si no hay nombre específico)
-
-Ejemplos de entrada y salida:
-
-"cobré 15000 de Juan Perez en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan Perez","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo"}}
-"me pagaron 50000 por transferencia de Garcia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Garcia","monto":50000,"moneda":"Pesos","metodo_pago":"transferencia"}}
-"servicio de endodoncia 50 dólares" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dólares","metodo_pago":null}}
-"gasté 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null}}
-"pagué 2000 de insumos con tarjeta" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Insumos","monto":2000,"moneda":"Pesos","metodo_pago":"tarjeta"}}
-"un gasto de 3000 para materiales" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Materiales","monto":3000,"moneda":"Pesos","metodo_pago":null}}
-"anotame un ingreso de 8000 de Rodriguez transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Rodriguez","monto":8000,"moneda":"Pesos","metodo_pago":"transferencia"}}
-"consulta López U$100 efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"López","monto":100,"moneda":"Dólares","metodo_pago":"efectivo"}}
-"cuánto tengo?" -> {"intent":"ver_balance","entities":{}}
-"balance" -> {"intent":"ver_balance","entities":{}}
-"resumen" -> {"intent":"ver_balance","entities":{}}
-"qué cobré hoy?" -> {"intent":"ver_hoy","entities":{}}
-"movimientos de hoy" -> {"intent":"ver_hoy","entities":{}}
-"cómo va la semana?" -> {"intent":"ver_semana","entities":{}}
-"balance del mes" -> {"intent":"ver_mes","entities":{}}
-"cuánto gané este mes" -> {"intent":"ver_mes","entities":{}}
-"mostrar ingresos" -> {"intent":"ver_ingresos","entities":{}}
-"lista de cobros" -> {"intent":"ver_ingresos","entities":{}}
-"mostrar gastos" -> {"intent":"ver_egresos","entities":{}}
-"qué me falta cobrar?" -> {"intent":"ver_pendientes","entities":{}}
-"pendientes" -> {"intent":"ver_pendientes","entities":{}}
-"ya me pagó Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
-"cobrar el pendiente de Garcia" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Garcia"}}
-"cambiar monto de Rodríguez" -> {"intent":"editar_movimiento","entities":{"nombre":"Rodríguez"}}
-"borrar el gasto de insumos" -> {"intent":"eliminar_movimiento","entities":{"nombre":"insumos"}}
-"eliminar movimiento de López" -> {"intent":"eliminar_movimiento","entities":{"nombre":"López"}}
-"cuánto está el dólar" -> {"intent":"ver_dolar","entities":{}}
-"cotización" -> {"intent":"ver_dolar","entities":{}}
-"actualizar cotización" -> {"intent":"actualizardolar","entities":{}}
-"ayuda" -> {"intent":"ver_ayuda","entities":{}}
-"no sé cómo usar esto" -> {"intent":"ver_ayuda","entities":{}}
-"ver todos los movimientos" -> {"intent":"listar_movimientos","entities":{}}
-
-Si el mensaje no coincide con ningún intent financiero (saludos, charla, etc.), devolvé: {"intent":"desconocido","entities":{}}`;
+Ejemplos:
+"cobre 15000 de Juan en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo"}}
+"gaste 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null}}
+"servicio endodoncia U$50 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dolares","metodo_pago":"transferencia"}}
+"cuanto tengo" -> {"intent":"ver_balance","entities":{}}
+"ya me pago Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
+"borrar gasto insumos" -> {"intent":"eliminar_movimiento","entities":{"nombre":"insumos"}}
+"hola" -> {"intent":"desconocido","entities":{}}`;
 
 const FALLBACK_MODELS = [
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash-001',
   'gemini-flash-lite-latest',
-  'gemini-flash-latest',
-  'gemini-pro-latest',
 ];
 
-const MAX_RETRIES = 1;
-const RETRY_DELAYS = [3000];
 const CACHE_TTL_MS = 60000;
 const RATE_LIMIT_COOLDOWN_MS = 65000;
+const API_TIMEOUT_MS = 8000;
 
 let genAI = null;
 let activeModel = null;
-let modelTested = false;
+let activeModelName = null;
+let modelReady = false;
 
 const nlpCache = new Map();
 let lastRateLimitError = 0;
@@ -92,35 +44,71 @@ function getGenAI() {
   return genAI;
 }
 
-async function findWorkingModel() {
-  if (modelTested && activeModel) {
-    return activeModel;
-  }
+function createModel(ai, modelName) {
+  return ai.getGenerativeModel({
+    model: modelName,
+    systemInstruction: SYSTEM_PROMPT,
+    generationConfig: {
+      maxOutputTokens: 512,
+      temperature: 0.1,
+      responseMimeType: "application/json",
+    },
+  });
+}
 
+async function findWorkingModel() {
   const preferredModel = GEMINI_MODEL || 'gemini-flash-lite-latest';
   const modelsToTry = [preferredModel, ...FALLBACK_MODELS.filter(m => m !== preferredModel)];
-
   const ai = getGenAI();
 
   for (const modelName of modelsToTry) {
     try {
-      const model = ai.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent('Respondé solo: ok');
-      const text = result.response.text();
-      if (text) {
-        console.log(`NLP: Modelo activo: ${modelName}`);
-        activeModel = model;
-        modelTested = true;
-        return activeModel;
+      const model = createModel(ai, modelName);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+      try {
+        const result = await model.generateContent('Responde: ok', { signal: controller.signal });
+        clearTimeout(timeout);
+        const text = result.response.text();
+        if (text) {
+          console.log(`NLP: Modelo activo: ${modelName}`);
+          activeModel = model;
+          activeModelName = modelName;
+          modelReady = true;
+          return activeModel;
+        }
+      } catch (e) {
+        clearTimeout(timeout);
+        throw e;
       }
     } catch (error) {
       console.log(`NLP: Modelo ${modelName} no disponible: ${error.message.substring(0, 80)}`);
     }
   }
 
-  modelTested = true;
+  modelReady = true;
   console.error('NLP: Ningún modelo de Gemini disponible. NLP desactivado.');
   return null;
+}
+
+function initModel() {
+  if (!GEMINI_API_KEY) {
+    console.log('NLP: GEMINI_API_KEY no configurada, NLP desactivado');
+    modelReady = true;
+    return;
+  }
+
+  const preferredModel = GEMINI_MODEL || 'gemini-flash-lite-latest';
+  const ai = getGenAI();
+  activeModel = createModel(ai, preferredModel);
+  activeModelName = preferredModel;
+  modelReady = true;
+
+  console.log(`NLP: Modelo configurado: ${preferredModel}. Validando en background...`);
+
+  findWorkingModel().then(() => {
+    console.log(`NLP: Listo. Modelo activo: ${activeModelName}`);
+  }).catch(() => {});
 }
 
 function getCachedResult(userId, text) {
@@ -141,8 +129,45 @@ function isRateLimited() {
   return Date.now() - lastRateLimitError < RATE_LIMIT_COOLDOWN_MS;
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function repairJSON(str) {
+  try { return JSON.parse(str), str; } catch (_) {}
+
+  for (let depth = 0; depth <= 2; depth++) {
+    const suffix = '}'.repeat(depth + 1);
+    try { return JSON.parse(str + suffix), str + suffix; } catch (_) {}
+  }
+
+  const strVals = str.match(/"[^"]*"\s*:\s*"[^"]*"/g);
+  if (strVals && strVals.length > 0) {
+    const lastComplete = strVals[strVals.length - 1];
+    const cutIdx = str.indexOf(lastComplete) + lastComplete.length;
+    for (let depth = 0; depth <= 2; depth++) {
+      const candidate = str.substring(0, cutIdx) + '}'.repeat(depth + 1);
+      try { return JSON.parse(candidate), candidate; } catch (_) {}
+    }
+  }
+
+  const numVals = str.match(/"[^"]*"\s*:\s*\d+/g);
+  if (numVals && numVals.length > 0) {
+    const lastComplete = numVals[numVals.length - 1];
+    const cutIdx = str.indexOf(lastComplete) + lastComplete.length;
+    for (let depth = 0; depth <= 2; depth++) {
+      const candidate = str.substring(0, cutIdx) + '}'.repeat(depth + 1);
+      try { return JSON.parse(candidate), candidate; } catch (_) {}
+    }
+  }
+
+  const nullVals = str.match(/"[^"]*"\s*:\s*null/g);
+  if (nullVals && nullVals.length > 0) {
+    const lastComplete = nullVals[nullVals.length - 1];
+    const cutIdx = str.indexOf(lastComplete) + lastComplete.length;
+    for (let depth = 0; depth <= 2; depth++) {
+      const candidate = str.substring(0, cutIdx) + '}'.repeat(depth + 1);
+      try { return JSON.parse(candidate), candidate; } catch (_) {}
+    }
+  }
+
+  return null;
 }
 
 async function parseMessage(userId, text) {
@@ -161,80 +186,115 @@ async function parseMessage(userId, text) {
     return cached;
   }
 
-  const model = await findWorkingModel();
-  if (!model) {
-    return null;
+  if (!activeModel) {
+    const model = await findWorkingModel();
+    if (!model) return null;
   }
 
-  let lastError = null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    let result;
     try {
-      const result = await model.generateContent(
-        `${SYSTEM_PROMPT}\n\nMensaje del usuario: "${text}"`
-      );
+      result = await activeModel.generateContent(`Mensaje del usuario: "${text}"`, { signal: controller.signal });
+      clearTimeout(timeout);
+    } catch (e) {
+      clearTimeout(timeout);
+      if (e.name === 'AbortError') {
+        console.error('NLP: Timeout en llamada a Gemini');
+        return null;
+      }
+      throw e;
+    }
 
-      const responseText = result.response.text().trim();
+    modelReady = true;
 
+    const responseText = result.response.text().trim();
+
+    const finishReason = result.response.candidates?.[0]?.finishReason;
+    if (finishReason && finishReason !== 'STOP') {
+      console.warn(`NLP: finishReason=${finishReason}`);
+    }
+
+    let jsonStr = null;
+
+    const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1].trim();
+    } else {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.error(`NLP: respuesta sin JSON (attempt ${attempt + 1})`);
-        continue;
-      }
-
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      if (!parsed.intent) {
-        console.error(`NLP: respuesta sin intent (attempt ${attempt + 1})`);
-        continue;
-      }
-
-      console.log(`NLP [${userId}]: "${text}" -> intent: ${parsed.intent}`, parsed.entities || '');
-      setCachedResult(userId, text, parsed);
-      return parsed;
-
-    } catch (error) {
-      lastError = error;
-
-      const is429 = error.message && (
-        error.message.includes('429') ||
-        error.message.includes('Too Many Requests') ||
-        error.message.includes('quota')
-      );
-
-      const is404 = error.message && error.message.includes('404');
-
-      if (is429) {
-        lastRateLimitError = Date.now();
-        modelTested = false;
-        console.log(`NLP: Rate limit hit (429), cooldown ${RATE_LIMIT_COOLDOWN_MS / 1000}s`);
-        return null;
-      }
-
-      if (is404) {
-        modelTested = false;
-        activeModel = null;
-        console.log('NLP: Modelo no encontrado (404), reintentando con otro modelo...');
-        const newModel = await findWorkingModel();
-        if (newModel) {
-          continue;
-        }
-        return null;
-      }
-
-      if (attempt < MAX_RETRIES) {
-        const delay = RETRY_DELAYS[attempt] || 3000;
-        console.log(`NLP: Error (attempt ${attempt + 1}), retrying in ${delay / 1000}s...`);
-        await sleep(delay);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
       }
     }
-  }
 
-  if (lastError) {
-    console.error(`NLP: todos los reintentos fallaron: ${lastError.message}`);
-  }
+    if (!jsonStr) {
+      const openBrace = responseText.indexOf('{');
+      if (openBrace !== -1) {
+        jsonStr = responseText.substring(openBrace);
+      }
+    }
 
-  return null;
+    if (!jsonStr) {
+      console.error('NLP: sin JSON en respuesta:', responseText.substring(0, 150));
+      return null;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (e) {
+      const repaired = repairJSON(jsonStr);
+      if (repaired) {
+        console.log('NLP: JSON reparado exitosamente');
+        parsed = JSON.parse(repaired);
+      } else {
+        console.error('NLP: JSON invalido irrecuperable:', jsonStr.substring(0, 150));
+        return null;
+      }
+    }
+
+    if (!parsed.intent) {
+      console.error('NLP: respuesta sin intent');
+      return null;
+    }
+
+    console.log(`NLP [${userId}]: "${text}" -> intent: ${parsed.intent}`, parsed.entities || '');
+    setCachedResult(userId, text, parsed);
+    return parsed;
+
+  } catch (error) {
+    const is429 = error.message && (
+      error.message.includes('429') ||
+      error.message.includes('Too Many Requests') ||
+      error.message.includes('quota')
+    );
+
+    const is404 = error.message && error.message.includes('404');
+
+    if (is429) {
+      lastRateLimitError = Date.now();
+      modelReady = false;
+      activeModel = null;
+      console.log(`NLP: Rate limit (429), cooldown ${RATE_LIMIT_COOLDOWN_MS / 1000}s`);
+      return null;
+    }
+
+    if (is404) {
+      modelReady = false;
+      activeModel = null;
+      console.log('NLP: Modelo no encontrado (404), buscando otro...');
+      const model = await findWorkingModel();
+      if (model) {
+        return parseMessage(userId, text);
+      }
+      return null;
+    }
+
+    console.error(`NLP: Error: ${error.message.substring(0, 120)}`);
+    return null;
+  }
 }
 
-module.exports = { parseMessage };
+module.exports = { parseMessage, initModel };

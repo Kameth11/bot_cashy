@@ -18,7 +18,7 @@ sdist/
 var/
 wheels/
 *.egg-info/
-
+nul
 # --- Configuración de n8n y Base de Datos local ---
 .n8n/
 n8n_data/

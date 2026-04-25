@@ -9,6 +9,9 @@ bot.command('cancelar', (ctx) => {
   state.pendingCotizaciones.delete(userId);
   state.pendingIntentosEmail.delete(userId);
   state.pendingReinicios.delete(userId);
+  state.pendingDescripcion.delete(userId);
+  state.pendingPayments.delete(userId);
+  state.pendingLimpiezas.delete(userId);
   ctx.reply('❌ Proceso cancelado.');
 });
 

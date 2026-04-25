@@ -2,6 +2,7 @@ const { bot } = require('../../lib/telegraf');
 const { getSheetCliente } = require('../../services/sheet.service');
 const { formatMonto } = require('../../utils/formatter');
 const state = require('../../state');
+const { confirmButtons } = require('../actions');
 
 bot.command('eliminar', async (ctx) => {
   try {
@@ -124,11 +125,12 @@ bot.command('eliminar', async (ctx) => {
     msg += `💳 Método: ${metodo}\n`;
     msg += `📊 Estado: ${estado}\n`;
     msg += `🆔 ${id}\n`;
-    msg += `📄 Fila: #${coincidencias[0].index + 1} del Sheet\n\n`;
-    msg += `⚠️ *¿Confirmas la eliminación?*\n`;
-    msg += `Responde *sí* para confirmar o *no* para cancelar.`;
+    msg += `📄 Fila: #${coincidencias[0].index + 1} del Sheet`;
 
-    ctx.reply(msg, { parse_mode: 'Markdown' });
+    ctx.reply(msg, {
+      parse_mode: 'Markdown',
+      ...confirmButtons('confirm_delete', 'cancel_delete')
+    });
 
   } catch (error) {
     console.error('Error /eliminar:', error.message, error.stack);

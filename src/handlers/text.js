@@ -4,75 +4,27 @@ const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, METODOS_VALIDOS, COMAN
 const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId, esEmailAutorizado, incrementIntentosEmail, resetIntentosEmail } = require('../auth');
 const clienteService = require('../services/cliente.service');
-const { getSheetCliente, invalidateCache } = require('../services/sheet.service');
+const { getSheetCliente } = require('../services/sheet.service');
 const { generarIDUnico, convertirAPesos } = require('../services/movimiento.service');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const { formatMonto, sanitizarInput } = require('../utils/formatter');
 const geminiService = require('../services/gemini.service');
 const { handleNLPIntent } = require('../handlers/nlp');
+const { quickParse } = require('../services/quick_nlp.service');
+const cmd = require('../services/command.service');
+const { confirmButtons } = require('./actions');
 
 const regexMsg = /^(consulta|servicio|gasto)\s+(.+?)\s+(?:\$|U\$|USD)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
 bot.on('text', async (ctx) => {
+  try {
   const text = ctx.message.text.trim();
   const userId = ctx.from.id;
 
   if (text.startsWith('/')) return;
 
   if (state.pendingReinicios.has(userId)) {
-    const respuesta = text.toLowerCase().trim();
-    if (respuesta === 'sí' || respuesta === 'si' || respuesta === 's' || respuesta === 'yes' || respuesta === 'y') {
-      const cliente = obtenerClientePorUserId(userId);
-
-      const clientes = clienteService.clientes;
-      delete clientes[userId];
-      clienteService.guardarClientes(clientes);
-
-      if (cliente && cliente.sheetId) {
-        try {
-          const docToClear = new GoogleSpreadsheet(cliente.sheetId, serviceAccountAuth);
-          await docToClear.loadInfo();
-          const sheetToClear = docToClear.sheetsByIndex[0];
-          const rows = await sheetToClear.getRows();
-          for (const row of rows) {
-            await row.delete();
-          }
-          ctx.reply(
-            '✅ *Registro reiniciado*\n\n' +
-            'Se borraron:\n' +
-            '• Tus datos locales\n' +
-            '• Todos los movimientos del sheet\n\n' +
-            'Usa /start para registrarte de nuevo.',
-            { parse_mode: 'Markdown' }
-          );
-        } catch (error) {
-          console.error('Error al limpiar sheet:', error.message);
-          ctx.reply(
-            '✅ *Registro reiniciado*\n\n' +
-            'Se borraron tus datos locales.\n' +
-            '⚠️ No se pudo limpiar el sheet (verifica que esté compartido).\n\n' +
-            'Usa /start para registrarte de nuevo.',
-            { parse_mode: 'Markdown' }
-          );
-        }
-      } else {
-        ctx.reply(
-          '✅ *Registro reiniciado*\n\n' +
-          'Tus datos han sido borrados.\n' +
-          'No tenías sheet configurado.\n\n' +
-          'Usa /start para registrarte de nuevo.',
-          { parse_mode: 'Markdown' }
-        );
-      }
-
-      state.pendingReinicios.delete(userId);
-    } else if (respuesta === 'no' || respuesta === 'n') {
-      state.pendingReinicios.delete(userId);
-      ctx.reply('❌ Reinicio cancelado.');
-    } else {
-      ctx.reply('⚠️ Responde *sí* o *no*');
-    }
-    return;
+    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
   }
 
   if (state.pendingRegistros.has(userId)) {
@@ -185,7 +137,7 @@ bot.on('text', async (ctx) => {
         }
 
         clientes[userId] = datosCliente;
-        clienteService.guardarClientes(clientes);
+        await clienteService.guardarClientes(clientes);
 
         state.pendingRegistros.delete(userId);
 
@@ -233,75 +185,47 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  if (state.pendingDeletes.has(ctx.from.id)) {
-    const respuesta = text.toLowerCase().trim();
-    if (respuesta === 'sí' || respuesta === 'si' || respuesta === 's' || respuesta === 'yes' || respuesta === 'y') {
-      const { fila, index, desc } = state.pendingDeletes.get(ctx.from.id);
-      try {
-        console.log(`DEBUG: Eliminando fila ${index} - ${desc}`);
-        await fila.delete();
-        invalidateCache(ctx.from.id);
-        ctx.reply('✅ *Movimiento eliminado*\n\n' + `📝 ${desc}`, { parse_mode: 'Markdown' });
-      } catch (error) {
-        console.error('Error al eliminar:', error.message, error.stack);
-        ctx.reply('❌ Error al eliminar movimiento. Verifica los logs.');
-      }
-    } else if (respuesta === 'no' || respuesta === 'n') {
-      ctx.reply('❌ Eliminación cancelada.');
-    } else {
-      ctx.reply('⚠️ Responde *sí* o *no* para confirmar.');
-      return;
+  if (state.pendingDescripcion.has(ctx.from.id)) {
+    const pendingDesc = state.pendingDescripcion.get(ctx.from.id);
+    const descripcion = sanitizarInput(text);
+
+    if (descripcion.length < 2) {
+      return ctx.reply('⚠️ La descripción es muy corta. Ingresá un nombre o concepto:');
     }
-    state.pendingDeletes.delete(ctx.from.id);
-    return;
+
+    state.pendingDescripcion.delete(ctx.from.id);
+
+    try {
+    const resultado = await cmd.registrarMovimientoDesdeNLP(ctx.from.id, {
+      tipo: pendingDesc.tipo,
+      descripcion: descripcion,
+      monto: pendingDesc.monto,
+      moneda: pendingDesc.moneda,
+      metodo_pago: pendingDesc.metodo_pago
+    });
+
+    if (resultado.necesitaInfo) {
+      return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+    if (resultado.error) {
+      return ctx.reply(resultado.error);
+    }
+    if (resultado.success) {
+      return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+    return ctx.reply('❌ Error al registrar movimiento.');
+    } catch (error) {
+      console.error('Error en pendingDescripcion:', error.message);
+      ctx.reply('❌ Error al registrar movimiento. Intentá de nuevo o usa /ayuda.').catch(() => {});
+    }
+  }
+
+  if (state.pendingDeletes.has(ctx.from.id)) {
+    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
   }
 
   if (state.pendingLimpiezas.has(ctx.from.id)) {
-    const respuesta = text.toLowerCase().trim();
-    if (respuesta === 'sí' || respuesta === 'si' || respuesta === 's' || respuesta === 'yes' || respuesta === 'y') {
-      const { filas } = state.pendingLimpiezas.get(ctx.from.id);
-      try {
-        await ctx.reply(`⏳ Eliminando ${filas.length} filas...`);
-        
-        let eliminadas = 0;
-        let errores = 0;
-        
-        for (const item of filas) {
-          try {
-            await item.fila.delete();
-            eliminadas++;
-            console.log(`DEBUG: Eliminada fila #${item.index + 1}`);
-          } catch (error) {
-            errores++;
-            console.error(`Error al eliminar fila #${item.index + 1}:`, error.message);
-          }
-        }
-        
-        state.pendingLimpiezas.delete(ctx.from.id);
-        invalidateCache(ctx.from.id);
-        
-        let msg = `✅ *LIMPIEZA COMPLETADA*\n\n`;
-        msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-        msg += `✅ Eliminadas: ${eliminadas} filas\n`;
-        if (errores > 0) {
-          msg += `❌ Errores: ${errores}\n`;
-        }
-        msg += `\n💡 Usa /debug para verificar que todo esté limpio.`;
-        
-        await ctx.reply(msg, { parse_mode: 'Markdown' });
-      } catch (error) {
-        console.error('Error en limpieza:', error.message, error.stack);
-        state.pendingLimpiezas.delete(ctx.from.id);
-        await ctx.reply('❌ Error durante la limpieza. Intenta de nuevo.');
-      }
-    } else if (respuesta === 'no' || respuesta === 'n') {
-      state.pendingLimpiezas.delete(ctx.from.id);
-      await ctx.reply('✅ Limpieza cancelada. Ninguna fila fue eliminada.');
-    } else {
-      await ctx.reply('⚠️ Responde *sí* o *no* para confirmar.');
-      return;
-    }
-    return;
+    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
   }
 
   if (state.pendingCotizaciones.has(ctx.from.id)) {
@@ -333,6 +257,8 @@ bot.on('text', async (ctx) => {
       const clienteData = obtenerClientePorUserId(userId);
       const idOrigen = clienteData ? (clienteData.email || clienteData.telegramUserId || userId) : userId;
 
+      const idUnico = generarIDUnico();
+
       const rowData = {
         'Fecha': fechaStr,
         'Hora': horaStr,
@@ -342,7 +268,7 @@ bot.on('text', async (ctx) => {
         'Tipo': tipo,
         'Moneda': moneda,
         'MetodoPago': metodoIndicado,
-        'ID_Unico': generarIDUnico(),
+        'ID_Unico': idUnico,
         'MontoPesos': montoPesos,
         'ID_Origen': idOrigen
       };
@@ -358,7 +284,8 @@ bot.on('text', async (ctx) => {
         `💰 Monto: U$${Math.abs(monto).toLocaleString()} (cotización: $${cotizacion.toLocaleString()})\n` +
         `💵 En pesos: $${montoPesos.toLocaleString()}\n` +
         `💳 Método: ${metodoIndicado}\n` +
-        `📅 Fecha: ${fechaStr}`,
+        `📅 Fecha: ${fechaStr}\n` +
+        `🆔 ID: \`${idUnico}\``,
         { parse_mode: 'Markdown' }
       );
     } else {
@@ -421,47 +348,18 @@ bot.on('text', async (ctx) => {
       ctx.reply(
         `📝 *Resumen de cambios:*\n\n` +
         `Descripción: ${editData.descripcion}\n` +
-        `Monto: ${formatMonto(editData.nuevoMonto, editData.moneda)}\n\n` +
-        `¿Guardar cambios? Responde *sí* o *no*`
+        `Monto: ${formatMonto(editData.nuevoMonto, editData.moneda)}`,
+        {
+          parse_mode: 'Markdown',
+          ...confirmButtons('confirm_edit', 'cancel_edit')
+        }
       );
       state.pendingEdits.set(ctx.from.id, editData);
       return;
     }
 
     if (editData.step === 'confirmar') {
-      const respuesta = text.toLowerCase().trim();
-      if (respuesta === 'sí' || respuesta === 'si' || respuesta === 's' || respuesta === 'yes' || respuesta === 'y') {
-        try {
-          if (editData.moneda === 'Dólares' && !state.cotizacionDolar) {
-            await obtenerCotizacionDolar();
-          }
-
-          const fila = editData.fila;
-          if (editData.descripcion !== editData.descripcionOriginal) {
-            fila.set('Descripcion', editData.descripcion);
-          }
-          if (editData.nuevoMonto !== editData.montoOriginal) {
-            fila.set('Monto', editData.nuevoMonto);
-            if (editData.moneda === 'Dólares') {
-              fila.set('MontoPesos', convertirAPesos(editData.nuevoMonto, editData.moneda));
-            }
-          }
-          await fila.save();
-
-          ctx.reply(
-            `✅ *Movimiento actualizado*\n\n` +
-            `📝 ${fila.get('Descripcion')}\n` +
-            `💰 ${formatMonto(parseFloat(fila.get('Monto')), editData.moneda)}`
-          );
-        } catch (error) {
-          console.error('Error al editar:', error.message);
-          ctx.reply('❌ Error al guardar cambios.');
-        }
-      } else {
-        ctx.reply('❌ Edición cancelada.');
-      }
-      state.pendingEdits.delete(ctx.from.id);
-      return;
+      return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
     }
   }
 
@@ -488,6 +386,8 @@ bot.on('text', async (ctx) => {
         const clienteData = obtenerClientePorUserId(userId);
         const idOrigen = clienteData ? (clienteData.email || clienteData.telegramUserId || userId) : userId;
 
+        const idUnico = generarIDUnico();
+
         const rowData = {
           'Fecha': fechaStr,
           'Hora': horaStr,
@@ -497,7 +397,7 @@ bot.on('text', async (ctx) => {
           'Tipo': pendingData.tipo,
           'Moneda': pendingData.moneda,
           'MetodoPago': metodo,
-          'ID_Unico': generarIDUnico(),
+          'ID_Unico': idUnico,
           'MontoPesos': montoPesos,
           'ID_Origen': idOrigen
         };
@@ -516,7 +416,8 @@ bot.on('text', async (ctx) => {
           `📝 Descripción: ${pendingData.descripcion}\n` +
           `💰 Monto: ${mensajeMonto}\n` +
           `💳 Método: ${metodo}\n` +
-          `📅 Fecha: ${fechaStr}`,
+          `📅 Fecha: ${fechaStr}\n` +
+          `🆔 ID: \`${idUnico}\``,
           { parse_mode: 'Markdown' }
         );
 
@@ -535,6 +436,20 @@ bot.on('text', async (ctx) => {
 
   const match = text.match(regexMsg);
   if (!match) {
+    const quickResult = quickParse(text);
+    if (quickResult) {
+      try {
+        const handled = await handleNLPIntent(ctx, quickResult);
+        if (handled) return;
+      } catch (e) {
+        console.error('Error quick NLP:', e.message);
+      }
+    }
+
+    if (!quickResult) {
+      await ctx.reply('🧠 Procesando...').catch(() => {});
+    }
+
     try {
       const nlpResult = await geminiService.parseMessage(userId, text);
       if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
@@ -545,16 +460,18 @@ bot.on('text', async (ctx) => {
       console.error('Error NLP fallback:', nlpError.message);
     }
 
-    return ctx.reply(
-      '⚠️ No entendí tu mensaje.\n\n' +
-      'Podés escribir en lenguaje natural:\n' +
-      '`cobré 15000 de Juan Perez en efectivo`\n' +
-      '`gasté 5000 en alquiler`\n' +
-      '`cuánto tengo?`\n\n' +
-      'O usa el formato: `consulta [paciente] $[monto] [metodo]`\n\n' +
-      'Usa /ayuda para ver todos los comandos.',
-      { parse_mode: 'Markdown' }
-    );
+    if (!quickResult) {
+      return ctx.reply(
+        '⚠️ No entendí tu mensaje.\n\n' +
+        'Podés escribir en lenguaje natural:\n' +
+        '`cobré 15000 de Juan Perez en efectivo`\n' +
+        '`gasté 5000 en alquiler`\n' +
+        '`cuánto tengo?`\n\n' +
+        'O usa el formato: `consulta [paciente] $[monto] [metodo]`\n\n' +
+        'Usa /ayuda para ver todos los comandos.',
+        { parse_mode: 'Markdown' }
+      );
+    }
   }
 
   const comando = match[1].toLowerCase();
@@ -631,6 +548,8 @@ bot.on('text', async (ctx) => {
     const clienteData = obtenerClientePorUserId(ctx.from.id);
     const idOrigen = clienteData ? (clienteData.email || clienteData.telegramUserId || ctx.from.id) : ctx.from.id;
 
+    const idUnico = generarIDUnico();
+
     const rowData = {
       'Fecha': fechaStr,
       'Hora': horaStr,
@@ -640,7 +559,7 @@ bot.on('text', async (ctx) => {
       'Tipo': tipo,
       'Moneda': moneda,
       'MetodoPago': metodoIndicado,
-      'ID_Unico': generarIDUnico(),
+      'ID_Unico': idUnico,
       'MontoPesos': montoPesos,
       'ID_Origen': idOrigen
     };
@@ -655,13 +574,18 @@ bot.on('text', async (ctx) => {
       `📝 Descripción: ${descripcion}\n` +
       `💰 Monto: ${formatMonto(monto, moneda)}\n` +
       `💳 Método: ${metodoIndicado}\n` +
-      `📅 Fecha: ${fechaStr}`,
+      `📅 Fecha: ${fechaStr}\n` +
+      `🆔 ID: \`${idUnico}\``,
       { parse_mode: 'Markdown' }
     );
 
   } catch (error) {
     console.error('Error al guardar:', error.message);
     ctx.reply('❌ Error al guardar en Google Sheets.');
+  }
+  } catch (error) {
+    console.error('Error en text handler:', error);
+    ctx.reply('❌ Ocurrió un error inesperado. Intentá de nuevo.').catch(() => {});
   }
 });
 
