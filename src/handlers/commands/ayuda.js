@@ -7,6 +7,8 @@ bot.command('ayuda', (ctx) => {
     '`consulta [paciente] $[monto] [metodo]`\n' +
     '`servicio [tratamiento] $[monto] [metodo]`\n' +
     '`gasto [descripcion] $-[monto]`\n\n' +
+    '📸 *Agenda por foto:*\n' +
+    'Envía una foto de tu agenda o turnero para extraer y guardar turnos\n\n' +
     '💵 *Monedas:*\n' +
     '$ - Pesos | U$ / USD - Dólares\n\n' +
     '💳 *Método de pago:*\n' +
@@ -29,7 +31,9 @@ bot.command('ayuda', (ctx) => {
     '`/listar` - Ver todos los movimientos\n\n' +
     '💵 *Dólar:*\n' +
     '`/dolar` - Ver cotización actual\n' +
-    '`/actualizardolar` - Actualizar cotización',
+    '`/actualizardolar` - Actualizar cotización\n\n' +
+    '📄 *Sheet:*\n' +
+    '`/sheet` - Ver link de tu Google Sheet',
     { parse_mode: 'Markdown' }
   );
 });

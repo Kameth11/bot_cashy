@@ -1,5 +1,6 @@
 const { bot } = require('../../lib/telegraf');
 const { getSheetCliente } = require('../../services/sheet.service');
+const { getRowEstado, getRowDescripcion, getRowIdUnico } = require('../../utils/sheet-row');
 
 bot.command('cobrar', async (ctx) => {
   try {
@@ -10,7 +11,7 @@ bot.command('cobrar', async (ctx) => {
     if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
     const filas = await sheet.getRows();
 
-    const pendientes = filas.filter(f => (f.get('Estado') || f.get('estado')) === 'Pendiente');
+    const pendientes = filas.filter(f => getRowEstado(f) === 'Pendiente');
 
     if (pendientes.length === 0) {
       return ctx.reply('✅ No hay movimientos pendientes.');
@@ -23,11 +24,11 @@ bot.command('cobrar', async (ctx) => {
     } else {
       const texto = ctx.message.text.replace('/cobrar', '').trim().toLowerCase();
       filaActual = pendientes.find(f =>
-        (f.get('Descripcion') || f.get('descripcion') || '').toLowerCase().includes(texto)
+        getRowDescripcion(f, '').toLowerCase().includes(texto)
       );
       if (!filaActual && texto) {
         filaActual = pendientes.find(f =>
-          (f.get('ID_uNico') || f.get('idunico') || '') === texto
+          getRowIdUnico(f, '').toLowerCase() === texto
         );
       }
     }
@@ -35,7 +36,7 @@ bot.command('cobrar', async (ctx) => {
     if (!filaActual) {
       let msg = `⏳ *Movimientos pendientes:*\n\n`;
       pendientes.slice(-5).forEach((f, i) => {
-        msg += `• ${f.get('Descripcion') || f.get('descripcion')}\n`;
+        msg += `• ${getRowDescripcion(f, '')}\n`;
       });
       msg += `\nUsa: /cobrar [nombre]`;
       return ctx.reply(msg, { parse_mode: 'Markdown' });
@@ -46,7 +47,7 @@ bot.command('cobrar', async (ctx) => {
 
     ctx.reply(
       `✅ *¡Marcado como cobrado!*\n\n` +
-      `📝 ${filaActual.get('Descripcion') || filaActual.get('descripcion')}`,
+      `📝 ${getRowDescripcion(filaActual, '')}`,
       { parse_mode: 'Markdown' }
     );
 

@@ -3,6 +3,7 @@ const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const state = require('../state');
+const { toMovimiento, isValidMovimientoRow } = require('../utils/sheet-row');
 
 const db = USE_SUPABASE ? require('./db.service') : null;
 
@@ -59,27 +60,8 @@ async function obtenerDatosSheet(userId) {
   await sheet.loadCells();
   const filas = await sheet.getRows();
 
-  const datos = filas.map(row => {
-    const rowObj = row.toObject ? row.toObject() : row;
-    return {
-      fecha: rowObj.Fecha || rowObj.fecha || '',
-      hora: rowObj.Hora || rowObj.hora || '',
-      descripcion: rowObj.Descripcion || rowObj.descripcion || rowObj.Paciente || '',
-      monto: parseFloat(rowObj.Monto || rowObj.monto || 0),
-      montoPesos: parseFloat(rowObj.MontoPesos || rowObj.montopesos || rowObj.Monto || rowObj.monto || 0),
-      estado: rowObj.Estado || rowObj.estado || '',
-      tipo: rowObj.Tipo || rowObj.tipo || '',
-      moneda: rowObj.Moneda || rowObj.moneda || 'Pesos',
-      metodoPago: rowObj.MetodoPago || rowObj.metodopago || '',
-      idUnico: rowObj.ID_unico || rowObj.ID_uNico || rowObj.idunico || ''
-    };
-  });
-
-  return datos.filter(d =>
-    d.fecha && d.fecha.trim() !== '' &&
-    d.descripcion && d.descripcion.trim() !== '' &&
-    d.monto && d.monto !== 0
-  );
+  const datos = filas.map(toMovimiento);
+  return datos.filter(isValidMovimientoRow);
 }
 
 module.exports = {

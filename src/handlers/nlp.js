@@ -5,6 +5,17 @@ const state = require('../state');
 const { getSheetCliente } = require('../services/sheet.service');
 const { formatMonto } = require('../utils/formatter');
 const { confirmButtons } = require('./actions');
+const {
+  getRowMonto,
+  getRowMoneda,
+  getRowDescripcion,
+  getRowIdUnico,
+  getRowFecha,
+  getRowHora,
+  getRowTipo,
+  getRowMetodoPago,
+  getRowEstado,
+} = require('../utils/sheet-row');
 
 const INTENT_HANDLERS = {
   ver_balance: async (ctx, entities) => {
@@ -82,7 +93,9 @@ const INTENT_HANDLERS = {
       '`/listar` - Ver todos los movimientos\n\n' +
       '💵 *Dólar:*\n' +
       '`/dolar` - Ver cotización actual\n' +
-      '`/actualizardolar` - Actualizar cotización',
+      '`/actualizardolar` - Actualizar cotización\n\n' +
+      '📄 *Sheet:*\n' +
+      '`/sheet` - Ver link de tu Google Sheet',
       { parse_mode: 'Markdown' }
     );
   },
@@ -108,10 +121,10 @@ const INTENT_HANDLERS = {
       return ctx.reply(result, { parse_mode: 'Markdown' });
     }
     if (result && result.fila) {
-      const montoActual = parseFloat(result.fila.get('Monto') || result.fila.get('monto') || 0);
-      const moneda = result.fila.get('Moneda') || result.fila.get('moneda') || 'Pesos';
-      const descripcionActual = result.fila.get('Descripcion') || result.fila.get('descripcion') || '';
-      const tipo = result.fila.get('Tipo') || result.fila.get('tipo') || 'Ingreso';
+      const montoActual = getRowMonto(result.fila, 0);
+      const moneda = getRowMoneda(result.fila, 'Pesos');
+      const descripcionActual = getRowDescripcion(result.fila, '');
+      const tipo = getRowTipo(result.fila, 'Ingreso');
 
       state.pendingEdits.set(ctx.from.id, {
         fila: result.fila,
@@ -145,15 +158,15 @@ const INTENT_HANDLERS = {
     }
     if (result && result.fila) {
       const { fila, index, sheet, coincidencias } = result;
-      const monto = parseFloat(fila.get('Monto') || fila.get('monto') || 0);
-      const moneda = fila.get('Moneda') || fila.get('moneda') || 'Pesos';
-      const desc = fila.get('Descripcion') || fila.get('descripcion') || fila.get('Paciente') || fila.get('paciente') || fila.get('Nombre') || fila.get('nombre') || 'Sin descripción';
-      const id = fila.get('ID_Unico') || fila.get('ID_unico') || fila.get('ID_uNico') || fila.get('idunico') || 'sin-id';
-      const fecha = fila.get('Fecha') || fila.get('fecha') || 'N/A';
-      const hora = fila.get('Hora') || fila.get('hora') || 'N/A';
-      const tipo = fila.get('Tipo') || fila.get('tipo') || 'N/A';
-      const metodo = fila.get('MetodoPago') || fila.get('metodopago') || 'N/A';
-      const estado = fila.get('Estado') || fila.get('estado') || 'N/A';
+      const monto = getRowMonto(fila, 0);
+      const moneda = getRowMoneda(fila, 'Pesos');
+      const desc = getRowDescripcion(fila);
+      const id = getRowIdUnico(fila, 'sin-id');
+      const fecha = getRowFecha(fila, 'N/A');
+      const hora = getRowHora(fila, 'N/A');
+      const tipo = getRowTipo(fila, 'N/A');
+      const metodo = getRowMetodoPago(fila, 'N/A');
+      const estado = getRowEstado(fila, 'N/A');
 
       state.pendingDeletes.set(ctx.from.id, {
         fila,

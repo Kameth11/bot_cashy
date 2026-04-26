@@ -1,5 +1,6 @@
 const { bot } = require('../../lib/telegraf');
 const { getSheetCliente } = require('../../services/sheet.service');
+const { getRowDescripcion, getRowMontoRaw, getRowFecha, getRowIdUnico } = require('../../utils/sheet-row');
 
 bot.command('listar', async (ctx) => {
   try {
@@ -25,10 +26,10 @@ bot.command('listar', async (ctx) => {
     
     const ultimosMovimientos = filas.slice(-10).reverse();
     ultimosMovimientos.forEach((f, i) => {
-      const desc = f.get('Descripcion') || f.get('descripcion') || f.get('Paciente') || f.get('paciente') || f.get('Nombre') || f.get('nombre') || 'Sin descripción';
-      const monto = f.get('Monto') || f.get('monto') || '0';
-      const fecha = f.get('Fecha') || f.get('fecha') || '';
-      const id = f.get('ID_Unico') || f.get('ID_unico') || f.get('ID_uNico') || f.get('idunico') || 'sin-id';
+      const desc = getRowDescripcion(f);
+      const monto = getRowMontoRaw(f);
+      const fecha = getRowFecha(f, '');
+      const id = getRowIdUnico(f, 'sin-id');
       
       msg += `${i + 1}. ${desc}\n`;
       msg += `   $${monto} - ${fecha}\n`;

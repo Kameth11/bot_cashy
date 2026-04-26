@@ -2,6 +2,7 @@ const { bot } = require('../../lib/telegraf');
 const { getSheetId, getSheetCliente } = require('../../services/sheet.service');
 const state = require('../../state');
 const { confirmButtons } = require('../actions');
+const { toMovimiento, isValidMovimientoRow, getRowMontoRaw } = require('../../utils/sheet-row');
 
 bot.command('limpiar', async (ctx) => {
   try {
@@ -21,16 +22,7 @@ bot.command('limpiar', async (ctx) => {
     const filasInvalidas = [];
     
     filasRaw.forEach((fila, index) => {
-      const rowObj = fila.toObject ? fila.toObject() : fila;
-      const fecha = rowObj.Fecha || rowObj.fecha || '';
-      const descripcion = rowObj.Descripcion || rowObj.descripcion || rowObj.Paciente || '';
-      const monto = parseFloat(rowObj.Monto || rowObj.monto || 0);
-
-      const esValida = fecha && fecha.trim() !== '' && 
-                      descripcion && descripcion.trim() !== '' && 
-                      monto && monto !== 0;
-
-      if (!esValida) {
+      if (!isValidMovimientoRow(fila)) {
         filasInvalidas.push({ fila, index });
       }
     });
@@ -49,10 +41,10 @@ bot.command('limpiar', async (ctx) => {
 
     if (filasInvalidas.length <= 10) {
       filasInvalidas.forEach((item, i) => {
-        const rowObj = item.fila.toObject ? item.fila.toObject() : item.fila;
-        const fecha = rowObj.Fecha || rowObj.fecha || '(vacía)';
-        const desc = rowObj.Descripcion || rowObj.descripcion || rowObj.Paciente || '(vacía)';
-        const monto = rowObj.Monto || rowObj.monto || '0';
+        const rowObj = toMovimiento(item.fila);
+        const fecha = rowObj.fecha || '(vacía)';
+        const desc = rowObj.descripcion || '(vacía)';
+        const monto = getRowMontoRaw(item.fila, '0');
         msg += `\n${i + 1}. Fila #${item.index + 1}\n`;
         msg += `   📅: ${fecha} | 💰: $${monto}\n`;
         msg += `   📝: ${desc.substring(0, 50)}`;

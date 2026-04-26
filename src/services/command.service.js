@@ -7,6 +7,14 @@ const { obtenerCotizacionDolar } = require('./cotizacion.service');
 const { generarIDUnico, convertirAPesos } = require('./movimiento.service');
 const { obtenerClientePorUserId } = require('../auth');
 const state = require('../state');
+const {
+  getRowEstado,
+  getRowDescripcion,
+  getRowIdUnico,
+  getRowMonto,
+  getRowMoneda,
+  getRowFecha,
+} = require('../utils/sheet-row');
 
 async function ejecutarBalance(userId) {
   const datos = await obtenerDatosSheet(userId);
@@ -271,7 +279,7 @@ async function ejecutarActualizarDolar() {
 async function ejecutarCobrar(userId, nombre) {
   const filas = await db.getRows(userId);
 
-  const pendientes = filas.filter(f => (f.get('Estado') || f.get('estado')) === 'Pendiente');
+  const pendientes = filas.filter(f => getRowEstado(f) === 'Pendiente');
 
   if (pendientes.length === 0) {
     return '✅ No hay movimientos pendientes.';
@@ -284,14 +292,17 @@ async function ejecutarCobrar(userId, nombre) {
   } else if (nombre) {
     const textoLower = nombre.toLowerCase();
     filaActual = pendientes.find(f =>
-      (f.get('Descripcion') || f.get('descripcion') || '').toLowerCase().includes(textoLower)
+      getRowDescripcion(f, '').toLowerCase().includes(textoLower)
     );
+    if (!filaActual) {
+      filaActual = pendientes.find(f => getRowIdUnico(f, '').toLowerCase() === textoLower);
+    }
   }
 
   if (!filaActual) {
     let msg = `⏳ *Movimientos pendientes:*\n\n`;
     pendientes.slice(-5).forEach((f, i) => {
-      msg += `• ${f.get('Descripcion') || f.get('descripcion')}\n`;
+      msg += `• ${getRowDescripcion(f, '')}\n`;
     });
     msg += `\nDecime el nombre: "cobrar [nombre]" o /cobrar [nombre]`;
     return msg;
@@ -302,7 +313,7 @@ async function ejecutarCobrar(userId, nombre) {
 
   return (
     `✅ *¡Marcado como cobrado!*\n\n` +
-    `📝 ${filaActual.get('Descripcion') || filaActual.get('descripcion')}`
+    `📝 ${getRowDescripcion(filaActual, '')}`
   );
 }
 
@@ -316,8 +327,8 @@ async function ejecutarEditar(userId, nombre) {
 
   const coincidencias = [];
   filas.forEach((f) => {
-    const desc = (f.get('Descripcion') || f.get('descripcion') || '').toLowerCase();
-    const id = (f.get('ID_Unico') || f.get('ID_unico') || f.get('ID_uNico') || f.get('idunico') || '').toLowerCase();
+    const desc = getRowDescripcion(f, '').toLowerCase();
+    const id = getRowIdUnico(f, '').toLowerCase();
     if (id === textoLower || desc.includes(textoLower)) {
       coincidencias.push(f);
     }
@@ -330,8 +341,8 @@ async function ejecutarEditar(userId, nombre) {
   if (coincidencias.length > 1) {
     let msg = `⚠️ *Varias coincidencias:*\n\n`;
     coincidencias.slice(0, 5).forEach((c, i) => {
-      msg += `${i + 1}. ${c.get('Descripcion') || c.get('descripcion')}\n`;
-      msg += `   ${formatMonto(parseFloat(c.get('Monto') || c.get('monto') || 0), c.get('Moneda') || c.get('moneda') || 'Pesos')} - ${c.get('Fecha') || c.get('fecha')}\n\n`;
+      msg += `${i + 1}. ${getRowDescripcion(c, '')}\n`;
+      msg += `   ${formatMonto(getRowMonto(c, 0), getRowMoneda(c, 'Pesos'))} - ${getRowFecha(c)}\n\n`;
     });
     msg += `\nEspecificá mejor: /editar [ID completo]`;
     return msg;
@@ -351,23 +362,8 @@ async function ejecutarEliminar(userId, nombre) {
   const coincidencias = [];
 
   filas.forEach((f, index) => {
-    const desc = (
-      f.get('Descripcion') ||
-      f.get('descripcion') ||
-      f.get('Paciente') ||
-      f.get('paciente') ||
-      f.get('Nombre') ||
-      f.get('nombre') ||
-      ''
-    ).toLowerCase();
-
-    const id = (
-      f.get('ID_Unico') ||
-      f.get('ID_unico') ||
-      f.get('ID_uNico') ||
-      f.get('idunico') ||
-      ''
-    ).toLowerCase();
+    const desc = getRowDescripcion(f, '').toLowerCase();
+    const id = getRowIdUnico(f, '').toLowerCase();
 
     if (id === textoLower || desc.includes(textoLower)) {
       coincidencias.push({ fila: f, index });
@@ -382,9 +378,9 @@ async function ejecutarEliminar(userId, nombre) {
     let msg = `⚠️ *Varias coincidencias (${coincidencias.length}):*\n\n`;
     coincidencias.slice(0, 5).forEach((c, i) => {
       const f = c.fila;
-      const desc = f.get('Descripcion') || f.get('descripcion') || f.get('Paciente') || f.get('paciente') || f.get('Nombre') || f.get('nombre') || 'Sin descripción';
+      const desc = getRowDescripcion(f);
       msg += `${i + 1}. ${desc}\n`;
-      msg += `   ${formatMonto(parseFloat(f.get('Monto') || f.get('monto') || 0), f.get('Moneda') || f.get('moneda') || 'Pesos')} - ${f.get('Fecha') || f.get('fecha')}\n\n`;
+      msg += `   ${formatMonto(getRowMonto(f, 0), getRowMoneda(f, 'Pesos'))} - ${getRowFecha(f)}\n\n`;
     });
     msg += `\nEspecificá mejor el nombre.`;
     return msg;
@@ -404,10 +400,10 @@ async function ejecutarListar(userId) {
 
   const ultimosMovimientos = filas.slice(-10).reverse();
   ultimosMovimientos.forEach((f, i) => {
-    const desc = f.get('Descripcion') || f.get('descripcion') || f.get('Paciente') || f.get('paciente') || f.get('Nombre') || f.get('nombre') || 'Sin descripción';
-    const monto = f.get('Monto') || f.get('monto') || '0';
-    const fecha = f.get('Fecha') || f.get('fecha') || '';
-    const id = f.get('ID_Unico') || f.get('ID_unico') || f.get('ID_uNico') || f.get('idunico') || 'sin-id';
+    const desc = getRowDescripcion(f);
+    const monto = getRowMonto(f, 0);
+    const fecha = getRowFecha(f, '');
+    const id = getRowIdUnico(f, 'sin-id');
 
     msg += `${i + 1}. ${desc}\n`;
     msg += `   $${monto} - ${fecha}\n`;

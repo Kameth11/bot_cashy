@@ -19,6 +19,7 @@ const pendingCotizaciones = new Map();
 const pendingLimpiezas = new Map();
 const pendingReinicios = new Map();
 const pendingDescripcion = new Map();
+const pendingAgendaConfirm = new Map();
 const docsCache = new Map();
 
 module.exports = {
@@ -36,5 +37,6 @@ module.exports = {
   pendingLimpiezas,
   pendingReinicios,
   pendingDescripcion,
+  pendingAgendaConfirm,
   docsCache,
 };

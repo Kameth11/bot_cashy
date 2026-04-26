@@ -228,6 +228,10 @@ bot.on('text', async (ctx) => {
     return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
   }
 
+  if (state.pendingAgendaConfirm.has(ctx.from.id)) {
+    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+  }
+
   if (state.pendingCotizaciones.has(ctx.from.id)) {
     const cotizacion = parseFloat(text);
 

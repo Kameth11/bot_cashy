@@ -1,6 +1,7 @@
 const { bot } = require('../../lib/telegraf');
 const { getSheetCliente } = require('../../services/sheet.service');
 const { generarIDUnico } = require('../../services/movimiento.service');
+const { getRowIdUnico } = require('../../utils/sheet-row');
 
 bot.command('regenerar_ids', async (ctx) => {
   try {
@@ -17,7 +18,7 @@ bot.command('regenerar_ids', async (ctx) => {
     for (let i = 0; i < filas.length; i++) {
       const f = filas[i];
       
-      const idActual = f.get('ID_Unico') || f.get('ID_unico') || '';
+      const idActual = getRowIdUnico(f, '');
       
       if (!idActual || idActual === 'undefined' || idActual === 'null' || idActual.trim() === '') {
         const nuevoId = generarIDUnico();

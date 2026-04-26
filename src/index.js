@@ -33,9 +33,11 @@ require('./handlers/commands/misusuarios');
 require('./handlers/commands/reiniciar');
 require('./handlers/commands/regenerar_ids');
 require('./handlers/commands/palabras');
+require('./handlers/commands/sheet');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');
+require('./handlers/photo');
 
 // Load callback action handlers (for inline buttons)
 require('./handlers/actions');

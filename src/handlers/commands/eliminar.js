@@ -3,6 +3,18 @@ const { getSheetCliente } = require('../../services/sheet.service');
 const { formatMonto } = require('../../utils/formatter');
 const state = require('../../state');
 const { confirmButtons } = require('../actions');
+const {
+  getRowDescripcion,
+  getRowIdUnico,
+  getRowFecha,
+  getRowHora,
+  getRowMonto,
+  getRowMoneda,
+  getRowMetodoPago,
+  getRowEstado,
+  getRowTipo,
+  getRowMontoRaw,
+} = require('../../utils/sheet-row');
 
 bot.command('eliminar', async (ctx) => {
   try {
@@ -31,23 +43,8 @@ bot.command('eliminar', async (ctx) => {
     const coincidencias = [];
 
     filas.forEach((f, index) => {
-      const desc = (
-        f.get('Descripcion') || 
-        f.get('descripcion') || 
-        f.get('Paciente') || 
-        f.get('paciente') || 
-        f.get('Nombre') || 
-        f.get('nombre') || 
-        ''
-      ).toLowerCase();
-      
-      const id = (
-        f.get('ID_Unico') || 
-        f.get('ID_unico') || 
-        f.get('ID_uNico') || 
-        f.get('idunico') || 
-        ''
-      ).toLowerCase();
+      const desc = getRowDescripcion(f, '').toLowerCase();
+      const id = getRowIdUnico(f, '').toLowerCase();
 
       console.log(`DEBUG /eliminar - Fila ${index}: desc="${desc}", id="${id}"`);
 
@@ -65,9 +62,9 @@ bot.command('eliminar', async (ctx) => {
       
       const ultimosMovimientos = filas.slice(-5).reverse();
       ultimosMovimientos.forEach((f, i) => {
-        const desc = f.get('Descripcion') || f.get('descripcion') || f.get('Paciente') || f.get('paciente') || f.get('Nombre') || f.get('nombre') || 'Sin descripción';
-        const monto = f.get('Monto') || f.get('monto') || '0';
-        const fecha = f.get('Fecha') || f.get('fecha') || '';
+        const desc = getRowDescripcion(f);
+        const monto = getRowMontoRaw(f);
+        const fecha = getRowFecha(f, '');
         msg += `${i + 1}. ${desc}\n`;
         msg += `   $${monto} - ${fecha}\n\n`;
       });
@@ -81,9 +78,9 @@ bot.command('eliminar', async (ctx) => {
       let msg = `⚠️ *Varias coincidencias (${coincidencias.length}):*\n\n`;
       coincidencias.slice(0, 5).forEach((c, i) => {
         const f = c.fila;
-        const desc = f.get('Descripcion') || f.get('descripcion') || f.get('Paciente') || f.get('paciente') || f.get('Nombre') || f.get('nombre') || 'Sin descripción';
+        const desc = getRowDescripcion(f);
         msg += `${i + 1}. ${desc}\n`;
-        msg += `   ${formatMonto(parseFloat(f.get('Monto') || f.get('monto') || 0), f.get('Moneda') || f.get('moneda') || 'Pesos')} - ${f.get('Fecha') || f.get('fecha')}\n\n`;
+        msg += `   ${formatMonto(getRowMonto(f, 0), getRowMoneda(f, 'Pesos'))} - ${getRowFecha(f)}\n\n`;
       });
       msg += `\nEspecificá mejor el nombre o usa /listar para ver todos.`;
       return ctx.reply(msg, { parse_mode: 'Markdown' });
@@ -91,15 +88,15 @@ bot.command('eliminar', async (ctx) => {
 
     filaActual = coincidencias[0].fila;
 
-    const monto = parseFloat(filaActual.get('Monto') || filaActual.get('monto') || 0);
-    const moneda = filaActual.get('Moneda') || filaActual.get('moneda') || 'Pesos';
-    const desc = filaActual.get('Descripcion') || filaActual.get('descripcion') || filaActual.get('Paciente') || filaActual.get('paciente') || filaActual.get('Nombre') || filaActual.get('nombre') || 'Sin descripción';
-    const id = filaActual.get('ID_Unico') || filaActual.get('ID_unico') || filaActual.get('ID_uNico') || filaActual.get('idunico') || 'sin-id';
-    const fecha = filaActual.get('Fecha') || filaActual.get('fecha') || 'N/A';
-    const hora = filaActual.get('Hora') || filaActual.get('hora') || 'N/A';
-    const tipo = filaActual.get('Tipo') || filaActual.get('tipo') || 'N/A';
-    const metodo = filaActual.get('MetodoPago') || filaActual.get('metodopago') || 'N/A';
-    const estado = filaActual.get('Estado') || filaActual.get('estado') || 'N/A';
+    const monto = getRowMonto(filaActual, 0);
+    const moneda = getRowMoneda(filaActual, 'Pesos');
+    const desc = getRowDescripcion(filaActual);
+    const id = getRowIdUnico(filaActual, 'sin-id');
+    const fecha = getRowFecha(filaActual, 'N/A');
+    const hora = getRowHora(filaActual, 'N/A');
+    const tipo = getRowTipo(filaActual, 'N/A');
+    const metodo = getRowMetodoPago(filaActual, 'N/A');
+    const estado = getRowEstado(filaActual, 'N/A');
 
     state.pendingDeletes.set(ctx.from.id, { 
       fila: filaActual,

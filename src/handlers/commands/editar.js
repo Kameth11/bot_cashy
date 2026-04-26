@@ -2,6 +2,7 @@ const { bot } = require('../../lib/telegraf');
 const { getSheetCliente } = require('../../services/sheet.service');
 const { formatMonto } = require('../../utils/formatter');
 const state = require('../../state');
+const { getRowDescripcion, getRowIdUnico, getRowMonto, getRowMoneda, getRowTipo, getRowFecha } = require('../../utils/sheet-row');
 
 bot.command('editar', async (ctx) => {
   try {
@@ -30,8 +31,8 @@ bot.command('editar', async (ctx) => {
     const coincidencias = [];
 
     filas.forEach((f) => {
-      const desc = (f.get('Descripcion') || f.get('descripcion') || '').toLowerCase();
-      const id = (f.get('ID_Unico') || f.get('ID_unico') || f.get('ID_uNico') || f.get('idunico') || '').toLowerCase();
+      const desc = getRowDescripcion(f, '').toLowerCase();
+      const id = getRowIdUnico(f, '').toLowerCase();
 
       if (id === texto || desc.includes(texto)) {
         coincidencias.push(f);
@@ -47,8 +48,8 @@ bot.command('editar', async (ctx) => {
     if (coincidencias.length > 1) {
       let msg = `⚠️ *Varias coincidencias:*\n\n`;
       coincidencias.slice(0, 5).forEach((c, i) => {
-        msg += `${i + 1}. ${c.get('Descripcion') || c.get('descripcion')}\n`;
-        msg += `   ${formatMonto(parseFloat(c.get('Monto') || c.get('monto') || 0), c.get('Moneda') || c.get('moneda') || 'Pesos')} - ${c.get('Fecha') || c.get('fecha')}\n\n`;
+        msg += `${i + 1}. ${getRowDescripcion(c, '')}\n`;
+        msg += `   ${formatMonto(getRowMonto(c, 0), getRowMoneda(c, 'Pesos'))} - ${getRowFecha(c)}\n\n`;
       });
       msg += `\nEspecificá mejor: /editar [ID completo]`;
       return ctx.reply(msg, { parse_mode: 'Markdown' });
@@ -56,10 +57,10 @@ bot.command('editar', async (ctx) => {
 
     filaActual = coincidencias[0];
 
-    const montoActual = parseFloat(filaActual.get('Monto') || filaActual.get('monto') || 0);
-    const moneda = filaActual.get('Moneda') || filaActual.get('moneda') || 'Pesos';
-    const descripcionActual = filaActual.get('Descripcion') || filaActual.get('descripcion') || '';
-    const tipo = filaActual.get('Tipo') || filaActual.get('tipo') || 'Ingreso';
+    const montoActual = getRowMonto(filaActual, 0);
+    const moneda = getRowMoneda(filaActual, 'Pesos');
+    const descripcionActual = getRowDescripcion(filaActual, '');
+    const tipo = getRowTipo(filaActual, 'Ingreso');
 
     state.pendingEdits.set(ctx.from.id, {
       fila: filaActual,

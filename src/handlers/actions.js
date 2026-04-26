@@ -8,6 +8,7 @@ const { invalidateCache } = require('../services/sheet.service');
 const { formatMonto } = require('../utils/formatter');
 const { convertirAPesos } = require('../services/movimiento.service');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
+const { guardarTurnosAgenda } = require('../services/agenda.service');
 
 function confirmButtons(confirmAction, cancelAction) {
   return Markup.inlineKeyboard([
@@ -204,6 +205,40 @@ bot.action('cancel_edit', async (ctx) => {
   const userId = ctx.from.id;
   state.pendingEdits.delete(userId);
   await ctx.editMessageText('❌ Edición cancelada.');
+});
+
+bot.action('confirm_agenda', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+
+  if (!state.pendingAgendaConfirm.has(userId)) {
+    return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  }
+
+  const { turnos } = state.pendingAgendaConfirm.get(userId);
+  state.pendingAgendaConfirm.delete(userId);
+
+  try {
+    await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
+    const { guardados, fechaStr } = await guardarTurnosAgenda(userId, turnos);
+
+    await ctx.editMessageText(
+      `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
+      `📅 Fecha: ${fechaStr}\n` +
+      `📊 Ver en tu Google Sheet (tab "Agenda")`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    console.error('Error al guardar agenda:', error.message);
+    await ctx.editMessageText('❌ Error al guardar los turnos en la agenda.');
+  }
+});
+
+bot.action('cancel_agenda', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  state.pendingAgendaConfirm.delete(userId);
+  await ctx.editMessageText('❌ Turnos descartados.');
 });
 
 module.exports = { confirmButtons };
