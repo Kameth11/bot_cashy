@@ -40,6 +40,15 @@ ALLOWED_EMAILS=email1@empresa.com,email2@empresa.com,email3@empresa.com
 
 # (Opcional) Cotización default del dólar
 # COTIZACION_DEFAULT=1250
+
+# (Opcional) Modelo preferido para lectura de fotos/agendas
+# Recomendado: gemini-2.5-flash
+# Si priorizas costo: gemini-2.5-flash-lite
+# Si priorizas precision sobre velocidad/costo: gemini-2.5-pro
+# GEMINI_VISION_MODEL=gemini-2.5-flash
+
+# (Opcional) Modelo de texto barato para lenguaje natural
+# GEMINI_MODEL=gemini-2.5-flash-lite
 ```
 
 ### 2. Compartir el Google Sheet
@@ -94,6 +103,12 @@ gasto Insumos $-500
 /cobrar ultimo
 /cobrar Juan
 ```
+
+### Agenda por foto
+
+- Enviá una foto de la agenda por Telegram.
+- El bot intenta extraer `hora`, `cliente`, `servicio`, `consultorio` y `profesional`.
+- Si un horario no se puede leer, lo deja vacío en la agenda pero mantiene el campo horario en la estructura.
 
 ## Autenticación por Email
 

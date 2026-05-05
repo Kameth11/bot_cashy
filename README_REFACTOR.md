@@ -21,10 +21,13 @@ Migrar completamente la logica legacy de `index.js` raiz hacia `src/`, reduciend
 
 ### Modular
 - `src/` ya tiene gran parte del bot separada por handlers, services, utils y state
+- `src/index.js` es el entrypoint real actual
+- Ya incluye comandos, NLP, agenda por foto y boot principal
 - Todavia no tiene paridad total con `index.js`
 
 ### Gap principal detectado
-- La funcionalidad de agenda por foto todavia vive solo en `index.js`
+- La agenda por foto ya fue migrada
+- El gap principal actual es la duplicacion del guardado de movimientos entre distintos flujos de texto
 
 ---
 
@@ -45,7 +48,7 @@ Confirmar si el bot que se usa realmente arranca desde `index.js` o desde `src/i
 ### Estado
 - [ ] Pendiente
 - [ ] En progreso
-- [ ] Hecho
+- [x] Hecho
 
 ---
 
@@ -141,9 +144,9 @@ La estructura del movimiento se arma varias veces en distintos flujos:
 - o helper nuevo dentro de `src/services/`
 
 ### Tareas
-- Extraer funcion para construir `rowData`
-- Extraer funcion para persistir movimiento
-- Reusar en todos los flujos actuales
+- [x] Extraer funcion para construir `rowData`
+- [x] Extraer funcion para persistir movimiento
+- [x] Reusar en los flujos actuales de texto, cotizacion y metodo de pago
 
 ### Validacion
 - Un movimiento guardado desde cualquier camino genera el mismo resultado
@@ -151,7 +154,7 @@ La estructura del movimiento se arma varias veces en distintos flujos:
 ### Estado
 - [ ] Pendiente
 - [ ] En progreso
-- [ ] Hecho
+- [x] Hecho
 
 ---
 
@@ -274,8 +277,9 @@ En cada conversacion nueva:
 ## Proximo paso recomendado
 
 Empezar por:
-- **Fase 2 - Migrar agenda por foto a `src/`**
+- **Fase 3 - Validacion funcional de comandos reales**
 
 Motivo:
-- Es la brecha funcional mas clara entre `index.js` y `src/`
-- Permite acercarse a paridad real antes de limpiar duplicacion
+- La agenda por foto ya esta migrada pero falta probarla en Telegram
+- Los helpers de filas y el guardado de movimientos ya fueron centralizados
+- Lo siguiente con mas valor es probar paridad real y corregir desajustes chicos de comandos/documentacion

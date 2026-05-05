@@ -14,9 +14,9 @@ function esEmailAutorizado(email) {
 function obtenerClientePorUserId(userId) {
   const clientes = clienteService.clientes;
   for (const [ownerId, cliente] of Object.entries(clientes)) {
-    if (parseInt(ownerId) === userId) return { userId: ownerId, ownerId: null, ...cliente };
+    if (parseInt(ownerId) === userId) return { userId: ownerId, ownerId: ownerId, isOwner: true, ...cliente };
     if (cliente.usuarios && cliente.usuarios.includes(userId)) {
-      return { userId: ownerId, ownerId: ownerId, ...cliente };
+      return { userId: ownerId, ownerId: ownerId, isOwner: false, ...cliente };
     }
   }
   return null;

@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config');
 
-const SYSTEM_PROMPT = `Eres un parser. Tu UNICA salida es un JSON objeto, sin texto antes o despues.
+const SYSTEM_PROMPT = `Eres un parser de mensajes de cashflow de Argentina. Tu UNICA salida es un JSON objeto, sin texto antes o despues.
 
 Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, desconocido
 
@@ -9,10 +9,29 @@ registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), m
 cobrar/editar/eliminar_movimiento: nombre(string|null)
 Todos los demas intents: entities vacio {}
 
+Interpretacion:
+- Entiende frases coloquiales argentinas como "guita", "plata", "mangos", "lucas", "15k", "15 mil", "2 palos".
+- Si detectas ingreso o gasto pero falta monto o descripcion, igual usa intent "registrar_movimiento" y pone el campo faltante en null.
+- "entro", "entraron", "me entro", "me entraron" suelen indicar ingreso.
+- "salio", "salieron", "se fue", "se me fue" suelen indicar gasto.
+- Si dice "consulta" o "servicio", consideralo ingreso.
+- Si menciona mercadopago o mp, usar metodo_pago "transferencia".
+- Si el usuario dice que alguien "ya pagó", "me pagó", "me transfirió", "entró lo de" o "cobré lo de", normalmente es cobrar_movimiento cuando se refiere a una deuda pendiente existente.
+- Si la frase describe plata que entra o sale como un hecho nuevo para registrar, usar registrar_movimiento.
+- Para cobrar_movimiento, extrae el nombre/persona/concepto en nombre.
+
 Ejemplos:
 "cobre 15000 de Juan en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo"}}
 "gaste 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null}}
 "servicio endodoncia U$50 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dolares","metodo_pago":"transferencia"}}
+"entro 15 lucas de Juan" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":null}}
+"me entraron 20k por transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":null,"monto":20000,"moneda":"Pesos","metodo_pago":"transferencia"}}
+"salieron 8 lucas en insumos" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Insumos","monto":8000,"moneda":"Pesos","metodo_pago":null}}
+"entro guita de Pedro" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Pedro","monto":null,"moneda":"Pesos","metodo_pago":null}}
+"se me fueron 12 lucas en materiales" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Materiales","monto":12000,"moneda":"Pesos","metodo_pago":null}}
+"me pagó Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
+"ya entró lo de Marta" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Marta"}}
+"Juan me transfirió" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "cuanto tengo" -> {"intent":"ver_balance","entities":{}}
 "ya me pago Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "borrar gasto insumos" -> {"intent":"eliminar_movimiento","entities":{"nombre":"insumos"}}
@@ -27,6 +46,7 @@ const FALLBACK_MODELS = [
 
 const CACHE_TTL_MS = 60000;
 const RATE_LIMIT_COOLDOWN_MS = 65000;
+const SERVICE_ERROR_COOLDOWN_MS = 180000;
 const API_TIMEOUT_MS = 8000;
 
 let genAI = null;
@@ -36,6 +56,7 @@ let modelReady = false;
 
 const nlpCache = new Map();
 let lastRateLimitError = 0;
+let lastServiceError = 0;
 
 function getGenAI() {
   if (!genAI) {
@@ -129,6 +150,14 @@ function isRateLimited() {
   return Date.now() - lastRateLimitError < RATE_LIMIT_COOLDOWN_MS;
 }
 
+function isServiceUnavailable() {
+  return Date.now() - lastServiceError < SERVICE_ERROR_COOLDOWN_MS;
+}
+
+function canAttemptRemoteNlp() {
+  return Boolean(GEMINI_API_KEY) && !isRateLimited() && !isServiceUnavailable();
+}
+
 function repairJSON(str) {
   try { return JSON.parse(str), str; } catch (_) {}
 
@@ -170,6 +199,83 @@ function repairJSON(str) {
   return null;
 }
 
+function normalizarMetodoPago(metodo) {
+  if (!metodo) return null;
+  const raw = String(metodo).trim().toLowerCase();
+  if (['efectivo', 'contado', 'cash'].includes(raw)) return 'efectivo';
+  if (['transferencia', 'transfer', 'transf', 'tbu', 'cbu', 'mp', 'mercadopago', 'mercado pago'].includes(raw)) return 'transferencia';
+  if (['tarjeta', 'debito', 'débito', 'credito', 'crédito', 'visa', 'master', 'mastercard'].includes(raw)) return 'tarjeta';
+  return null;
+}
+
+function normalizarMoneda(moneda) {
+  if (!moneda) return 'Pesos';
+  const raw = String(moneda).trim().toLowerCase();
+  if (['dolares', 'dólares', 'dolar', 'dólar', 'usd', 'u$s', 'us$'].includes(raw)) return 'Dolares';
+  return 'Pesos';
+}
+
+function normalizarTipo(tipo) {
+  if (!tipo) return null;
+  const raw = String(tipo).trim().toLowerCase();
+  if (['ingreso', 'consulta', 'servicio'].includes(raw)) return raw === 'ingreso' ? 'ingreso' : raw;
+  if (['gasto', 'egreso'].includes(raw)) return 'gasto';
+  if (['entro', 'entraron', 'entrada'].includes(raw)) return 'ingreso';
+  if (['salio', 'salieron', 'salida'].includes(raw)) return 'gasto';
+  return null;
+}
+
+function normalizarDescripcion(descripcion) {
+  if (descripcion == null) return null;
+  const text = String(descripcion).trim();
+  return text.length ? text : null;
+}
+
+function normalizarNombre(nombre) {
+  if (nombre == null) return null;
+  let text = String(nombre).trim();
+  if (!text) return null;
+
+  text = text
+    .replace(/^(?:de|del|lo de|la de)\s+/i, '')
+    .replace(/^(?:ya\s+)?(?:me\s+)?(?:pago|pag[oó]|transfirio|transfirió|deposito|depositó|entro|entró|cobre|cobré)\s+/i, '')
+    .replace(/\s+(?:en efectivo|por transferencia|con transferencia|por mp|por mercadopago|por mercado pago|con tarjeta)$/i, '')
+    .trim();
+
+  return text || null;
+}
+
+function normalizarNlpResult(parsed) {
+  if (!parsed || typeof parsed !== 'object' || !parsed.intent) {
+    return null;
+  }
+
+  const normalized = {
+    intent: String(parsed.intent).trim(),
+    entities: parsed.entities && typeof parsed.entities === 'object' ? { ...parsed.entities } : {},
+  };
+
+  if (normalized.intent === 'registrar_movimiento') {
+    normalized.entities.tipo = normalizarTipo(normalized.entities.tipo) || 'ingreso';
+    normalized.entities.descripcion = normalizarDescripcion(normalized.entities.descripcion);
+    normalized.entities.moneda = normalizarMoneda(normalized.entities.moneda);
+    normalized.entities.metodo_pago = normalizarMetodoPago(normalized.entities.metodo_pago);
+
+    if (normalized.entities.monto !== null && normalized.entities.monto !== undefined) {
+      const monto = parseFloat(String(normalized.entities.monto).replace(',', '.'));
+      normalized.entities.monto = Number.isFinite(monto) && monto > 0 ? monto : null;
+    } else {
+      normalized.entities.monto = null;
+    }
+  }
+
+  if (['cobrar_movimiento', 'editar_movimiento', 'eliminar_movimiento'].includes(normalized.intent)) {
+    normalized.entities.nombre = normalizarNombre(normalized.entities.nombre);
+  }
+
+  return normalized;
+}
+
 async function parseMessage(userId, text) {
   if (!GEMINI_API_KEY) {
     return null;
@@ -177,6 +283,10 @@ async function parseMessage(userId, text) {
 
   if (isRateLimited()) {
     console.log('NLP: Rate limit cooldown activo, saltando...');
+    return null;
+  }
+
+  if (isServiceUnavailable()) {
     return null;
   }
 
@@ -260,9 +370,15 @@ async function parseMessage(userId, text) {
       return null;
     }
 
-    console.log(`NLP [${userId}]: "${text}" -> intent: ${parsed.intent}`, parsed.entities || '');
-    setCachedResult(userId, text, parsed);
-    return parsed;
+    const normalized = normalizarNlpResult(parsed);
+    if (!normalized) {
+      console.error('NLP: respuesta invalida tras normalizacion');
+      return null;
+    }
+
+    console.log(`NLP [${userId}]: "${text}" -> intent: ${normalized.intent}`, normalized.entities || '');
+    setCachedResult(userId, text, normalized);
+    return normalized;
 
   } catch (error) {
     const is429 = error.message && (
@@ -292,9 +408,10 @@ async function parseMessage(userId, text) {
       return null;
     }
 
+    lastServiceError = Date.now();
     console.error(`NLP: Error: ${error.message.substring(0, 120)}`);
     return null;
   }
 }
 
-module.exports = { parseMessage, initModel };
+module.exports = { parseMessage, initModel, canAttemptRemoteNlp };

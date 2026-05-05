@@ -4,17 +4,53 @@ const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, METODOS_VALIDOS, COMAN
 const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId, esEmailAutorizado, incrementIntentosEmail, resetIntentosEmail } = require('../auth');
 const clienteService = require('../services/cliente.service');
-const { getSheetCliente } = require('../services/sheet.service');
-const { generarIDUnico, convertirAPesos } = require('../services/movimiento.service');
-const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const { formatMonto, sanitizarInput } = require('../utils/formatter');
 const geminiService = require('../services/gemini.service');
 const { handleNLPIntent } = require('../handlers/nlp');
 const { quickParse } = require('../services/quick_nlp.service');
+
+function shouldHandleWithQuickParseFirst(result) {
+  if (!result || !result.intent) return false;
+
+  if (result.intent !== 'registrar_movimiento') {
+    return true;
+  }
+
+  const { monto, descripcion, metodo_pago } = result.entities || {};
+  return Boolean(monto || descripcion || metodo_pago);
+}
+
+function extraerMetodoDesdeDescripcion(text) {
+  const raw = String(text || '').trim();
+  let metodo = null;
+  let descripcion = raw;
+
+  const rules = [
+    { metodo: 'efectivo', pattern: /\s+(?:en|por|con)?\s*(?:efectivo|contado|cash)$/i },
+    { metodo: 'transferencia', pattern: /\s+(?:en|por|con)?\s*(?:transferencia|transfer|transf|tf|tbu|mercadopago|mercado\s*pago|mp)$/i },
+    { metodo: 'tarjeta', pattern: /\s+(?:en|por|con)?\s*(?:tarjeta|debito|credito|visa|master|mc)$/i },
+  ];
+
+  for (const rule of rules) {
+    if (rule.pattern.test(descripcion)) {
+      metodo = rule.metodo;
+      descripcion = descripcion.replace(rule.pattern, '').trim();
+      break;
+    }
+  }
+
+  descripcion = descripcion.replace(/\b(?:en|por|con)$/i, '').trim();
+
+  return {
+    metodo,
+    descripcion: sanitizarInput(descripcion),
+  };
+}
+
 const cmd = require('../services/command.service');
 const { confirmButtons } = require('./actions');
 
-const regexMsg = /^(consulta|servicio|gasto)\s+(.+?)\s+(?:\$|U\$|USD)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
+const regexMsg = /^(consulta|servicio|gasto|pendiente)\s+(.+?)\s+(?:\$|U\$|USD)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
 bot.on('text', async (ctx) => {
   try {
@@ -187,7 +223,9 @@ bot.on('text', async (ctx) => {
 
   if (state.pendingDescripcion.has(ctx.from.id)) {
     const pendingDesc = state.pendingDescripcion.get(ctx.from.id);
-    const descripcion = sanitizarInput(text);
+    const descripcionParseada = extraerMetodoDesdeDescripcion(text);
+    const descripcion = descripcionParseada.descripcion;
+    const metodoPendiente = pendingDesc.metodo_pago || descripcionParseada.metodo || null;
 
     if (descripcion.length < 2) {
       return ctx.reply('⚠️ La descripción es muy corta. Ingresá un nombre o concepto:');
@@ -201,7 +239,8 @@ bot.on('text', async (ctx) => {
       descripcion: descripcion,
       monto: pendingDesc.monto,
       moneda: pendingDesc.moneda,
-      metodo_pago: pendingDesc.metodo_pago
+      metodo_pago: metodoPendiente,
+      estado: pendingDesc.estado || 'Cobrado'
     });
 
     if (resultado.necesitaInfo) {
@@ -246,66 +285,51 @@ bot.on('text', async (ctx) => {
     const datos = state.pendingCotizaciones.get(ctx.from.id);
     state.pendingCotizaciones.delete(ctx.from.id);
 
-    const { comando, descripcion, monto, tipo, moneda, metodoIndicado } = datos;
+    const { descripcion, monto, tipo, moneda, metodoIndicado } = datos;
 
     if (metodoIndicado) {
-      const sheet = await getSheetCliente(ctx.from.id);
-      if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
-
-      const now = new Date();
-      const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-      const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-      const montoPesos = Math.round(Math.abs(monto) * cotizacion * 100) / 100;
-
-      const clienteData = obtenerClientePorUserId(userId);
-      const idOrigen = clienteData ? (clienteData.email || clienteData.telegramUserId || userId) : userId;
-
-      const idUnico = generarIDUnico();
-
-      const rowData = {
-        'Fecha': fechaStr,
-        'Hora': horaStr,
-        'Descripcion': descripcion,
-        'Monto': monto,
-        'Estado': 'Cobrado',
-        'Tipo': tipo,
-        'Moneda': moneda,
-        'MetodoPago': metodoIndicado,
-        'ID_Unico': idUnico,
-        'MontoPesos': montoPesos,
-        'ID_Origen': idOrigen
-      };
-
-      await sheet.addRow(rowData, { insert: true });
-
-      const tipoTexto = tipo === 'Ingreso' ? 'Ingreso' : 'Gasto';
-      const tipoEmoji = tipo === 'Ingreso' ? '💰' : '💸';
-
-      ctx.reply(
-        `${tipoEmoji} *¡${tipoTexto} registrado!*\n\n` +
-        `📝 Descripción: ${descripcion}\n` +
-        `💰 Monto: U$${Math.abs(monto).toLocaleString()} (cotización: $${cotizacion.toLocaleString()})\n` +
-        `💵 En pesos: $${montoPesos.toLocaleString()}\n` +
-        `💳 Método: ${metodoIndicado}\n` +
-        `📅 Fecha: ${fechaStr}\n` +
-        `🆔 ID: \`${idUnico}\``,
-        { parse_mode: 'Markdown' }
-      );
-    } else {
-      state.pendingPayments.set(ctx.from.id, {
+      const resultado = await cmd.guardarMovimiento(ctx.from.id, {
         descripcion,
         monto,
         tipo,
         moneda,
-        cotizacionUsada: cotizacion
+        metodo_pago: metodoIndicado,
+      }, {
+        cotizacionUsada: cotizacion,
+        estado: datos.estado || 'Cobrado',
       });
 
-      ctx.reply(
-        `💳 *¿Cómo pagaste?*\n\n` +
-        `Responde: efectivo / transferencia / tarjeta`,
-        { parse_mode: 'Markdown' }
-      );
+      ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
+    } else {
+      if ((datos.estado || 'Cobrado') === 'Pendiente') {
+        const resultado = await cmd.guardarMovimiento(ctx.from.id, {
+          descripcion,
+          monto,
+          tipo,
+          moneda,
+          metodo_pago: null,
+        }, {
+          cotizacionUsada: cotizacion,
+          estado: 'Pendiente',
+        });
+
+        ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
+      } else {
+        state.pendingPayments.set(ctx.from.id, {
+          descripcion,
+          monto,
+          tipo,
+          moneda,
+          cotizacionUsada: cotizacion,
+          estado: datos.estado || 'Cobrado'
+        });
+
+        ctx.reply(
+          `💳 *¿Cómo pagaste?*\n\n` +
+          `Responde: efectivo / transferencia / tarjeta`,
+          { parse_mode: 'Markdown' }
+        );
+      }
     }
     return;
   }
@@ -372,58 +396,18 @@ bot.on('text', async (ctx) => {
     if (METODOS_VALIDOS.includes(metodo)) {
       const pendingData = state.pendingPayments.get(ctx.from.id);
       try {
-        const sheet = await getSheetCliente(ctx.from.id);
-        if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
+        const resultado = await cmd.guardarMovimiento(ctx.from.id, {
+          descripcion: pendingData.descripcion,
+          monto: pendingData.monto,
+          tipo: pendingData.tipo,
+          moneda: pendingData.moneda,
+          metodo_pago: metodo,
+        }, {
+          cotizacionUsada: pendingData.cotizacionUsada,
+          estado: pendingData.estado || 'Cobrado',
+        });
 
-        const now = new Date();
-        const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-        const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-        let montoPesos;
-        if (pendingData.moneda === 'Dólares' && pendingData.cotizacionUsada) {
-          montoPesos = Math.round(Math.abs(pendingData.monto) * pendingData.cotizacionUsada * 100) / 100;
-        } else {
-          if (!state.cotizacionDolar) await obtenerCotizacionDolar();
-          montoPesos = convertirAPesos(pendingData.monto, pendingData.moneda);
-        }
-
-        const clienteData = obtenerClientePorUserId(userId);
-        const idOrigen = clienteData ? (clienteData.email || clienteData.telegramUserId || userId) : userId;
-
-        const idUnico = generarIDUnico();
-
-        const rowData = {
-          'Fecha': fechaStr,
-          'Hora': horaStr,
-          'Descripcion': pendingData.descripcion,
-          'Monto': pendingData.monto,
-          'Estado': 'Cobrado',
-          'Tipo': pendingData.tipo,
-          'Moneda': pendingData.moneda,
-          'MetodoPago': metodo,
-          'ID_Unico': idUnico,
-          'MontoPesos': montoPesos,
-          'ID_Origen': idOrigen
-        };
-
-        await sheet.addRow(rowData, { insert: true });
-
-        const tipoEmoji = pendingData.tipo === 'Ingreso' ? '💰' : '💸';
-
-        let mensajeMonto = formatMonto(pendingData.monto, pendingData.moneda);
-        if (pendingData.moneda === 'Dólares' && pendingData.cotizacionUsada) {
-          mensajeMonto = `U$${Math.abs(pendingData.monto).toLocaleString()} (cotización: $${pendingData.cotizacionUsada.toLocaleString()})\n💵 En pesos: $${montoPesos.toLocaleString()}`;
-        }
-
-        ctx.reply(
-          `${tipoEmoji} *¡${pendingData.tipo} registrado!*\n\n` +
-          `📝 Descripción: ${pendingData.descripcion}\n` +
-          `💰 Monto: ${mensajeMonto}\n` +
-          `💳 Método: ${metodo}\n` +
-          `📅 Fecha: ${fechaStr}\n` +
-          `🆔 ID: \`${idUnico}\``,
-          { parse_mode: 'Markdown' }
-        );
+        ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
 
         state.pendingPayments.delete(ctx.from.id);
       } catch (error) {
@@ -441,6 +425,29 @@ bot.on('text', async (ctx) => {
   const match = text.match(regexMsg);
   if (!match) {
     const quickResult = quickParse(text);
+    if (shouldHandleWithQuickParseFirst(quickResult)) {
+      try {
+        const handled = await handleNLPIntent(ctx, quickResult);
+        if (handled) return;
+      } catch (e) {
+        console.error('Error quick NLP:', e.message);
+      }
+    }
+
+    if (geminiService.canAttemptRemoteNlp()) {
+      await ctx.reply('🧠 Procesando...').catch(() => {});
+
+      try {
+        const nlpResult = await geminiService.parseMessage(userId, text);
+        if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
+          const handled = await handleNLPIntent(ctx, nlpResult);
+          if (handled) return;
+        }
+      } catch (nlpError) {
+        console.error('Error NLP fallback:', nlpError.message);
+      }
+    }
+
     if (quickResult) {
       try {
         const handled = await handleNLPIntent(ctx, quickResult);
@@ -450,32 +457,17 @@ bot.on('text', async (ctx) => {
       }
     }
 
-    if (!quickResult) {
-      await ctx.reply('🧠 Procesando...').catch(() => {});
-    }
-
-    try {
-      const nlpResult = await geminiService.parseMessage(userId, text);
-      if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
-        const handled = await handleNLPIntent(ctx, nlpResult);
-        if (handled) return;
-      }
-    } catch (nlpError) {
-      console.error('Error NLP fallback:', nlpError.message);
-    }
-
-    if (!quickResult) {
-      return ctx.reply(
-        '⚠️ No entendí tu mensaje.\n\n' +
-        'Podés escribir en lenguaje natural:\n' +
-        '`cobré 15000 de Juan Perez en efectivo`\n' +
-        '`gasté 5000 en alquiler`\n' +
-        '`cuánto tengo?`\n\n' +
-        'O usa el formato: `consulta [paciente] $[monto] [metodo]`\n\n' +
-        'Usa /ayuda para ver todos los comandos.',
-        { parse_mode: 'Markdown' }
-      );
-    }
+    return ctx.reply(
+      '⚠️ No entendí tu mensaje.\n\n' +
+      'Podés escribir en lenguaje natural:\n' +
+      '`entraron 15 lucas de Juan`\n' +
+      '`se me fueron 8 lucas en insumos`\n' +
+      '`ya me pagó Juan`\n' +
+      '`cuánto tengo?`\n\n' +
+      'O usa el formato: `consulta [paciente] $[monto] [metodo]`\n\n' +
+      'Usa /ayuda para ver todos los comandos.',
+      { parse_mode: 'Markdown' }
+    );
   }
 
   const comando = match[1].toLowerCase();
@@ -495,7 +487,11 @@ bot.on('text', async (ctx) => {
   } else if (COMANDOS_EGRESO.includes(comando)) {
     tipo = 'Egreso';
     if (monto > 0) monto = -monto;
+  } else if (comando === 'pendiente') {
+    tipo = 'Ingreso';
   }
+
+  const estado = comando === 'pendiente' ? 'Pendiente' : 'Cobrado';
 
   const metodoIndicado = match[4] ? match[4].toLowerCase() : null;
 
@@ -506,22 +502,20 @@ bot.on('text', async (ctx) => {
       monto,
       tipo,
       moneda,
-      metodoIndicado
+      metodoIndicado,
+      estado,
     });
 
-    return ctx.reply(
-      `💵 *Movimiento en dólares*\n\n` +
-      `Monto: U$${Math.abs(monto).toLocaleString()}\n\n` +
-      `Ingresá la cotización del dólar (ej: 1250):`
-    );
+    return ctx.reply(await cmd.construirMensajeCotizacion(monto), { parse_mode: 'Markdown' });
   }
 
-  if (!metodoIndicado) {
+  if (!metodoIndicado && estado !== 'Pendiente') {
     state.pendingPayments.set(ctx.from.id, {
       descripcion,
       monto,
       tipo,
-      moneda
+      moneda,
+      estado
     });
 
     ctx.reply(
@@ -539,49 +533,16 @@ bot.on('text', async (ctx) => {
   try {
     await ctx.reply('⏳ Registrando...');
 
-    const sheet = await getSheetCliente(ctx.from.id);
-    if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
+    const resultado = await cmd.guardarMovimiento(ctx.from.id, {
+      descripcion,
+      monto,
+      tipo,
+      moneda,
+      metodo_pago: metodoIndicado,
+      estado,
+    });
 
-    const now = new Date();
-    const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-    const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-    if (!state.cotizacionDolar) await obtenerCotizacionDolar();
-    const montoPesos = convertirAPesos(monto, moneda);
-
-    const clienteData = obtenerClientePorUserId(ctx.from.id);
-    const idOrigen = clienteData ? (clienteData.email || clienteData.telegramUserId || ctx.from.id) : ctx.from.id;
-
-    const idUnico = generarIDUnico();
-
-    const rowData = {
-      'Fecha': fechaStr,
-      'Hora': horaStr,
-      'Descripcion': descripcion,
-      'Monto': monto,
-      'Estado': 'Cobrado',
-      'Tipo': tipo,
-      'Moneda': moneda,
-      'MetodoPago': metodoIndicado,
-      'ID_Unico': idUnico,
-      'MontoPesos': montoPesos,
-      'ID_Origen': idOrigen
-    };
-
-    await sheet.addRow(rowData, { insert: true });
-
-    const tipoTexto = tipo === 'Ingreso' ? 'Ingreso' : 'Gasto';
-    const tipoEmoji = tipo === 'Ingreso' ? '💰' : '💸';
-
-    ctx.reply(
-      `${tipoEmoji} *¡${tipoTexto} registrado!*\n\n` +
-      `📝 Descripción: ${descripcion}\n` +
-      `💰 Monto: ${formatMonto(monto, moneda)}\n` +
-      `💳 Método: ${metodoIndicado}\n` +
-      `📅 Fecha: ${fechaStr}\n` +
-      `🆔 ID: \`${idUnico}\``,
-      { parse_mode: 'Markdown' }
-    );
+    ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
 
   } catch (error) {
     console.error('Error al guardar:', error.message);

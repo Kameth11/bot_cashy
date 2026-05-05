@@ -1,22 +1,27 @@
 const { bot } = require('../../lib/telegraf');
-const { obtenerClientePorUserId } = require('../../auth');
+const { esAdminOriginal, obtenerClientePorUserId } = require('../../auth');
 const clienteService = require('../../services/cliente.service');
 
 bot.command('misusuarios', (ctx) => {
   const userId = ctx.from.id;
+  const esAdmin = esAdminOriginal(userId);
   const cliente = obtenerClientePorUserId(userId);
 
-  if (!cliente) {
+  if (!cliente && !esAdmin) {
     return ctx.reply('⚠️ No tienes una cuenta registrada.');
   }
 
-  const ownerId = parseInt(cliente.ownerId);
-  if (ownerId !== userId) {
+  const ownerId = esAdmin ? userId : parseInt(cliente.ownerId, 10);
+  if (!esAdmin && (!cliente.isOwner || ownerId !== userId)) {
     return ctx.reply('⚠️ Solo el owner puede ver la lista de usuarios.');
   }
 
   const clientes = clienteService.clientes;
-  const ownerCliente = clientes[ownerId];
+  const ownerCliente = clientes[ownerId] || clientes[String(ownerId)] || null;
+  if (!ownerCliente) {
+    return ctx.reply('👥 No hay usuarios adicionales autorizados.\n\nUsa /codigo para generar uno.');
+  }
+
   const usuarios = ownerCliente.usuarios || [];
 
   if (usuarios.length === 0) {

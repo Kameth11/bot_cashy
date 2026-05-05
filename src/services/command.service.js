@@ -1,10 +1,18 @@
 const { obtenerDatosSheet, getSheetCliente, invalidateCache } = require('./sheet.service');
 const db = require('./db.service');
+const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 
 const { esHoy, esEstaSemana, esEsteMes, normalizarFecha } = require('../utils/date');
 const { formatMonto, formatFecha } = require('../utils/formatter');
 const { obtenerCotizacionDolar } = require('./cotizacion.service');
-const { generarIDUnico, convertirAPesos } = require('./movimiento.service');
+const {
+  generarIDUnico,
+  convertirAPesos,
+  crearTimestampMovimiento,
+  calcularMontoPesos,
+  construirRowData,
+  crearMensajeMovimientoRegistrado,
+} = require('./movimiento.service');
 const { obtenerClientePorUserId } = require('../auth');
 const state = require('../state');
 const {
@@ -15,6 +23,23 @@ const {
   getRowMoneda,
   getRowFecha,
 } = require('../utils/sheet-row');
+
+async function construirMensajeCotizacion(monto) {
+  if (!state.cotizacionDolar) {
+    await obtenerCotizacionDolar();
+  }
+
+  const promedioActual = state.cotizacionDolar
+    ? `Promedio actual: $${state.cotizacionDolar.toLocaleString('es-AR')}\n\n`
+    : '';
+
+  return (
+    `💵 *Movimiento en dólares*\n\n` +
+    `Monto: U$${Math.abs(monto).toLocaleString()}\n\n` +
+    promedioActual +
+    `Ingresá la cotización del dólar (ej: 1250):`
+  );
+}
 
 async function ejecutarBalance(userId) {
   const datos = await obtenerDatosSheet(userId);
@@ -286,6 +311,18 @@ async function ejecutarCobrar(userId, nombre) {
   }
 
   let filaActual = null;
+  let montoCobrado = null;
+
+  if (nombre) {
+    const matchMonto = String(nombre).trim().match(/^(.*?)(?:\s+(\d+(?:[.,]\d{1,2})?))$/);
+    if (matchMonto && matchMonto[1] && matchMonto[2]) {
+      const montoParsed = parseFloat(matchMonto[2].replace(',', '.'));
+      if (!Number.isNaN(montoParsed) && montoParsed > 0) {
+        nombre = matchMonto[1].trim();
+        montoCobrado = montoParsed;
+      }
+    }
+  }
 
   if (nombre && nombre.toLowerCase() === 'ultimo') {
     filaActual = pendientes[pendientes.length - 1];
@@ -304,12 +341,38 @@ async function ejecutarCobrar(userId, nombre) {
     pendientes.slice(-5).forEach((f, i) => {
       msg += `• ${getRowDescripcion(f, '')}\n`;
     });
-    msg += `\nDecime el nombre: "cobrar [nombre]" o /cobrar [nombre]`;
+    msg += `\nUsa: /cobrar [nombre] o /cobrar [nombre] [monto]`;
     return msg;
+  }
+
+  const montoActual = getRowMonto(filaActual, 0);
+  const saldoActual = Math.abs(montoActual);
+
+  if (montoCobrado !== null) {
+    if (montoCobrado > saldoActual) {
+      return `⚠️ El cobro parcial supera el pendiente actual (${formatMonto(montoActual, getRowMoneda(filaActual, 'Pesos'))}).`;
+    }
+
+    if (montoCobrado < saldoActual) {
+      const signo = montoActual < 0 ? -1 : 1;
+      const nuevoSaldo = Math.round((saldoActual - montoCobrado) * 100) / 100;
+      filaActual.set('Monto', signo * nuevoSaldo);
+      filaActual.set('Estado', 'Pendiente');
+      await filaActual.save();
+      await aplicarColorMontoEnFila(filaActual, signo * nuevoSaldo, 'Pendiente');
+
+      return (
+        `🧾 *Cobro parcial registrado*\n\n` +
+        `📝 ${getRowDescripcion(filaActual, '')}\n` +
+        `💸 Cobrado ahora: ${formatMonto(montoCobrado, getRowMoneda(filaActual, 'Pesos'))}\n` +
+        `⏳ Saldo pendiente: ${formatMonto(signo * nuevoSaldo, getRowMoneda(filaActual, 'Pesos'))}`
+      );
+    }
   }
 
   filaActual.set('Estado', 'Cobrado');
   await filaActual.save();
+  await aplicarColorMontoEnFila(filaActual, montoActual, 'Cobrado');
 
   return (
     `✅ *¡Marcado como cobrado!*\n\n` +
@@ -415,8 +478,75 @@ async function ejecutarListar(userId) {
   return msg;
 }
 
+async function guardarMovimiento(userId, datos, opciones = {}) {
+  const { descripcion, monto, tipo, moneda, metodo_pago } = datos;
+  const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares' : 'Pesos';
+  const montoFinal = parseFloat(monto);
+  const estadoFinal = opciones.estado || datos.estado || 'Cobrado';
+
+  const { fechaStr, horaStr } = crearTimestampMovimiento();
+
+  let cotizacionUsada = opciones.cotizacionUsada || null;
+  if (monedaFinal === 'Dólares' && !cotizacionUsada) {
+    if (!state.cotizacionDolar) await obtenerCotizacionDolar();
+    cotizacionUsada = state.cotizacionDolar;
+  } else if (monedaFinal !== 'Dólares' && !state.cotizacionDolar) {
+    await obtenerCotizacionDolar();
+  }
+
+  if (monedaFinal === 'Dólares' && !cotizacionUsada) {
+    throw new Error('cotizacion_no_disponible');
+  }
+
+  const montoPesos = opciones.montoPesos || calcularMontoPesos(montoFinal, monedaFinal, cotizacionUsada);
+  const cliente = obtenerClientePorUserId(userId);
+  const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || userId) : userId;
+  const idUnico = generarIDUnico();
+
+  const rowData = construirRowData({
+    fechaStr,
+    horaStr,
+    descripcion,
+    monto: montoFinal,
+    tipo,
+    moneda: monedaFinal,
+    metodoPago: metodo_pago,
+    idUnico,
+    montoPesos,
+    idOrigen,
+    estado: estadoFinal,
+  });
+
+  const savedRow = await db.addRow(userId, rowData);
+  if (!savedRow) {
+    throw new Error('sheet_no_configurado');
+  }
+
+  return {
+    success: true,
+    rowData,
+    idUnico,
+    fechaStr,
+    montoPesos,
+    cotizacionUsada,
+    mensaje: crearMensajeMovimientoRegistrado({
+      tipo,
+      descripcion,
+      monto: montoFinal,
+      moneda: monedaFinal,
+      metodoPago: metodo_pago,
+      fechaStr,
+      idUnico,
+      cotizacionUsada,
+      montoPesos,
+      estado: estadoFinal,
+    })
+  };
+}
+
 async function registrarMovimientoDesdeNLP(userId, datos) {
-  const { tipo, descripcion, monto, moneda, metodo_pago } = datos;
+  const { tipo, descripcion, monto, moneda, metodo_pago, estado } = datos;
+  const estadoFinal = estado === 'Pendiente' ? 'Pendiente' : 'Cobrado';
 
   if (!monto || isNaN(monto) || monto === 0) {
     return { necesitaInfo: true, campo: 'monto', mensaje: '💰 ¿De cuánto es el movimiento? Ingresá el monto:' };
@@ -427,7 +557,8 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       tipo: tipo || 'ingreso',
       monto: parseFloat(monto),
       moneda: moneda || 'Pesos',
-      metodo_pago: metodo_pago || null
+      metodo_pago: metodo_pago || null,
+      estado: estadoFinal,
     });
     return { necesitaInfo: true, campo: 'descripcion', mensaje: '📝 ¿De quién o qué concepto es el movimiento?' };
   }
@@ -451,22 +582,24 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       monto: montoFinal,
       tipo: tipoFinal,
       moneda: monedaFinal,
-      metodoIndicado: metodo_pago || null
+      metodoIndicado: metodo_pago || null,
+      estado: estadoFinal,
     });
 
     return {
       necesitaInfo: true,
       campo: 'cotizacion',
-      mensaje: `💵 *Movimiento en dólares*\n\nMonto: U$${Math.abs(montoFinal).toLocaleString()}\n\nIngresá la cotización del dólar (ej: 1250):`
+      mensaje: await construirMensajeCotizacion(montoFinal)
     };
   }
 
-  if (!metodo_pago) {
+  if (!metodo_pago && estadoFinal !== 'Pendiente') {
     state.pendingPayments.set(userId, {
       descripcion: descripcion,
       monto: montoFinal,
       tipo: tipoFinal,
-      moneda: monedaFinal
+      moneda: monedaFinal,
+      estado: estadoFinal,
     });
 
     return {
@@ -477,48 +610,14 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     };
   }
 
-  const now = new Date();
-  const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-  const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-  if (!state.cotizacionDolar) await obtenerCotizacionDolar();
-  const montoPesos = convertirAPesos(montoFinal, monedaFinal);
-
-  const cliente = obtenerClientePorUserId(userId);
-  const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || userId) : userId;
-
-  const idUnico = generarIDUnico();
-
-  const rowData = {
-    'Fecha': fechaStr,
-    'Hora': horaStr,
-    'Descripcion': descripcion,
-    'Monto': montoFinal,
-    'Estado': 'Cobrado',
-    'Tipo': tipoFinal,
-    'Moneda': monedaFinal,
-    'MetodoPago': metodo_pago,
-    'ID_Unico': idUnico,
-    'MontoPesos': montoPesos,
-    'ID_Origen': idOrigen
-  };
-
-  await db.addRow(userId, rowData);
-
-  const tipoTexto = tipoFinal === 'Ingreso' ? 'Ingreso' : 'Gasto';
-  const tipoEmoji = tipoFinal === 'Ingreso' ? '💰' : '💸';
-
-  return {
-    success: true,
-    mensaje: (
-      `${tipoEmoji} *¡${tipoTexto} registrado!*\n\n` +
-      `📝 Descripción: ${descripcion}\n` +
-      `💰 Monto: ${formatMonto(montoFinal, monedaFinal)}\n` +
-      `💳 Método: ${metodo_pago}\n` +
-      `📅 Fecha: ${fechaStr}\n` +
-      `🆔 ID: \`${idUnico}\``
-    )
-  };
+  return guardarMovimiento(userId, {
+    descripcion,
+    monto: montoFinal,
+    tipo: tipoFinal,
+    moneda: monedaFinal,
+    metodo_pago,
+    estado: estadoFinal,
+  });
 }
 
 module.exports = {
@@ -535,5 +634,7 @@ module.exports = {
   ejecutarEditar,
   ejecutarEliminar,
   ejecutarListar,
+  guardarMovimiento,
   registrarMovimientoDesdeNLP,
+  construirMensajeCotizacion,
 };

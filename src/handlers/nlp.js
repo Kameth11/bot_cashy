@@ -2,6 +2,7 @@ const { bot } = require('../lib/telegraf');
 const geminiService = require('../services/gemini.service');
 const cmd = require('../services/command.service');
 const state = require('../state');
+const { handleSheetCommand } = require('./commands/sheet');
 const { getSheetCliente } = require('../services/sheet.service');
 const { formatMonto } = require('../utils/formatter');
 const { confirmButtons } = require('./actions');
@@ -63,13 +64,18 @@ const INTENT_HANDLERS = {
     return ctx.reply(msg);
   },
 
+  ver_sheet: async (ctx, entities) => {
+    return handleSheetCommand(ctx);
+  },
+
   ver_ayuda: async (ctx, entities) => {
     return ctx.reply(
       '📖 *Comandos disponibles:*\n\n' +
       '📝 *Registrar movimiento:*\n' +
       '`consulta Juan Perez $15000 efectivo` (ingreso pesos)\n' +
       '`servicio Endodoncia U$50 transferencia` (ingreso dólares)\n' +
-      '`gasto Insumos $-500` (egreso)\n\n' +
+      '`gasto Insumos $-500` (egreso)\n' +
+      '`pendiente Juan Perez $15000` (ingreso sin cobrar)\n\n' +
       '💬 *También podés escribir en lenguaje natural:*\n' +
       '`cobré 15000 de Juan Perez en efectivo`\n' +
       '`gasté 5000 en alquiler`\n' +
@@ -85,7 +91,8 @@ const INTENT_HANDLERS = {
       '`/egresos` - Solo gastos\n\n' +
       '✅ *Cobrar:*\n' +
       '`/cobrar ultimo` - Cobra el último pendiente\n' +
-      '`/cobrar [nombre]` - Cobra uno que coincida\n\n' +
+      '`/cobrar [nombre]` - Cobra uno que coincida\n' +
+      '`/cobrar [nombre] [monto]` - Registra cobro parcial\n\n' +
       '✏️ *Editar:*\n' +
       '`/editar [nombre]` - Editar descripción y monto\n\n' +
       '🗑️ *Eliminar:*\n' +
@@ -207,7 +214,8 @@ const INTENT_HANDLERS = {
       descripcion: entities.descripcion || null,
       monto: entities.monto || null,
       moneda: entities.moneda || 'Pesos',
-      metodo_pago: entities.metodo_pago || null
+      metodo_pago: entities.metodo_pago || null,
+      estado: entities.estado || 'Cobrado'
     });
 
     if (resultado.necesitaInfo) {
