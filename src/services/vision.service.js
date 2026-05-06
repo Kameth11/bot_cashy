@@ -1,10 +1,4 @@
-<<<<<<< HEAD
-const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config');
-=======
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const sharp = require('sharp');
 const { GEMINI_API_KEY, GEMINI_MODEL, GEMINI_VISION_MODEL } = require('../config');
->>>>>>> 3d950e523c728cb558f12d0c9771aa88ad02f3f6
 
 const SYSTEM_PROMPT = `Sos un parser experto en OCR de agendas medicas y odontologicas en Argentina. Tu unica tarea es mirar una foto y devolver JSON puro.
 
@@ -45,6 +39,8 @@ const FALLBACK_MODELS = [
 let genAI = null;
 let GoogleGenerativeAI = null;
 let dependencyChecked = false;
+let sharpLib = null;
+let sharpChecked = false;
 
 function getFactory() {
   if (dependencyChecked) {
@@ -75,6 +71,23 @@ function getGenAI() {
   return genAI;
 }
 
+function getSharp() {
+  if (sharpChecked) {
+    return sharpLib;
+  }
+
+  sharpChecked = true;
+
+  try {
+    sharpLib = require('sharp');
+  } catch (error) {
+    sharpLib = null;
+    console.log('Vision: sharp no disponible, usando imagen original');
+  }
+
+  return sharpLib;
+}
+
 function extractJSON(text) {
   if (!text) return null;
 
@@ -96,6 +109,11 @@ function extractJSON(text) {
 }
 
 async function preprocessPhoto(photoBuffer) {
+  const sharp = getSharp();
+  if (!sharp) {
+    return photoBuffer;
+  }
+
   try {
     return await sharp(photoBuffer)
       .rotate()
@@ -177,14 +195,10 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
   }
 
   const ai = getGenAI();
-<<<<<<< HEAD
   if (!ai) {
     return { error: 'vision_dependencia_faltante' };
   }
-
-=======
   const processedBuffer = await preprocessPhoto(photoBuffer);
->>>>>>> 3d950e523c728cb558f12d0c9771aa88ad02f3f6
   const imagePart = {
     inlineData: {
       data: processedBuffer.toString('base64'),

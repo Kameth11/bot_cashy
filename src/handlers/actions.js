@@ -222,21 +222,15 @@ bot.action('confirm_agenda', async (ctx) => {
 
   try {
     await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
-<<<<<<< HEAD
-    const { guardados, errores, total, fechaStr } = await guardarTurnosAgenda(userId, turnos);
+    const { guardados, errores, total, fechaStr, grupos = [] } = await guardarTurnosAgenda(userId, turnos);
     const huboErrores = errores > 0;
-=======
-    const { guardados, fechaStr, grupos } = await guardarTurnosAgenda(userId, turnos);
->>>>>>> 3d950e523c728cb558f12d0c9771aa88ad02f3f6
 
     await ctx.editMessageText(
       `${huboErrores ? '⚠️' : '✅'} *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
       `📅 Fecha: ${fechaStr}\n` +
-<<<<<<< HEAD
       `${huboErrores ? `❌ No se pudieron guardar ${errores} de ${total} turno${total !== 1 ? 's' : ''}\n` : ''}` +
-=======
-      `🗂️ Bloques: ${grupos.join(' | ')}\n` +
->>>>>>> 3d950e523c728cb558f12d0c9771aa88ad02f3f6
+      `${grupos.length > 0 ? `🗂️ Bloques: ${grupos.join(' | ')}\n` : ''}` +
+      `${huboErrores ? `❌ No se pudieron guardar ${errores} de ${total} turno${total !== 1 ? 's' : ''}\n` : ''}` +
       `📊 Ver en tu Google Sheet (tab "Agenda")`,
       { parse_mode: 'Markdown' }
     );

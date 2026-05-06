@@ -1,13 +1,12 @@
 const { bot } = require('../lib/telegraf');
-const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
-const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, METODOS_VALIDOS, COMANDOS_INGRESO, COMANDOS_EGRESO } = require('../config');
+const { METODOS_VALIDOS, COMANDOS_INGRESO, COMANDOS_EGRESO } = require('../config');
 const state = require('../state');
-const { esAdminOriginal, obtenerClientePorUserId, esEmailAutorizado, incrementIntentosEmail, resetIntentosEmail, codigoInvitacionExpirado } = require('../auth');
-const clienteService = require('../services/cliente.service');
+const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { formatMonto, sanitizarInput } = require('../utils/formatter');
 const geminiService = require('../services/gemini.service');
 const { handleNLPIntent } = require('../handlers/nlp');
 const { quickParse } = require('../services/quick_nlp.service');
+const registrationService = require('../services/registration.service');
 
 function shouldHandleWithQuickParseFirst(result) {
   if (!result || !result.intent) return false;
@@ -64,157 +63,10 @@ bot.on('text', async (ctx) => {
   }
 
   if (state.pendingRegistros.has(userId)) {
-    const registro = state.pendingRegistros.get(userId);
-
-    if (registro.step === 'email') {
-      const email = text.trim().toLowerCase();
-
-      if (!email.includes('@')) {
-        const intentos = incrementIntentosEmail(userId);
-        if (intentos >= MAX_INTENTOS_EMAIL) {
-          state.pendingRegistros.delete(userId);
-          state.pendingIntentosEmail.delete(userId);
-          return ctx.reply('❌ Demasiados intentos. Usa /start para intentar de nuevo.');
-        }
-        return ctx.reply(`⚠️ Email inválido. Intentos: ${intentos}/${MAX_INTENTOS_EMAIL}\nEjemplo: juan@empresa.com`);
-      }
-
-      if (!esEmailAutorizado(email)) {
-        const intentos = incrementIntentosEmail(userId);
-        if (intentos >= MAX_INTENTOS_EMAIL) {
-          state.pendingRegistros.delete(userId);
-          state.pendingIntentosEmail.delete(userId);
-          return ctx.reply('❌ Email no autorizado. Usa /start para intentar de nuevo.');
-        }
-        return ctx.reply(`❌ Email no autorizado. Intentos: ${intentos}/${MAX_INTENTOS_EMAIL}`);
-      }
-
-      resetIntentosEmail(userId);
-      state.pendingRegistros.set(userId, { step: 'sheetId', email: email, telegramUserId: userId });
-
-      return ctx.reply(
-        '✅ *Email verificado!*\n\n' +
-        'Ahora configura tu Google Sheet.\n\n' +
-        '📊 *Paso 1:* Comparte tu sheet con mi service account:\n\n' +
-        `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
-        'Dale permisos de "Editor"\n\n' +
-        '📝Ingresa el ID de tu spreadsheet:\n' +
-        'Está en la URL: docs.google.com/spreadsheets/d/**AQUI_EL_ID**/edit\n\n' +
-        'Usa /cancelar para salir.'
-      );
+    const result = await registrationService.handlePendingRegistration(userId, text);
+    if (result) {
+      return ctx.reply(result.message, result.parse_mode ? { parse_mode: result.parse_mode } : undefined);
     }
-
-    if (registro.step === 'codigoInvitacion') {
-      const input = text.trim().toUpperCase();
-      const codigoData = state.pendingCodigos.get(input);
-
-      if (!codigoData) {
-        return ctx.reply('❌ Código inválido. Pide uno nuevo al owner con /codigo');
-      }
-
-      if (codigoInvitacionExpirado(codigoData)) {
-        state.pendingCodigos.delete(input);
-        return ctx.reply('❌ Código expirado. Pide uno nuevo al owner con /codigo');
-      }
-
-      const ownerId = codigoData.ownerId;
-      const clientes = clienteService.clientes;
-      if (!clientes[ownerId]) {
-        state.pendingCodigos.delete(input);
-        return ctx.reply('❌ El owner ya no existe. Pide un código nuevo.');
-      }
-
-      if (!clientes[ownerId].usuarios) {
-        clientes[ownerId].usuarios = [];
-      }
-
-      if (clientes[ownerId].usuarios.includes(userId)) {
-        state.pendingRegistros.delete(userId);
-        return ctx.reply('⚠️ Ya estás autorizado.');
-      }
-
-      state.pendingRegistros.set(userId, {
-        step: 'sheetId',
-        ownerId: ownerId,
-        codigo: input
-      });
-      state.pendingCodigos.delete(input);
-
-      return ctx.reply(
-        '✅ *Código válido!*\n\n' +
-        'Ahora configura tu sheet.\n\n' +
-        '📊 *Paso 1:* Comparte tu Google Sheet con mi service account:\n\n' +
-        `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
-        'Luego ingresa el ID de tu spreadsheet:\n' +
-        'Ejemplo: `1abc123def456GHI789jkl012`\n\n' +
-        'Usa /cancelar para salir.'
-      );
-    }
-
-    if (registro.step === 'sheetId') {
-      const sheetId = text.trim();
-
-      if (sheetId.length < 20) {
-        return ctx.reply('⚠️ El ID del spreadsheet parece muy corto. Intenta de nuevo:');
-      }
-
-      try {
-        const docTest = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
-        await docTest.loadInfo();
-
-        const datosCliente = {
-          sheetId: sheetId,
-          email: registro.email,
-          telegramUserId: registro.telegramUserId,
-          usuarios: [],
-          creadoEn: new Date().toISOString()
-        };
-
-        const clientes = clienteService.clientes;
-
-        if (registro.ownerId && clientes[registro.ownerId]) {
-          datosCliente.ownerId = registro.ownerId;
-          clientes[registro.ownerId].usuarios.push(userId);
-        }
-
-        clientes[userId] = datosCliente;
-        await clienteService.guardarClientes(clientes);
-
-        state.pendingRegistros.delete(userId);
-
-        if (registro.email) {
-          ctx.reply(
-            `✅ *¡Registro completado!*\n\n` +
-            `📧 Email: ${registro.email}\n\n` +
-            `Tu sheet ha sido configurado.\n` +
-            `Ahora puedes usar el bot.\n\n` +
-            `Usa /start para comenzar.`,
-            { parse_mode: 'Markdown' }
-          );
-        } else {
-          ctx.reply(
-            `✅ *¡Registro completado!*\n\n` +
-            `Te uniste a la cuenta del owner.\n\n` +
-            `📝 *Próximos pasos:*\n` +
-            `1. Comparte este email con tu sheet: *${GOOGLE_SERVICE_ACCOUNT_EMAIL}*\n` +
-            `2. Dale permisos de "Editor"\n\n` +
-            `Usa /start para comenzar.`,
-            { parse_mode: 'Markdown' }
-          );
-        }
-      } catch (error) {
-        console.error('Error al verificar sheet:', error.message);
-        ctx.reply(
-          `❌ No pude acceder al sheet con ese ID.\n\n` +
-          `Verifica que:\n` +
-          `• El ID sea correcto\n` +
-          `• El sheet existe\n` +
-          `• Compartiste el sheet con ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
-          `Intenta de nuevo:`
-        );
-      }
-    }
-    return;
   }
 
   const cliente = obtenerClientePorUserId(userId);

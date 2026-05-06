@@ -435,8 +435,4 @@ async function parseMessage(userId, text) {
   }
 }
 
-<<<<<<< HEAD
-module.exports = { parseMessage, initModel };
-=======
 module.exports = { parseMessage, initModel, canAttemptRemoteNlp };
->>>>>>> 3d950e523c728cb558f12d0c9771aa88ad02f3f6

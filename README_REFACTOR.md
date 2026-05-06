@@ -170,11 +170,11 @@ Achicar `src/handlers/text.js` y dejarlo como orquestador
 - `src/services/invite.service.js`
 
 ### Tareas
-- Extraer flujo de registro
-- Extraer validacion de email
-- Extraer flujo de invitaciones
-- Extraer union por codigo
-- Mantener `text.js` solo para routing del flujo
+- [x] Extraer flujo de registro
+- [x] Extraer validacion de email
+- [x] Extraer flujo de invitaciones
+- [x] Extraer union por codigo
+- [x] Mantener `text.js` solo para routing del flujo
 
 ### Validacion
 - `/start`, `/codigo`, `/unir`, `/cancelar` siguen funcionando igual
@@ -183,7 +183,7 @@ Achicar `src/handlers/text.js` y dejarlo como orquestador
 ### Estado
 - [ ] Pendiente
 - [ ] En progreso
-- [ ] Hecho
+- [x] Hecho
 
 ---
 

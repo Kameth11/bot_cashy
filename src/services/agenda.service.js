@@ -135,32 +135,6 @@ async function guardarTurnosAgenda(userId, turnos) {
   const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
   const groups = agruparTurnos(turnos);
 
-<<<<<<< HEAD
-  let guardados = 0;
-  let errores = 0;
-  for (const turno of turnos) {
-    try {
-      await agendaSheet.addRow({
-        Fecha: fechaStr,
-        Hora: turno.hora || '',
-        Cliente: turno.cliente || '',
-        Servicio: turno.servicio || '',
-        Estado: turno.estado || 'Pendiente'
-      }, { insert: true });
-      guardados++;
-    } catch (rowError) {
-      errores++;
-      console.error('Error al guardar turno:', rowError.message);
-    }
-  }
-
-  if (guardados === 0) {
-    throw new Error('No se pudo guardar ningun turno en Agenda');
-  }
-
-  invalidateCache(userId);
-  return { guardados, errores, total: turnos.length, fechaStr };
-=======
   const requiredColumns = groups.length * BLOCK_WIDTH + Math.max(0, groups.length - 1) * BLOCK_SPACING;
   await asegurarTamanoSheet(agendaSheet, Math.max(requiredColumns, 30), Math.max(agendaSheet.rowCount, 300));
 
@@ -186,10 +160,11 @@ async function guardarTurnosAgenda(userId, turnos) {
 
   return {
     guardados: turnos.length,
+    errores: 0,
+    total: turnos.length,
     fechaStr,
     grupos: labels,
   };
->>>>>>> 3d950e523c728cb558f12d0c9771aa88ad02f3f6
 }
 
 module.exports = {
