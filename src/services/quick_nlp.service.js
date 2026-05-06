@@ -8,6 +8,19 @@ function normalizar(texto) {
     .trim();
 }
 
+function escapeRegex(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function containsNormalizedTerm(text, term) {
+  const normalizedText = normalizar(text);
+  const normalizedTerm = normalizar(term);
+  if (!normalizedText || !normalizedTerm) return false;
+
+  const regex = new RegExp(`(?:^|\\s)${escapeRegex(normalizedTerm)}(?:$|\\s)`, 'i');
+  return regex.test(normalizedText);
+}
+
 function normalizarNumero(raw) {
   if (!raw) return null;
 
@@ -184,11 +197,10 @@ const EGRESO_WORDS = ['gaste', 'gasto', 'se gasto', 'pague', 'costo de', 'compre
 function matchKeywordIntent(text) {
   for (const { intent, words, phrases } of KEYWORD_INTENTS) {
     for (const phrase of phrases) {
-      if (text.includes(phrase)) return intent;
+      if (containsNormalizedTerm(text, phrase)) return intent;
     }
     for (const word of words) {
-      const regex = new RegExp(`(?:^|\\s)${word}(?:$|\\s)`, 'i');
-      if (regex.test(text)) return intent;
+      if (containsNormalizedTerm(text, word)) return intent;
     }
   }
   return null;
@@ -228,13 +240,12 @@ function matchRegistrarMovimiento(rawText, text) {
   const moneda = montoInfo ? montoInfo.moneda : 'Pesos';
 
   let tipo = null;
-  const textLower = text.toLowerCase();
   for (const word of INGRESO_WORDS) {
-    if (textLower.includes(word)) { tipo = 'ingreso'; break; }
+    if (containsNormalizedTerm(text, word)) { tipo = 'ingreso'; break; }
   }
   if (!tipo) {
     for (const word of EGRESO_WORDS) {
-      if (textLower.includes(word)) { tipo = 'gasto'; break; }
+      if (containsNormalizedTerm(text, word)) { tipo = 'gasto'; break; }
     }
   }
   if (!tipo) return null;
@@ -269,11 +280,14 @@ function quickParse(rawText) {
   const pendienteResult = matchRegistrarPendiente(rawText, text);
   if (pendienteResult) return pendienteResult;
 
-    const montoInfo = extraerMonto(rawText);
-   if (!montoInfo) {
+  const montoInfo = extraerMonto(rawText);
+  if (!montoInfo) {
     const entityFirst = matchEntityIntent(text);
     if (entityFirst) return entityFirst;
-   }
+
+    const keywordFirst = matchKeywordIntent(text);
+    if (keywordFirst) return { intent: keywordFirst, entities: {} };
+  }
 
   const regResult = matchRegistrarMovimiento(rawText, text);
   if (regResult) return regResult;
