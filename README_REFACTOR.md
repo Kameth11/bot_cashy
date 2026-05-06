@@ -45,7 +45,7 @@ Confirmar si el bot que se usa realmente arranca desde `index.js` o desde `src/i
 ### Estado
 - [ ] Pendiente
 - [ ] En progreso
-- [ ] Hecho
+- [x] Hecho
 
 ---
 
@@ -71,6 +71,9 @@ Mover la funcionalidad faltante de lectura de agenda por imagen a la arquitectur
 - [x] Crear handler de fotos
 - [x] Agregar estado `pendingAgendaConfirm`
 - [x] Integrar confirmacion del guardado de turnos
+- [x] Declarar dependencia de Vision en el runtime modular
+- [x] Evitar que Vision rompa el arranque si falta la dependencia
+- [x] Endurecer guardado de Agenda para distinguir fallo total vs parcial
 - [ ] Probar flujo real en Telegram con una foto
 
 ### Validacion

@@ -1,4 +1,3 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config');
 
 const SYSTEM_PROMPT = `Eres un parser. Tu UNICA salida es un JSON objeto, sin texto antes o despues.
@@ -33,11 +32,25 @@ let genAI = null;
 let activeModel = null;
 let activeModelName = null;
 let modelReady = false;
+let GoogleGenerativeAI = null;
+let geminiUnavailableLogged = false;
 
 const nlpCache = new Map();
 let lastRateLimitError = 0;
 
 function getGenAI() {
+  if (!GoogleGenerativeAI) {
+    try {
+      ({ GoogleGenerativeAI } = require('@google/generative-ai'));
+    } catch (error) {
+      if (!geminiUnavailableLogged) {
+        console.error('NLP: falta instalar @google/generative-ai, NLP desactivado');
+        geminiUnavailableLogged = true;
+      }
+      return null;
+    }
+  }
+
   if (!genAI) {
     genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
   }
@@ -60,6 +73,10 @@ async function findWorkingModel() {
   const preferredModel = GEMINI_MODEL || 'gemini-flash-lite-latest';
   const modelsToTry = [preferredModel, ...FALLBACK_MODELS.filter(m => m !== preferredModel)];
   const ai = getGenAI();
+  if (!ai) {
+    modelReady = true;
+    return null;
+  }
 
   for (const modelName of modelsToTry) {
     try {
@@ -100,6 +117,10 @@ function initModel() {
 
   const preferredModel = GEMINI_MODEL || 'gemini-flash-lite-latest';
   const ai = getGenAI();
+  if (!ai) {
+    modelReady = true;
+    return;
+  }
   activeModel = createModel(ai, preferredModel);
   activeModelName = preferredModel;
   modelReady = true;

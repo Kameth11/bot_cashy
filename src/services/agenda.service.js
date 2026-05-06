@@ -26,10 +26,15 @@ async function guardarTurnosAgenda(userId, turnos) {
     throw new Error('No se pudo acceder a la tab Agenda');
   }
 
+  if (!Array.isArray(turnos) || turnos.length === 0) {
+    throw new Error('No hay turnos para guardar');
+  }
+
   const now = new Date();
   const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
 
   let guardados = 0;
+  let errores = 0;
   for (const turno of turnos) {
     try {
       await agendaSheet.addRow({
@@ -41,12 +46,17 @@ async function guardarTurnosAgenda(userId, turnos) {
       }, { insert: true });
       guardados++;
     } catch (rowError) {
+      errores++;
       console.error('Error al guardar turno:', rowError.message);
     }
   }
 
+  if (guardados === 0) {
+    throw new Error('No se pudo guardar ningun turno en Agenda');
+  }
+
   invalidateCache(userId);
-  return { guardados, fechaStr };
+  return { guardados, errores, total: turnos.length, fechaStr };
 }
 
 module.exports = {

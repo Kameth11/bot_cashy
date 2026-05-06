@@ -220,11 +220,13 @@ bot.action('confirm_agenda', async (ctx) => {
 
   try {
     await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
-    const { guardados, fechaStr } = await guardarTurnosAgenda(userId, turnos);
+    const { guardados, errores, total, fechaStr } = await guardarTurnosAgenda(userId, turnos);
+    const huboErrores = errores > 0;
 
     await ctx.editMessageText(
-      `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
+      `${huboErrores ? '⚠️' : '✅'} *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
       `📅 Fecha: ${fechaStr}\n` +
+      `${huboErrores ? `❌ No se pudieron guardar ${errores} de ${total} turno${total !== 1 ? 's' : ''}\n` : ''}` +
       `📊 Ver en tu Google Sheet (tab "Agenda")`,
       { parse_mode: 'Markdown' }
     );

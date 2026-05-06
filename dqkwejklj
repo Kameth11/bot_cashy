@@ -1,0 +1,218 @@
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex f0deee0..2c71cb8 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -12,6 +12,8 @@[m [mdownloads/[m
+ eggs/[m
+ .eggs/[m
+ lib/[m
+[32m+[m[32m!src/lib/[m
+[32m+[m[32m!src/lib/*.js[m
+ lib64/[m
+ parts/[m
+ sdist/[m
+[36m@@ -27,7 +29,7 @@[m [mbinaryData/[m
+ [m
+ # --- Seguridad y Credenciales (¡MUY IMPORTANTE!) ---[m
+ .env[m
+[31m-*.json[m
+[32m+[m[32mclientes.json[m
+ # Si usas un nombre específico para las llaves de Google, agregalo:[m
+ google-credentials.json[m
+ client_secret*.json[m
+[36m@@ -39,6 +41,8 @@[m [mnpm-debug.log*[m
+ yarn-debug.log*[m
+ yarn-error.log*[m
+ .pnpm-debug.log*[m
+[32m+[m[32m!package.json[m
+[32m+[m[32m!package-lock.json[m
+ [m
+ # --- Archivos de Sistema y Editores ---[m
+ .DS_Store[m
+[1mdiff --git a/src/auth/index.js b/src/auth/index.js[m
+[1mindex 8d68809..471f745 100644[m
+[1m--- a/src/auth/index.js[m
+[1m+++ b/src/auth/index.js[m
+[36m@@ -1,7 +1,9 @@[m
+[31m-const { AUTHORIZED_USER_ID, ALLOWED_EMAILS } = require('../config');[m
+[32m+[m[32mconst { AUTHORIZED_USER_ID, ALLOWED_EMAILS, CODIGO_EXPIRACION_HORAS } = require('../config');[m
+ const clienteService = require('../services/cliente.service');[m
+ const state = require('../state');[m
+ [m
+[32m+[m[32mconst CODIGO_EXPIRACION_MS = CODIGO_EXPIRACION_HORAS * 60 * 60 * 1000;[m
+[32m+[m
+ function esAdminOriginal(userId) {[m
+   return AUTHORIZED_USER_ID && userId === AUTHORIZED_USER_ID;[m
+ }[m
+[36m@@ -36,6 +38,11 @@[m [mfunction resetIntentosEmail(userId) {[m
+   state.pendingIntentosEmail.delete(userId);[m
+ }[m
+ [m
+[32m+[m[32mfunction codigoInvitacionExpirado(codigoData) {[m
+[32m+[m[32m  if (!codigoData || !codigoData.createdAt) return false;[m
+[32m+[m[32m  return Date.now() - codigoData.createdAt > CODIGO_EXPIRACION_MS;[m
+[32m+[m[32m}[m
+[32m+[m
+ module.exports = {[m
+   esAdminOriginal,[m
+   esEmailAutorizado,[m
+[36m@@ -43,4 +50,5 @@[m [mmodule.exports = {[m
+   getIntentosEmail,[m
+   incrementIntentosEmail,[m
+   resetIntentosEmail,[m
+[32m+[m[32m  codigoInvitacionExpirado,[m
+ };[m
+[1mdiff --git a/src/handlers/commands/unir.js b/src/handlers/commands/unir.js[m
+[1mindex 34fdadc..b809166 100644[m
+[1m--- a/src/handlers/commands/unir.js[m
+[1m+++ b/src/handlers/commands/unir.js[m
+[36m@@ -1,5 +1,5 @@[m
+ const { bot } = require('../../lib/telegraf');[m
+[31m-const { obtenerClientePorUserId } = require('../../auth');[m
+[32m+[m[32mconst { obtenerClientePorUserId, codigoInvitacionExpirado } = require('../../auth');[m
+ const clienteService = require('../../services/cliente.service');[m
+ const state = require('../../state');[m
+ [m
+[36m@@ -22,6 +22,11 @@[m [mbot.command('unir', (ctx) => {[m
+     return ctx.reply('❌ Código inválido o expirado. Pide uno nuevo al owner.');[m
+   }[m
+ [m
+[32m+[m[32m  if (codigoInvitacionExpirado(codigoData)) {[m
+[32m+[m[32m    state.pendingCodigos.delete(codigo);[m
+[32m+[m[32m    return ctx.reply('❌ Código expirado. Pide uno nuevo al owner.');[m
+[32m+[m[32m  }[m
+[32m+[m
+   const ownerId = codigoData.ownerId;[m
+   const clientes = clienteService.clientes;[m
+   if (!clientes[ownerId]) {[m
+[1mdiff --git a/src/handlers/middleware.js b/src/handlers/middleware.js[m
+[1mindex 56c5c09..7b634eb 100644[m
+[1m--- a/src/handlers/middleware.js[m
+[1m+++ b/src/handlers/middleware.js[m
+[36m@@ -1,6 +1,20 @@[m
+ const { bot } = require('../lib/telegraf');[m
+[32m+[m[32mconst state = require('../state');[m
+ const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');[m
+ [m
+[32m+[m[32mconst COMANDOS_PUBLICOS = new Set(['/start', '/unir', '/cancelar']);[m
+[32m+[m
+[32m+[m[32mfunction esComandoPublico(ctx) {[m
+[32m+[m[32m  const text = ctx.message && typeof ctx.message.text === 'string'[m
+[32m+[m[32m    ? ctx.message.text.trim().toLowerCase()[m
+[32m+[m[32m    : '';[m
+[32m+[m
+[32m+[m[32m  if (!text.startsWith('/')) return false;[m
+[32m+[m
+[32m+[m[32m  const comando = text.split(/\s+/)[0].split('@')[0];[m
+[32m+[m[32m  return COMANDOS_PUBLICOS.has(comando);[m
+[32m+[m[32m}[m
+[32m+[m
+ bot.use((ctx, next) => {[m
+   if (!ctx.from) return next();[m
+ [m
+[36m@@ -15,8 +29,15 @@[m [mbot.use((ctx, next) => {[m
+     return next();[m
+   }[m
+ [m
+[32m+[m[32m  if (state.pendingRegistros.has(userId) || esComandoPublico(ctx)) {[m
+[32m+[m[32m    return next();[m
+[32m+[m[32m  }[m
+[32m+[m
+   console.log(`Usuario no registrado: ${userId}`);[m
+[31m-  return next();[m
+[32m+[m[32m  if (ctx.reply) {[m
+[32m+[m[32m    ctx.reply('No estas autorizado para usar este bot. Usa /start para registrarte o /unir CODIGO si te invitaron.').catch(() => {});[m
+[32m+[m[32m  }[m
+[32m+[m[32m  return;[m
+ });[m
+ [m
+ module.exports = {};[m
+[1mdiff --git a/src/handlers/text.js b/src/handlers/text.js[m
+[1mindex 89fd808..e3b4f9f 100644[m
+[1m--- a/src/handlers/text.js[m
+[1m+++ b/src/handlers/text.js[m
+[36m@@ -2,7 +2,7 @@[m [mconst { bot } = require('../lib/telegraf');[m
+ const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');[m
+ const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, METODOS_VALIDOS, COMANDOS_INGRESO, COMANDOS_EGRESO } = require('../config');[m
+ const state = require('../state');[m
+[31m-const { esAdminOriginal, obtenerClientePorUserId, esEmailAutorizado, incrementIntentosEmail, resetIntentosEmail } = require('../auth');[m
+[32m+[m[32mconst { esAdminOriginal, obtenerClientePorUserId, esEmailAutorizado, incrementIntentosEmail, resetIntentosEmail, codigoInvitacionExpirado } = require('../auth');[m
+ const clienteService = require('../services/cliente.service');[m
+ const { getSheetCliente } = require('../services/sheet.service');[m
+ const { generarIDUnico, convertirAPesos } = require('../services/movimiento.service');[m
+[36m@@ -76,6 +76,11 @@[m [mbot.on('text', async (ctx) => {[m
+         return ctx.reply('❌ Código inválido. Pide uno nuevo al owner con /codigo');[m
+       }[m
+ [m
+[32m+[m[32m      if (codigoInvitacionExpirado(codigoData)) {[m
+[32m+[m[32m        state.pendingCodigos.delete(input);[m
+[32m+[m[32m        return ctx.reply('❌ Código expirado. Pide uno nuevo al owner con /codigo');[m
+[32m+[m[32m      }[m
+[32m+[m
+       const ownerId = codigoData.ownerId;[m
+       const clientes = clienteService.clientes;[m
+       if (!clientes[ownerId]) {[m
+[1mdiff --git a/src/services/gemini.service.js b/src/services/gemini.service.js[m
+[1mindex 4022bf2..b7fd9c1 100644[m
+[1m--- a/src/services/gemini.service.js[m
+[1m+++ b/src/services/gemini.service.js[m
+[36m@@ -1,4 +1,3 @@[m
+[31m-const { GoogleGenerativeAI } = require('@google/generative-ai');[m
+ const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config');[m
+ [m
+ const SYSTEM_PROMPT = `Eres un parser. Tu UNICA salida es un JSON objeto, sin texto antes o despues.[m
+[36m@@ -33,11 +32,25 @@[m [mlet genAI = null;[m
+ let activeModel = null;[m
+ let activeModelName = null;[m
+ let modelReady = false;[m
+[32m+[m[32mlet GoogleGenerativeAI = null;[m
+[32m+[m[32mlet geminiUnavailableLogged = false;[m
+ [m
+ const nlpCache = new Map();[m
+ let lastRateLimitError = 0;[m
+ [m
+ function getGenAI() {[m
+[32m+[m[32m  if (!GoogleGenerativeAI) {[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      ({ GoogleGenerativeAI } = require('@google/generative-ai'));[m
+[32m+[m[32m    } catch (error) {[m
+[32m+[m[32m      if (!geminiUnavailableLogged) {[m
+[32m+[m[32m        console.error('NLP: falta instalar @google/generative-ai, NLP desactivado');[m
+[32m+[m[32m        geminiUnavailableLogged = true;[m
+[32m+[m[32m      }[m
+[32m+[m[32m      return null;[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m
+   if (!genAI) {[m
+     genAI = new GoogleGenerativeAI(GEMINI_API_KEY);[m
+   }[m
+[36m@@ -60,6 +73,10 @@[m [masync function findWorkingModel() {[m
+   const preferredModel = GEMINI_MODEL || 'gemini-flash-lite-latest';[m
+   const modelsToTry = [preferredModel, ...FALLBACK_MODELS.filter(m => m !== preferredModel)];[m
+   const ai = getGenAI();[m
+[32m+[m[32m  if (!ai) {[m
+[32m+[m[32m    modelReady = true;[m
+[32m+[m[32m    return null;[m
+[32m+[m[32m  }[m
+ [m
+   for (const modelName of modelsToTry) {[m
+     try {[m
+[36m@@ -100,6 +117,10 @@[m [mfunction initModel() {[m
+ [m
+   const preferredModel = GEMINI_MODEL || 'gemini-flash-lite-latest';[m
+   const ai = getGenAI();[m
+[32m+[m[32m  if (!ai) {[m
+[32m+[m[32m    modelReady = true;[m
+[32m+[m[32m    return;[m
+[32m+[m[32m  }[m
+   activeModel = createModel(ai, preferredModel);[m
+   activeModelName = preferredModel;[m
+   modelReady = true;[m
+[36m@@ -297,4 +318,4 @@[m [masync function parseMessage(userId, text) {[m
+   }[m
+ }[m
+ [m
+[31m-module.exports = { parseMessage, initModel };[m
+\ No newline at end of file[m
+[32m+[m[32mmodule.exports = { parseMessage, initModel };[m

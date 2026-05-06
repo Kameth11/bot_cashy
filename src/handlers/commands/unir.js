@@ -1,5 +1,5 @@
 const { bot } = require('../../lib/telegraf');
-const { obtenerClientePorUserId } = require('../../auth');
+const { obtenerClientePorUserId, codigoInvitacionExpirado } = require('../../auth');
 const clienteService = require('../../services/cliente.service');
 const state = require('../../state');
 
@@ -20,6 +20,11 @@ bot.command('unir', (ctx) => {
 
   if (!codigoData) {
     return ctx.reply('❌ Código inválido o expirado. Pide uno nuevo al owner.');
+  }
+
+  if (codigoInvitacionExpirado(codigoData)) {
+    state.pendingCodigos.delete(codigo);
+    return ctx.reply('❌ Código expirado. Pide uno nuevo al owner.');
   }
 
   const ownerId = codigoData.ownerId;

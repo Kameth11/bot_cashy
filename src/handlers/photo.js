@@ -50,6 +50,10 @@ bot.on('photo', async (ctx) => {
       return ctx.reply('⚠️ La lectura de imágenes no está configurada. Revisá `GEMINI_API_KEY`.');
     }
 
+    if (resultado.error === 'vision_dependencia_faltante') {
+      return ctx.reply('⚠️ Falta instalar la dependencia de Vision. Revisá `@google/generative-ai`.');
+    }
+
     if (resultado.error === 'no_es_agenda') {
       return ctx.reply(
         '⚠️ La imagen no parece ser una agenda o turnero.\n\n' +

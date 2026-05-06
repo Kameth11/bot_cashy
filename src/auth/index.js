@@ -1,6 +1,8 @@
-const { AUTHORIZED_USER_ID, ALLOWED_EMAILS } = require('../config');
+const { AUTHORIZED_USER_ID, ALLOWED_EMAILS, CODIGO_EXPIRACION_HORAS } = require('../config');
 const clienteService = require('../services/cliente.service');
 const state = require('../state');
+
+const CODIGO_EXPIRACION_MS = CODIGO_EXPIRACION_HORAS * 60 * 60 * 1000;
 
 function esAdminOriginal(userId) {
   return AUTHORIZED_USER_ID && userId === AUTHORIZED_USER_ID;
@@ -36,6 +38,11 @@ function resetIntentosEmail(userId) {
   state.pendingIntentosEmail.delete(userId);
 }
 
+function codigoInvitacionExpirado(codigoData) {
+  if (!codigoData || !codigoData.createdAt) return false;
+  return Date.now() - codigoData.createdAt > CODIGO_EXPIRACION_MS;
+}
+
 module.exports = {
   esAdminOriginal,
   esEmailAutorizado,
@@ -43,4 +50,5 @@ module.exports = {
   getIntentosEmail,
   incrementIntentosEmail,
   resetIntentosEmail,
+  codigoInvitacionExpirado,
 };

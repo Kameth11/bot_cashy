@@ -1,4 +1,3 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config');
 
 const SYSTEM_PROMPT = `Sos un parser de imagenes de agendas o turneros para un bot argentino. Tu unica tarea es mirar una foto y devolver JSON puro.
@@ -27,10 +26,34 @@ const FALLBACK_MODELS = [
 ];
 
 let genAI = null;
+let GoogleGenerativeAI = null;
+let dependencyChecked = false;
+
+function getFactory() {
+  if (dependencyChecked) {
+    return GoogleGenerativeAI;
+  }
+
+  dependencyChecked = true;
+
+  try {
+    ({ GoogleGenerativeAI } = require('@google/generative-ai'));
+  } catch (error) {
+    GoogleGenerativeAI = null;
+    console.error('Vision: falta instalar @google/generative-ai');
+  }
+
+  return GoogleGenerativeAI;
+}
 
 function getGenAI() {
+  const Factory = getFactory();
+  if (!Factory) {
+    return null;
+  }
+
   if (!genAI) {
-    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    genAI = new Factory(GEMINI_API_KEY);
   }
   return genAI;
 }
@@ -72,6 +95,10 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
   }
 
   const ai = getGenAI();
+  if (!ai) {
+    return { error: 'vision_dependencia_faltante' };
+  }
+
   const imagePart = {
     inlineData: {
       data: photoBuffer.toString('base64'),

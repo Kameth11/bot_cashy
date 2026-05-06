@@ -2,7 +2,7 @@ const { bot } = require('../lib/telegraf');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, METODOS_VALIDOS, COMANDOS_INGRESO, COMANDOS_EGRESO } = require('../config');
 const state = require('../state');
-const { esAdminOriginal, obtenerClientePorUserId, esEmailAutorizado, incrementIntentosEmail, resetIntentosEmail } = require('../auth');
+const { esAdminOriginal, obtenerClientePorUserId, esEmailAutorizado, incrementIntentosEmail, resetIntentosEmail, codigoInvitacionExpirado } = require('../auth');
 const clienteService = require('../services/cliente.service');
 const { getSheetCliente } = require('../services/sheet.service');
 const { generarIDUnico, convertirAPesos } = require('../services/movimiento.service');
@@ -74,6 +74,11 @@ bot.on('text', async (ctx) => {
 
       if (!codigoData) {
         return ctx.reply('❌ Código inválido. Pide uno nuevo al owner con /codigo');
+      }
+
+      if (codigoInvitacionExpirado(codigoData)) {
+        state.pendingCodigos.delete(input);
+        return ctx.reply('❌ Código expirado. Pide uno nuevo al owner con /codigo');
       }
 
       const ownerId = codigoData.ownerId;
