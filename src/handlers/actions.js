@@ -9,6 +9,7 @@ const { formatMonto } = require('../utils/formatter');
 const { convertirAPesos } = require('../services/movimiento.service');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const { guardarTurnosAgenda } = require('../services/agenda.service');
+const { aplicarColorMontoEnFila } = require('../services/sheet-format.service');
 
 function confirmButtons(confirmAction, cancelAction) {
   return Markup.inlineKeyboard([
@@ -187,6 +188,7 @@ bot.action('confirm_edit', async (ctx) => {
       }
     }
     await fila.save();
+    await aplicarColorMontoEnFila(fila, fila.get('Monto'), fila.get('Estado'));
 
     await ctx.editMessageText(
       `✅ *Movimiento actualizado*\n\n` +
@@ -220,13 +222,21 @@ bot.action('confirm_agenda', async (ctx) => {
 
   try {
     await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
+<<<<<<< HEAD
     const { guardados, errores, total, fechaStr } = await guardarTurnosAgenda(userId, turnos);
     const huboErrores = errores > 0;
+=======
+    const { guardados, fechaStr, grupos } = await guardarTurnosAgenda(userId, turnos);
+>>>>>>> 3d950e523c728cb558f12d0c9771aa88ad02f3f6
 
     await ctx.editMessageText(
       `${huboErrores ? '⚠️' : '✅'} *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
       `📅 Fecha: ${fechaStr}\n` +
+<<<<<<< HEAD
       `${huboErrores ? `❌ No se pudieron guardar ${errores} de ${total} turno${total !== 1 ? 's' : ''}\n` : ''}` +
+=======
+      `🗂️ Bloques: ${grupos.join(' | ')}\n` +
+>>>>>>> 3d950e523c728cb558f12d0c9771aa88ad02f3f6
       `📊 Ver en tu Google Sheet (tab "Agenda")`,
       { parse_mode: 'Markdown' }
     );

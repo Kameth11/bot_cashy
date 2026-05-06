@@ -17,7 +17,8 @@ const COMANDOS_INGRESO = ['consulta', 'servicio'];
 const COMANDOS_EGRESO = ['gasto'];
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || 'gemini-2.5-flash';
 const CODIGO_EXPIRACION_HORAS = 24;
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -45,6 +46,7 @@ module.exports = {
   CODIGO_EXPIRACION_HORAS,
   GEMINI_API_KEY,
   GEMINI_MODEL,
+  GEMINI_VISION_MODEL,
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
   USE_SUPABASE,

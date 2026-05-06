@@ -35,9 +35,9 @@ bot.command('codigo', (ctx) => {
       return ctx.reply('⚠️ No tienes una cuenta registrada.');
     }
 
-    const ownerId = parseInt(cliente.ownerId);
+    const ownerId = parseInt(cliente.ownerId, 10);
 
-    if (ownerId !== userId) {
+    if (!cliente.isOwner || ownerId !== userId) {
       return ctx.reply('⚠️ Solo el owner puede generar códigos de invitación.');
     }
 

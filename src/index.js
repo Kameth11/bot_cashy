@@ -18,6 +18,7 @@ require('./handlers/commands/ingresos');
 require('./handlers/commands/egresos');
 require('./handlers/commands/pendientes');
 require('./handlers/commands/cobrar');
+require('./handlers/commands/pendiente');
 require('./handlers/commands/eliminar');
 require('./handlers/commands/editar');
 require('./handlers/commands/listar');

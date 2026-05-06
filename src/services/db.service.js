@@ -4,6 +4,7 @@ const { esAdminOriginal } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 
 const sheetService = require('./sheet.service');
+const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 
 function getSheetId(userId) {
   return sheetService.getSheetId(userId);
@@ -81,16 +82,18 @@ async function addRow(userId, rowData) {
   if (!USE_SUPABASE) {
     const sheet = await sheetService.getSheetCliente(userId);
     if (!sheet) return null;
-    await sheet.addRow(rowData, { insert: true });
-    return rowData;
+    const row = await sheet.addRow(rowData, { insert: true });
+    await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+    return row;
   }
 
   const supabase = getSupabase();
   if (!supabase) {
     const sheet = await sheetService.getSheetCliente(userId);
     if (!sheet) return null;
-    await sheet.addRow(rowData, { insert: true });
-    return rowData;
+    const row = await sheet.addRow(rowData, { insert: true });
+    await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+    return row;
   }
 
   const supabaseRow = {
@@ -119,7 +122,10 @@ async function addRow(userId, rowData) {
     // fallback to sheet
     try {
       const sheet = await sheetService.getSheetCliente(userId);
-      if (sheet) await sheet.addRow(rowData, { insert: true });
+      if (sheet) {
+        const row = await sheet.addRow(rowData, { insert: true });
+        await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+      }
     } catch (e) {
       console.error('Sheet fallback error:', e.message);
     }
@@ -129,7 +135,10 @@ async function addRow(userId, rowData) {
   // dual-write: also write to sheet as backup
   try {
     const sheet = await sheetService.getSheetCliente(userId);
-    if (sheet) await sheet.addRow(rowData, { insert: true });
+    if (sheet) {
+      const row = await sheet.addRow(rowData, { insert: true });
+      await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+    }
   } catch (e) {
     // sheet write failed, thats OK - supabase is source of truth
   }

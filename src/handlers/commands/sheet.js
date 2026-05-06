@@ -29,4 +29,7 @@ async function handleSheetCommand(ctx) {
 bot.command('sheet', handleSheetCommand);
 bot.command('sheets', handleSheetCommand);
 
-module.exports = {};
+module.exports = {
+  handleSheetCommand,
+  buildSheetUrl,
+};
