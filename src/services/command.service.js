@@ -474,6 +474,87 @@ async function ejecutarListar(userId) {
   return msg;
 }
 
+async function prepararEdicion(userId, nombre) {
+  const result = await ejecutarEditar(userId, nombre);
+  if (typeof result === 'string') {
+    return result;
+  }
+
+  if (!result || !result.fila) {
+    return '❌ Error al buscar movimiento.';
+  }
+
+  const montoActual = getRowMonto(result.fila, 0);
+  const moneda = getRowMoneda(result.fila, 'Pesos');
+  const descripcionActual = getRowDescripcion(result.fila, '');
+  const tipo = getRowTipo(result.fila, 'Ingreso');
+
+  return {
+    state: {
+      fila: result.fila,
+      descripcionOriginal: descripcionActual,
+      descripcion: descripcionActual,
+      montoOriginal: montoActual,
+      nuevoMonto: montoActual,
+      moneda,
+      tipo,
+      step: 'descripcion'
+    },
+    mensaje:
+      `📝 *Editar movimiento*\n\n` +
+      `📝 Descripción actual: *${descripcionActual}*\n\n` +
+      'Escribí la nueva descripción (o escribí "- -" para mantener la actual)'
+  };
+}
+
+async function prepararEliminacion(userId, nombre) {
+  const result = await ejecutarEliminar(userId, nombre);
+  if (typeof result === 'string') {
+    return result;
+  }
+
+  if (!result || !result.fila) {
+    return '❌ Error al buscar movimiento.';
+  }
+
+  const fila = result.fila;
+  const monto = getRowMonto(fila, 0);
+  const moneda = getRowMoneda(fila, 'Pesos');
+  const desc = getRowDescripcion(fila);
+  const id = getRowIdUnico(fila, 'sin-id');
+  const fecha = getRowFecha(fila, 'N/A');
+  const hora = getRowHora(fila, 'N/A');
+  const tipo = getRowTipo(fila, 'N/A');
+  const metodo = getRowMetodoPago(fila, 'N/A');
+  const estado = getRowEstado(fila, 'N/A');
+
+  return {
+    state: {
+      fila,
+      index: result.index,
+      desc,
+      monto,
+      moneda,
+      id,
+      fecha,
+      hora,
+      tipo,
+      metodo,
+      estado
+    },
+    mensaje:
+      `⚠️ *¿ELIMINAR ESTE MOVIMIENTO?*\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `📝 ${desc}\n` +
+      `💰 ${formatMonto(monto, moneda)}\n` +
+      `📅 ${fecha} ${hora}\n` +
+      `🏷️ Tipo: ${tipo}\n` +
+      `💳 Método: ${metodo}\n` +
+      `📊 Estado: ${estado}\n` +
+      `🆔 ${id}`
+  };
+}
+
 async function guardarMovimiento(userId, datos, opciones = {}) {
   const { descripcion, monto, tipo, moneda, metodo_pago } = datos;
   const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares' : 'Pesos';
@@ -615,6 +696,8 @@ module.exports = {
   ejecutarEditar,
   ejecutarEliminar,
   ejecutarListar,
+  prepararEdicion,
+  prepararEliminacion,
   guardarMovimiento,
   registrarMovimientoDesdeNLP,
   construirMensajeCotizacion,

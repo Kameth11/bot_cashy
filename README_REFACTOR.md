@@ -192,9 +192,9 @@ Achicar `src/handlers/text.js` y dejarlo como orquestador
 Evitar que comandos y NLP dupliquen logica
 
 ### Tareas
-- Revisar comandos que todavia tienen demasiada logica inline
-- Delegar todo lo posible a `src/services/command.service.js`
-- Reusar la misma logica desde comandos y desde NLP
+- [x] Revisar comandos que todavia tienen demasiada logica inline
+- [x] Delegar todo lo posible a `src/services/command.service.js`
+- [x] Reusar la misma logica desde comandos y desde NLP
 
 ### Validacion
 - `/eliminar` y "elimina X" usan la misma base
@@ -204,7 +204,7 @@ Evitar que comandos y NLP dupliquen logica
 ### Estado
 - [ ] Pendiente
 - [ ] En progreso
-- [ ] Hecho
+- [x] Hecho
 
 ---
 

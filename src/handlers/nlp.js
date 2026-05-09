@@ -1,22 +1,8 @@
-const { bot } = require('../lib/telegraf');
 const geminiService = require('../services/gemini.service');
 const cmd = require('../services/command.service');
 const state = require('../state');
 const { handleSheetCommand } = require('./commands/sheet');
-const { getSheetCliente } = require('../services/sheet.service');
-const { formatMonto } = require('../utils/formatter');
 const { confirmButtons } = require('./actions');
-const {
-  getRowMonto,
-  getRowMoneda,
-  getRowDescripcion,
-  getRowIdUnico,
-  getRowFecha,
-  getRowHora,
-  getRowTipo,
-  getRowMetodoPago,
-  getRowEstado,
-} = require('../utils/sheet-row');
 
 const INTENT_HANDLERS = {
   ver_balance: async (ctx, entities) => {
@@ -120,87 +106,26 @@ const INTENT_HANDLERS = {
 
   editar_movimiento: async (ctx, entities) => {
     const nombre = entities.nombre || null;
-    if (!nombre) {
-      return ctx.reply('📝 *Editar movimiento*\n\nUso: /editar [ID o nombre]\n\nPodrás modificar:\n• Descripción\n• Monto');
-    }
-    const result = await cmd.ejecutarEditar(ctx.from.id, nombre);
+    const result = await cmd.prepararEdicion(ctx.from.id, nombre);
     if (typeof result === 'string') {
       return ctx.reply(result, { parse_mode: 'Markdown' });
     }
-    if (result && result.fila) {
-      const montoActual = getRowMonto(result.fila, 0);
-      const moneda = getRowMoneda(result.fila, 'Pesos');
-      const descripcionActual = getRowDescripcion(result.fila, '');
-      const tipo = getRowTipo(result.fila, 'Ingreso');
-
-      state.pendingEdits.set(ctx.from.id, {
-        fila: result.fila,
-        descripcionOriginal: descripcionActual,
-        descripcion: descripcionActual,
-        montoOriginal: montoActual,
-        nuevoMonto: montoActual,
-        moneda,
-        tipo,
-        step: 'descripcion'
-      });
-
-      return ctx.reply(
-        `📝 *Editar movimiento*\n\n` +
-        `📝 Descripción actual: *${descripcionActual}*\n\n` +
-        'Escribí la nueva descripción (o escribí "- -" para mantener la actual)',
-        { parse_mode: 'Markdown' }
-      );
+    if (result && result.state) {
+      state.pendingEdits.set(ctx.from.id, result.state);
+      return ctx.reply(result.mensaje, { parse_mode: 'Markdown' });
     }
     return ctx.reply('❌ Error al buscar movimiento.');
   },
 
   eliminar_movimiento: async (ctx, entities) => {
     const nombre = entities.nombre || null;
-    if (!nombre) {
-      return ctx.reply('⚠️ Decime el nombre del movimiento que querés eliminar.\nEjemplo: "borrar insumos" o /eliminar [nombre]');
-    }
-    const result = await cmd.ejecutarEliminar(ctx.from.id, nombre);
+    const result = await cmd.prepararEliminacion(ctx.from.id, nombre);
     if (typeof result === 'string') {
       return ctx.reply(result, { parse_mode: 'Markdown' });
     }
-    if (result && result.fila) {
-      const { fila, index, sheet, coincidencias } = result;
-      const monto = getRowMonto(fila, 0);
-      const moneda = getRowMoneda(fila, 'Pesos');
-      const desc = getRowDescripcion(fila);
-      const id = getRowIdUnico(fila, 'sin-id');
-      const fecha = getRowFecha(fila, 'N/A');
-      const hora = getRowHora(fila, 'N/A');
-      const tipo = getRowTipo(fila, 'N/A');
-      const metodo = getRowMetodoPago(fila, 'N/A');
-      const estado = getRowEstado(fila, 'N/A');
-
-      state.pendingDeletes.set(ctx.from.id, {
-        fila,
-        index: coincidencias[0].index,
-        sheet,
-        desc,
-        monto,
-        moneda,
-        id,
-        fecha,
-        hora,
-        tipo,
-        metodo,
-        estado
-      });
-
-      let msg = `⚠️ *¿ELIMINAR ESTE MOVIMIENTO?*\n\n`;
-      msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-      msg += `📝 ${desc}\n`;
-      msg += `💰 ${formatMonto(monto, moneda)}\n`;
-      msg += `📅 ${fecha} ${hora}\n`;
-      msg += `🏷️ Tipo: ${tipo}\n`;
-      msg += `💳 Método: ${metodo}\n`;
-      msg += `📊 Estado: ${estado}\n`;
-      msg += `🆔 ${id}`;
-
-      return ctx.reply(msg, {
+    if (result && result.state) {
+      state.pendingDeletes.set(ctx.from.id, result.state);
+      return ctx.reply(result.mensaje, {
         parse_mode: 'Markdown',
         ...confirmButtons('confirm_delete', 'cancel_delete')
       });
