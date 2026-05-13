@@ -1,8 +1,17 @@
-const { SUPABASE_URL, SUPABASE_ANON_KEY, USE_SUPABASE } = require('../config');
+const { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, USE_SUPABASE } = require('../config');
 
 let supabaseClient = null;
 let createClient = null;
 let requireAttempted = false;
+
+function normalizeSupabaseUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+
+  return raw
+    .replace(/\/rest\/v1\/?$/i, '')
+    .replace(/\/+$/g, '');
+}
 
 function loadFactory() {
   if (requireAttempted) {
@@ -24,7 +33,7 @@ function loadFactory() {
 }
 
 function isAvailable() {
-  return Boolean(USE_SUPABASE && SUPABASE_URL && SUPABASE_ANON_KEY && loadFactory());
+  return Boolean(USE_SUPABASE && normalizeSupabaseUrl(SUPABASE_URL) && (SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY) && loadFactory());
 }
 
 function getSupabase() {
@@ -33,7 +42,8 @@ function getSupabase() {
   }
 
   if (!supabaseClient) {
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const key = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+    supabaseClient = createClient(normalizeSupabaseUrl(SUPABASE_URL), key);
   }
 
   return supabaseClient;
@@ -42,4 +52,5 @@ function getSupabase() {
 module.exports = {
   getSupabase,
   isAvailable,
+  normalizeSupabaseUrl,
 };

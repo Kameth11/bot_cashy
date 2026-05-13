@@ -59,12 +59,12 @@ function extraerMonto(rawText) {
     const m = rawText.match(p);
     if (m) {
       const valueToken = `${m[1]}${m[2] ? ` ${m[2]}` : ''}`;
-      const val = normalizarNumero(valueToken);
-      if (!isNaN(val) && val > 0) {
-        const isUsd = /u\$s?|usd|dolar/i.test(rawText.substring(Math.max(0, m.index - 5), m.index + m[0].length + 5));
-        return { monto: val, moneda: isUsd ? 'Dolares' : 'Pesos' };
+        const val = normalizarNumero(valueToken);
+        if (!isNaN(val) && val > 0) {
+          const isUsd = /u\$s?|usd|dolar/i.test(rawText.substring(Math.max(0, m.index - 5), m.index + m[0].length + 5));
+          return { monto: val, moneda: isUsd ? 'Dólares' : 'Pesos' };
+        }
       }
-    }
   }
   const simple = rawText.match(/\b(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?\b/i);
   if (simple) {
@@ -72,7 +72,7 @@ function extraerMonto(rawText) {
     const val = normalizarNumero(valueToken);
     if (!isNaN(val) && val > 0) {
       const isUsd = /u\$s?|usd|dolar/i.test(rawText);
-      return { monto: val, moneda: isUsd ? 'Dolares' : 'Pesos' };
+      return { monto: val, moneda: isUsd ? 'Dólares' : 'Pesos' };
     }
   }
   return null;
@@ -80,9 +80,9 @@ function extraerMonto(rawText) {
 
 function extraerMetodo(text) {
   if (/\b(?:efectivo|contado|cash)\b/i.test(text)) return 'efectivo';
-  if (/\b(?:transferencia|transfer|transf|tf|tbu)\b/i.test(text)) return 'transferencia';
-  if (/\b(?:tarjeta|debito|credito|debito|visa|master|mc)\b/i.test(text)) return 'tarjeta';
-  if (/\b(?:mercadopago|mp|mercado\s*pago)\b/i.test(text)) return 'transferencia';
+  if (/\b(?:transferencia|transfer|transf|tf|tbu|cbu|alias|deposito|depositaron|transferi|transferiste|transferido)\b/i.test(text)) return 'transferencia';
+  if (/\b(?:tarjeta|debito|credito|visa|master|mc|posnet)\b/i.test(text)) return 'tarjeta';
+  if (/\b(?:mercadopago|mp|mercado\s*pago|qr)\b/i.test(text)) return 'transferencia';
   return null;
 }
 
@@ -94,7 +94,7 @@ function limpiarTextoPendienteBase(text) {
     .replace(/\$\s*\d+(?:[.,]\d{1,2})?\s*(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/gi, ' ')
     .replace(/\b\d+(?:[.,]\d{1,2})?\s*(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?\b/gi, ' ')
     .replace(/\b(?:pesos|mangos|guita|plata|dolares?|usd)\b/gi, ' ')
-    .replace(/\b(?:efectivo|contado|cash|transferencia|transfer|transf|tf|tbu|mercadopago|mercado\s*pago|mp|tarjeta|debito|credito|visa|master|mc)\b/gi, ' ')
+    .replace(/\b(?:efectivo|contado|cash|transferencia|transfer|transf|tf|tbu|cbu|alias|deposito|mercadopago|mercado\s*pago|mp|qr|tarjeta|debito|credito|visa|master|mc|posnet)\b/gi, ' ')
     .replace(/[.,;:!?]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -103,6 +103,14 @@ function limpiarTextoPendienteBase(text) {
 function capitalizarFrase(text) {
   if (!text || text.length < 2) return null;
   return text.split(' ').filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+
+function limpiarDescripcionMovimiento(text) {
+  return String(text || '')
+    .replace(/^(?:se\s+le\s+|le\s+)?/i, '')
+    .replace(/^(?:a|al|de|del)\s+/i, '')
+    .replace(/[.,;:!?]+$/g, '')
+    .trim();
 }
 
 function extraerDescripcionPendiente(rawText) {
@@ -144,6 +152,48 @@ function extraerDescripcionPendienteNombrePrimero(rawText) {
   return capitalizarFrase(descripcion);
 }
 
+function matchRegistrarEgresoExplicito(rawText, text) {
+  const expensePattern = /^(?:se\s+le\s+pago\s+a|se\s+le\s+pag[oó]\s+a|le\s+pague\s+a|le\s+pagu[eé]\s+a|pague\s+a|pagu[eé]\s+a|abone\s+a|abon[eé]\s+a)\s+(.+)$/i;
+  const match = String(rawText || '').trim().match(expensePattern);
+  if (!match || !match[1]) return null;
+
+  const montoInfo = extraerMonto(rawText);
+  const metodo_pago = extraerMetodo(text);
+  const descripcion = capitalizarFrase(limpiarDescripcionMovimiento(extraerDescripcion(rawText, 'gasto', metodo_pago)));
+
+  return {
+    intent: 'registrar_movimiento',
+    entities: {
+      tipo: 'gasto',
+      descripcion,
+      monto: montoInfo ? montoInfo.monto : null,
+      moneda: montoInfo ? montoInfo.moneda : 'Pesos',
+      metodo_pago,
+    }
+  };
+}
+
+function matchRegistrarIngresoExplicito(rawText, text) {
+  const incomePattern = /^(?:me\s+pagaron|me\s+abonaron|me\s+depositaron|me\s+transfirieron|cayo\s+lo\s+de|cay[oó]\s+lo\s+de)\s+(.+)$/i;
+  const match = String(rawText || '').trim().match(incomePattern);
+  if (!match || !match[1]) return null;
+
+  const montoInfo = extraerMonto(rawText);
+  const metodo_pago = extraerMetodo(text);
+  const descripcion = capitalizarFrase(limpiarDescripcionMovimiento(extraerDescripcion(rawText, 'ingreso', metodo_pago)));
+
+  return {
+    intent: 'registrar_movimiento',
+    entities: {
+      tipo: 'ingreso',
+      descripcion,
+      monto: montoInfo ? montoInfo.monto : null,
+      moneda: montoInfo ? montoInfo.moneda : 'Pesos',
+      metodo_pago,
+    }
+  };
+}
+
 function extraerDescripcion(rawText, tipo, metodo) {
   const allTipoWords = [...INGRESO_WORDS, ...EGRESO_WORDS];
   const normText = normalizar(rawText);
@@ -160,11 +210,11 @@ function extraerDescripcion(rawText, tipo, metodo) {
     if (/^[\$u\$s]*\d+(?:[.,]\d{1,2})?(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?$/.test(wordsOrig[i].replace(/[Uu]\$[Ss]?/, ''))) continue;
     if (/^(pesos|mangos|guita|plata|dola?r(?:es)?|usd|\$|u\$s?|lucas?|luca|mil|k|palos?|palo|millon(?:es)?)$/.test(wNorm)) continue;
     if (allTipoWords.some(tw => wNorm === normalizar(tw))) continue;
-    if (/^(cobre|cobro|pago|gaste|gasto|pague|ingrese|ingreso|ingresaron|cargue|cargo|facture|facturo|recibi|compre|sali|egrese|egreso|consulta|servicio|entro|entraron|entrada|salio|salieron|fueron|vendi|depositaron|transferieron)$/i.test(wNorm)) continue;
+    if (/^(cobre|cobro|pago|gaste|gasto|pague|ingrese|ingreso|ingresaron|cargue|cargo|facture|facturo|recibi|compre|sali|egrese|egreso|consulta|servicio|entro|entraron|entrada|salio|salieron|fueron|vendi|depositaron|transferieron|abone|abonar|cayo|cayo|entro|seña|sena|honorario|honorarios|cobranza)$/i.test(wNorm)) continue;
     if (metodo === 'efectivo' && /^(efectivo|contado|cash)$/.test(wNorm)) continue;
-    if (metodo === 'transferencia' && /^(transferencia|transfer|transf|tf|tbu|mercadopago|mp)$/.test(wNorm)) continue;
-    if (metodo === 'tarjeta' && /^(tarjeta|debito|credito|visa|master|mc)$/.test(wNorm)) continue;
-    if (/^(de|del|en|la|el|lo|los|las|con|por|se|me|te|ya|un|una|pesos|mangos|guita|plata|dolares?|usd)$/.test(wNorm)) continue;
+    if (metodo === 'transferencia' && /^(transferencia|transfer|transf|tf|tbu|cbu|alias|mercadopago|mp|qr)$/.test(wNorm)) continue;
+    if (metodo === 'tarjeta' && /^(tarjeta|debito|credito|visa|master|mc|posnet)$/.test(wNorm)) continue;
+    if (/^(de|del|en|la|el|lo|los|las|con|por|se|me|te|le|al|ya|un|una|pesos|mangos|guita|plata|dolares?|usd)$/.test(wNorm)) continue;
 
     cleanWords.push(wordsOrig[i]);
   }
@@ -176,13 +226,13 @@ function extraerDescripcion(rawText, tipo, metodo) {
 }
 
 const KEYWORD_INTENTS = [
-  { intent: 'ver_balance', words: ['balance', 'resumen de caja', 'estado de caja', 'caja'], phrases: ['cuanto tengo', 'como estoy', 'como va la caja', 'que tengo', 'como va', 'como ando'] },
-  { intent: 'ver_hoy', words: [], phrases: ['que hubo hoy', 'movimientos de hoy', 'que cobre hoy', 'cobros de hoy', 'como le fue hoy', 'como estuvo hoy', 'como va hoy', 'que paso hoy', 'que hubo'] },
-  { intent: 'ver_semana', words: [], phrases: ['como va la semana', 'movimientos de la semana', 'esta semana', 'resumen semanal', 'resumen de la semana', 'que cobre esta semana', 'como va la sem', 'la semana'] },
-  { intent: 'ver_mes', words: [], phrases: ['como va el mes', 'movimientos del mes', 'este mes', 'resumen mensual', 'resumen del mes', 'que cobre este mes', 'el mes'] },
-  { intent: 'ver_ingresos', words: ['ingresos', 'cobros'], phrases: ['que cobre', 'mis ingresos', 'lista de ingresos', 'ver ingresos', 'mostrar ingresos', 'los ingresos'] },
-  { intent: 'ver_egresos', words: ['egresos'], phrases: ['mis gastos', 'lista de egresos', 'ver egresos', 'ver gastos', 'mostrar gastos', 'que gaste', 'los gastos', 'mis egresos'] },
-  { intent: 'ver_pendientes', words: ['pendientes'], phrases: ['que me falta cobrar', 'sin cobrar', 'adeudados', 'sin pagar', 'por cobrar', 'ver pendientes', 'mostrar pendientes', 'quienes me deben', 'quienes no pagaron', 'me deben'] },
+  { intent: 'ver_balance', words: ['balance', 'resumen de caja', 'estado de caja', 'caja', 'neto'], phrases: ['cuanto tengo', 'como estoy', 'como va la caja', 'que tengo', 'como va', 'como ando', 'cuanto hice', 'resumen general', 'estado general', 'como venimos'] },
+  { intent: 'ver_hoy', words: [], phrases: ['que hubo hoy', 'movimientos de hoy', 'que cobre hoy', 'cobros de hoy', 'como le fue hoy', 'como estuvo hoy', 'como va hoy', 'que paso hoy', 'que hubo', 'lo de hoy', 'hoy como vamos', 'cuanto hice hoy'] },
+  { intent: 'ver_semana', words: [], phrases: ['como va la semana', 'movimientos de la semana', 'esta semana', 'resumen semanal', 'resumen de la semana', 'que cobre esta semana', 'como va la sem', 'la semana', 'cuanto hice esta semana'] },
+  { intent: 'ver_mes', words: [], phrases: ['como va el mes', 'movimientos del mes', 'este mes', 'resumen mensual', 'resumen del mes', 'que cobre este mes', 'el mes', 'cuanto hice este mes', 'como venimos este mes'] },
+  { intent: 'ver_ingresos', words: ['ingresos', 'cobros', 'entradas'], phrases: ['que cobre', 'mis ingresos', 'lista de ingresos', 'ver ingresos', 'mostrar ingresos', 'los ingresos', 'lo que entro', 'lo que entró', 'ver cobros'] },
+  { intent: 'ver_egresos', words: ['egresos'], phrases: ['mis gastos', 'lista de egresos', 'ver egresos', 'ver gastos', 'mostrar gastos', 'que gaste', 'los gastos', 'mis egresos', 'lo que salio', 'lo que salió', 'cuanto gaste'] },
+  { intent: 'ver_pendientes', words: ['pendientes', 'deudores'], phrases: ['que me falta cobrar', 'sin cobrar', 'adeudados', 'sin pagar', 'por cobrar', 'ver pendientes', 'mostrar pendientes', 'quienes me deben', 'quienes no pagaron', 'me deben', 'que quedo debiendo', 'que quedó debiendo'] },
   { intent: 'ver_dolar', words: ['cotizacion', 'coti', 'dolar'], phrases: ['cuanto vale el dolar', 'dolar blue', 'precio dolar', 'valor dolar', 'cuanto esta el dolar', 'a cuanto esta el dolar', 'cuanto el dolar', 'cotizacion del dolar', 'valor del dolar', 'precio del dolar'] },
   { intent: 'actualizardolar', words: [], phrases: ['actualizar dolar', 'actualizar cotizacion', 'actualizar coti', 'nueva coti', 'actualiza dolar', 'update dolar', 'actualizar el dolar', 'actualizar la cotizacion'] },
   { intent: 'ver_sheet', words: ['sheet', 'sheets'], phrases: ['mi sheet', 'abrir sheet', 'ver sheet', 'mi google sheet', 'abrir google sheet'] },
@@ -190,24 +240,36 @@ const KEYWORD_INTENTS = [
   { intent: 'listar_movimientos', words: ['listar', 'listado'], phrases: ['ver todo', 'ver movimientos', 'todos los movimientos', 'ver todos', 'lista de movimientos', 'lista completa', 'ver lista'] },
 ];
 
-const INGRESO_WORDS = ['cobre', 'cobro', 'me pagaron', 'me pago', 'pagaron', 'se cobro', 'se cobraron', 'se pago', 'se pagaron', 'pago', 'ingrese', 'ingreso', 'ingresaron', 'cargue', 'cargo', 'facture', 'facturo', 'recibi', 'consulta', 'servicio', 'atendi', 'entro', 'entraron', 'me entro', 'me entraron', 'cobraron', 'cobramos', 'depositaron', 'transferieron', 'vendi', 'vendio', 'cobraste', 'cobro', 'pagamos'];
+const INGRESO_WORDS = ['cobre', 'cobro', 'me pagaron', 'me pago', 'pagaron', 'se cobro', 'se cobraron', 'se pago', 'se pagaron', 'ingrese', 'ingreso', 'ingresaron', 'cargue', 'cargo', 'facture', 'facturo', 'recibi', 'consulta', 'servicio', 'atendi', 'entro', 'entraron', 'me entro', 'me entraron', 'cobraron', 'cobramos', 'depositaron', 'transferieron', 'vendi', 'vendio', 'cobraste', 'cobro', 'pagamos', 'cayo', 'cayo lo de', 'entró', 'me entró', 'seño', 'seña', 'sena', 'honorarios', 'honorario', 'liquide', 'liquidaron'];
 
-const EGRESO_WORDS = ['gaste', 'gasto', 'se gasto', 'pague', 'costo de', 'compre', 'compra', 'sali', 'salida', 'egrese', 'egreso', 'salio', 'salieron', 'se fue', 'se me fue', 'costo', 'erogo'];
+const EGRESO_WORDS = ['gaste', 'gasto', 'se gasto', 'pague', 'costo de', 'compre', 'compra', 'sali', 'salida', 'egrese', 'egreso', 'salio', 'salieron', 'se fue', 'se me fue', 'costo', 'erogo', 'abone', 'aboné', 'puse', 'inverti', 'invertí', 'debite', 'debité'];
 
 function matchKeywordIntent(text) {
+  let bestMatch = null;
+
   for (const { intent, words, phrases } of KEYWORD_INTENTS) {
     for (const phrase of phrases) {
-      if (containsNormalizedTerm(text, phrase)) return intent;
+      if (containsNormalizedTerm(text, phrase)) {
+        const score = normalizar(phrase).length;
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { intent, score };
+        }
+      }
     }
     for (const word of words) {
-      if (containsNormalizedTerm(text, word)) return intent;
+      if (containsNormalizedTerm(text, word)) {
+        const score = normalizar(word).length;
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { intent, score };
+        }
+      }
     }
   }
-  return null;
+  return bestMatch ? bestMatch.intent : null;
 }
 
 const ENTITY_INTENTS = [
-  { intent: 'cobrar_movimiento', patterns: [/^(?:cobrar|cobro|ya me pago|ya me pagaron|ya cobro|marcar cobrado|marcar como cobrado|ya cobre|ya pago|cobrale|cobra|me pago|me pag[oó]|ya entro lo de|entro lo de|entr[oó] lo de|me transfirio|me transfiri[oó]|me deposito|me deposit[oó])\s+(.+)$/i, /^(.+?)\s+(?:me pago|me pag[oó]|me transfirio|me transfiri[oó]|me deposito|me deposit[oó])$/i], entityKey: 'nombre' },
+  { intent: 'cobrar_movimiento', patterns: [/^(?:cobrar|cobro|ya me pago|ya me pagaron|ya cobro|marcar cobrado|marcar como cobrado|ya cobre|ya pago|cobrale|cobra|me pago|me pag[oó]|ya entro lo de|entro lo de|entr[oó] lo de|me transfirio|me transfiri[oó]|me deposito|me deposit[oó]|cayo lo de|cay[oó] lo de|liquidaron|me abonaron)\s+(.+)$/i, /^(.+?)\s+(?:me pago|me pag[oó]|me transfirio|me transfiri[oó]|me deposito|me deposit[oó]|me abon[oó])$/i], entityKey: 'nombre' },
   { intent: 'editar_movimiento', patterns: [/^(?:editar|modificar|cambiar|corregir|edita|cambio)\s+(.+)$/i], entityKey: 'nombre' },
   { intent: 'eliminar_movimiento', patterns: [/^(?:eliminar|borrar|borra|quitar|elimina|borrame|borro|elimino|borralo|borrarlo|eliminarlo|eliminame)\s+(.+)$/i], entityKey: 'nombre' },
 ];
@@ -240,12 +302,15 @@ function matchRegistrarMovimiento(rawText, text) {
   const moneda = montoInfo ? montoInfo.moneda : 'Pesos';
 
   let tipo = null;
-  for (const word of INGRESO_WORDS) {
-    if (containsNormalizedTerm(text, word)) { tipo = 'ingreso'; break; }
+  for (const word of EGRESO_WORDS) {
+    if (containsNormalizedTerm(text, word)) {
+      tipo = 'gasto';
+      break;
+    }
   }
   if (!tipo) {
-    for (const word of EGRESO_WORDS) {
-      if (containsNormalizedTerm(text, word)) { tipo = 'gasto'; break; }
+    for (const word of INGRESO_WORDS) {
+      if (containsNormalizedTerm(text, word)) { tipo = 'ingreso'; break; }
     }
   }
   if (!tipo) return null;
@@ -279,6 +344,12 @@ function quickParse(rawText) {
 
   const pendienteResult = matchRegistrarPendiente(rawText, text);
   if (pendienteResult) return pendienteResult;
+
+  const egresoExplicito = matchRegistrarEgresoExplicito(rawText, text);
+  if (egresoExplicito) return egresoExplicito;
+
+  const ingresoExplicito = matchRegistrarIngresoExplicito(rawText, text);
+  if (ingresoExplicito) return ingresoExplicito;
 
   const montoInfo = extraerMonto(rawText);
   if (!montoInfo) {

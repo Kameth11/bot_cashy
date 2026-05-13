@@ -18,6 +18,9 @@ const {
   getRowMonto,
   getRowMoneda,
   getRowFecha,
+  getRowHora,
+  getRowTipo,
+  getRowMetodoPago,
 } = require('../utils/sheet-row');
 
 async function construirMensajeCotizacion(monto) {
@@ -430,7 +433,20 @@ async function ejecutarEliminar(userId, nombre) {
   });
 
   if (coincidencias.length === 0) {
-    return '❌ No se encontró ningún movimiento con ese nombre.';
+    let msg = '❌ No se encontró ningún movimiento con ese nombre o ID.\n\n';
+    msg += '📋 *Últimos 5 movimientos:*\n\n';
+
+    const ultimosMovimientos = filas.slice(-5).reverse();
+    ultimosMovimientos.forEach((f, i) => {
+      const desc = getRowDescripcion(f);
+      const monto = getRowMonto(f, 0);
+      const fecha = getRowFecha(f, '');
+      msg += `${i + 1}. ${desc}\n`;
+      msg += `   $${monto} - ${fecha}\n\n`;
+    });
+
+    msg += '💡 *Tip:* Intenta copiar parte del nombre exacto de arriba.';
+    return msg;
   }
 
   if (coincidencias.length > 1) {
@@ -441,7 +457,7 @@ async function ejecutarEliminar(userId, nombre) {
       msg += `${i + 1}. ${desc}\n`;
       msg += `   ${formatMonto(getRowMonto(f, 0), getRowMoneda(f, 'Pesos'))} - ${getRowFecha(f)}\n\n`;
     });
-    msg += `\nEspecificá mejor el nombre.`;
+    msg += `\nEspecificá mejor el nombre o usa /listar para ver todos.`;
     return msg;
   }
 
@@ -555,6 +571,48 @@ async function prepararEliminacion(userId, nombre) {
   };
 }
 
+function buildHelpMessage() {
+  return (
+    '📖 *Comandos disponibles:*\n\n' +
+    '📝 *Registrar movimiento:*\n' +
+    '`consulta [paciente] $[monto] [metodo]`\n' +
+    '`servicio [tratamiento] $[monto] [metodo]`\n' +
+    '`gasto [descripcion] $-[monto]`\n' +
+    '`pendiente [paciente/concepto] $[monto]`\n' +
+    '`/pendiente [paciente/concepto] $[monto]`\n\n' +
+    '💬 *Primero intenta interpretar palabras clave sin IA.*\n' +
+    'Si no alcanza, recurre al parser remoto para lenguaje natural.\n\n' +
+    '📸 *Agenda por foto:*\n' +
+    'Envía una foto de tu agenda o turnero para extraer y guardar turnos\n\n' +
+    '💵 *Monedas:*\n' +
+    '$ - Pesos | U$ / USD - Dólares\n\n' +
+    '💳 *Método de pago:*\n' +
+    'efectivo / transferencia / tarjeta\n\n' +
+    '📊 *Reportes:*\n' +
+    '`/balance` - Resumen completo\n' +
+    '`/hoy` - Movimientos de hoy\n' +
+    '`/pendientes` - Sin cobrar\n' +
+    '`/semana` - Resumen semanal\n' +
+    '`/mes` - Balance del mes\n' +
+    '`/ingresos` - Solo ingresos\n' +
+    '`/egresos` - Solo gastos\n\n' +
+    '✅ *Cobrar:*\n' +
+    '`/cobrar ultimo` - Cobra el último pendiente\n' +
+    '`/cobrar [nombre]` - Cobra uno que coincida\n' +
+    '`/cobrar [nombre] [monto]` - Registra cobro parcial\n\n' +
+    '✏️ *Editar:*\n' +
+    '`/editar [nombre]` - Editar descripción y monto\n\n' +
+    '🗑️ *Eliminar:*\n' +
+    '`/eliminar [nombre]` - Eliminar movimiento\n' +
+    '`/listar` - Ver todos los movimientos\n\n' +
+    '💵 *Dólar:*\n' +
+    '`/dolar` - Ver cotización actual\n' +
+    '`/actualizardolar` - Actualizar cotización\n\n' +
+    '📄 *Sheet:*\n' +
+    '`/sheet` - Ver link de tu Google Sheet'
+  );
+}
+
 async function guardarMovimiento(userId, datos, opciones = {}) {
   const { descripcion, monto, tipo, moneda, metodo_pago } = datos;
   const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares' : 'Pesos';
@@ -606,6 +664,24 @@ async function guardarMovimiento(userId, datos, opciones = {}) {
   };
 }
 
+function normalizarTipoMovimiento(tipo, monto = null) {
+  const raw = tipo == null ? '' : String(tipo).trim().toLowerCase();
+
+  if (['gasto', 'egreso', 'salida', 'salio', 'salieron', 'se fue', 'se me fue'].includes(raw)) {
+    return 'Egreso';
+  }
+
+  if (['ingreso', 'consulta', 'servicio', 'entro', 'entraron', 'entrada', 'me entro', 'me entraron'].includes(raw)) {
+    return 'Ingreso';
+  }
+
+  if (monto !== null && monto !== undefined && parseFloat(monto) < 0) {
+    return 'Egreso';
+  }
+
+  return 'Ingreso';
+}
+
 async function registrarMovimientoDesdeNLP(userId, datos) {
   const { tipo, descripcion, monto, moneda, metodo_pago, estado } = datos;
   const estadoFinal = estado === 'Pendiente' ? 'Pendiente' : 'Cobrado';
@@ -625,21 +701,18 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     return { necesitaInfo: true, campo: 'descripcion', mensaje: '📝 ¿De quién o qué concepto es el movimiento?' };
   }
 
-  let tipoFinal = 'Ingreso';
   let montoFinal = parseFloat(monto);
 
-  if (tipo === 'gasto') {
-    tipoFinal = 'Egreso';
-    if (montoFinal > 0) montoFinal = -montoFinal;
-  } else if (tipo === 'servicio') {
-    tipoFinal = 'Ingreso';
+  const tipoFinal = normalizarTipoMovimiento(tipo, montoFinal);
+  if (tipoFinal === 'Egreso' && montoFinal > 0) {
+    montoFinal = -montoFinal;
   }
 
   const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares' : 'Pesos';
 
   if (monedaFinal === 'Dólares') {
     state.pendingCotizaciones.set(userId, {
-      comando: tipo === 'gasto' ? 'gasto' : 'consulta',
+      comando: tipoFinal === 'Egreso' ? 'gasto' : 'consulta',
       descripcion: descripcion,
       monto: montoFinal,
       tipo: tipoFinal,
@@ -698,6 +771,7 @@ module.exports = {
   ejecutarListar,
   prepararEdicion,
   prepararEliminacion,
+  buildHelpMessage,
   guardarMovimiento,
   registrarMovimientoDesdeNLP,
   construirMensajeCotizacion,

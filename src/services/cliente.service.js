@@ -4,6 +4,18 @@ const { getSupabase, isAvailable } = require('../lib/supabase');
 
 let clientes = {};
 
+function buildProfileRow(userId, clienteData = {}) {
+  return {
+    id: parseInt(userId, 10),
+    web_user_id: clienteData.webUserId || null,
+    email: clienteData.email || null,
+    display_name: clienteData.display_name || (clienteData.email ? clienteData.email.split('@')[0] : null),
+    sheet_id: clienteData.sheetId || null,
+    plan: clienteData.plan || 'free',
+    usuarios: Array.isArray(clienteData.usuarios) ? clienteData.usuarios : [],
+  };
+}
+
 async function cargarClientes() {
   if (USE_SUPABASE && isAvailable()) {
     const supabase = getSupabase();
@@ -15,6 +27,14 @@ async function cargarClientes() {
       if (error) {
         console.error('Supabase cargarClientes error:', error.message);
         return cargarClientesLocal();
+      }
+
+      if (!data || data.length === 0) {
+        const localClientes = cargarClientesLocal();
+        if (Object.keys(localClientes).length > 0) {
+          await guardarClientes(localClientes);
+        }
+        return localClientes;
       }
 
       clientes = {};
@@ -68,12 +88,7 @@ async function guardarClientes(clientesObj) {
       for (const [userId, clienteData] of Object.entries(clientesObj)) {
         await supabase
           .from('profiles')
-          .upsert({
-            id: parseInt(userId),
-            email: clienteData.email || null,
-            display_name: clienteData.email ? clienteData.email.split('@')[0] : null,
-            sheet_id: clienteData.sheetId || null,
-          }, { onConflict: 'id' });
+          .upsert(buildProfileRow(userId, clienteData), { onConflict: 'id' });
       }
     } catch (err) {
       console.error('Supabase guardarClientes catch (local backup OK):', err.message);

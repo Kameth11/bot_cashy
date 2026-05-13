@@ -62,6 +62,13 @@ Cada usuario debe compartir su sheet con la service account:
 
 ## Cómo usar
 
+### Runtime oficial
+
+El runtime operativo del bot es `src/index.js`.
+
+- Usa `npm start`
+- No ejecutes `index.js` raiz: quedó como archivo legacy deshabilitado
+
 ### Iniciar el bot
 
 ```bash

@@ -1,30 +1,73 @@
 const { getSupabase, isAvailable } = require('../lib/supabase');
 const { USE_SUPABASE, SPREADSHEET_ID } = require('../config');
-const { esAdminOriginal } = require('../auth');
+const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
-
-const sheetService = require('./sheet.service');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
+const { getRowIdUnico } = require('../utils/sheet-row');
+
+function getSheetService() {
+  return require('./sheet.service');
+}
 
 function getSheetId(userId) {
-  return sheetService.getSheetId(userId);
+  const cliente = obtenerClientePorUserId(userId);
+  if (cliente && cliente.sheetId) return cliente.sheetId;
+  if (esAdminOriginal(userId) && SPREADSHEET_ID) return SPREADSHEET_ID;
+  return null;
 }
 
 function invalidateCache(userId) {
   if (USE_SUPABASE) {
     // no cache needed with Supabase
   }
-  sheetService.invalidateCache(userId);
+  getSheetService().invalidateCache(userId);
+}
+
+async function ensureProfile(userId) {
+  if (!USE_SUPABASE) return;
+
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Supabase ensureProfile select error:', error.message);
+    return;
+  }
+
+  if (data) return;
+
+  const cliente = obtenerClientePorUserId(userId);
+  const profileRow = {
+    id: userId,
+    email: cliente?.email || null,
+    display_name: cliente?.email ? cliente.email.split('@')[0] : null,
+    sheet_id: cliente?.sheetId || (esAdminOriginal(userId) ? SPREADSHEET_ID : null),
+    usuarios: Array.isArray(cliente?.usuarios) ? cliente.usuarios : [],
+  };
+
+  const { error: upsertError } = await supabase
+    .from('profiles')
+    .upsert(profileRow, { onConflict: 'id' });
+
+  if (upsertError) {
+    console.error('Supabase ensureProfile upsert error:', upsertError.message);
+  }
 }
 
 async function obtenerDatosSheet(userId) {
   if (!USE_SUPABASE) {
-    return sheetService.obtenerDatosSheet(userId);
+    return getSheetService().obtenerDatosSheet(userId);
   }
 
   const supabase = getSupabase();
   if (!supabase) {
-    return sheetService.obtenerDatosSheet(userId);
+    return getSheetService().obtenerDatosSheet(userId);
   }
 
   try {
@@ -36,7 +79,7 @@ async function obtenerDatosSheet(userId) {
 
     if (error) {
       console.error('Supabase obtenerDatos error:', error.message);
-      return sheetService.obtenerDatosSheet(userId);
+      return getSheetService().obtenerDatosSheet(userId);
     }
 
     return data.map(row => ({
@@ -57,13 +100,62 @@ async function obtenerDatosSheet(userId) {
     );
   } catch (err) {
     console.error('Supabase obtenerDatos catch:', err.message);
-    return sheetService.obtenerDatosSheet(userId);
+    return getSheetService().obtenerDatosSheet(userId);
   }
+}
+
+async function getDocCliente(userId, fresh = false) {
+  return getSheetService().getDocCliente(userId, fresh);
+}
+
+async function findSheetRowByIdUnico(userId, idUnico) {
+  if (!idUnico) return null;
+
+  const sheet = await getSheetService().getSheetCliente(userId);
+  if (!sheet) return null;
+
+  const rows = await sheet.getRows();
+  return rows.find(row => getRowIdUnico(row, '') === idUnico) || null;
+}
+
+async function syncRowUpdateToSheet(userId, rowIdUnico, updates = {}) {
+  const sheetRow = await findSheetRowByIdUnico(userId, rowIdUnico);
+  if (!sheetRow) return;
+
+  const fieldMap = {
+    descripcion: 'Descripcion',
+    monto: 'Monto',
+    estado: 'Estado',
+    moneda: 'Moneda',
+    metodo_pago: 'MetodoPago',
+    monto_pesos: 'MontoPesos',
+    id_unico: 'ID_Unico',
+    id_origen: 'ID_Origen',
+  };
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (fieldMap[key]) {
+      sheetRow.set(fieldMap[key], value);
+    }
+  }
+
+  await sheetRow.save();
+  await aplicarColorMontoEnFila(
+    sheetRow,
+    updates.monto !== undefined ? updates.monto : sheetRow.get('Monto'),
+    updates.estado !== undefined ? updates.estado : sheetRow.get('Estado')
+  );
+}
+
+async function syncRowDeleteToSheet(userId, rowIdUnico) {
+  const sheetRow = await findSheetRowByIdUnico(userId, rowIdUnico);
+  if (!sheetRow) return;
+  await sheetRow.delete();
 }
 
 async function getSheetCliente(userId) {
   if (!USE_SUPABASE) {
-    return sheetService.getSheetCliente(userId);
+    return getSheetService().getSheetCliente(userId);
   }
 
   return {
@@ -80,7 +172,7 @@ async function getSheetCliente(userId) {
 
 async function addRow(userId, rowData) {
   if (!USE_SUPABASE) {
-    const sheet = await sheetService.getSheetCliente(userId);
+    const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return null;
     const row = await sheet.addRow(rowData, { insert: true });
     await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
@@ -89,7 +181,7 @@ async function addRow(userId, rowData) {
 
   const supabase = getSupabase();
   if (!supabase) {
-    const sheet = await sheetService.getSheetCliente(userId);
+    const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return null;
     const row = await sheet.addRow(rowData, { insert: true });
     await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
@@ -111,6 +203,8 @@ async function addRow(userId, rowData) {
     id_origen: rowData.ID_Origen || '',
   };
 
+  await ensureProfile(userId);
+
   const { data, error } = await supabase
     .from('movimientos')
     .insert(supabaseRow)
@@ -121,7 +215,7 @@ async function addRow(userId, rowData) {
     console.error('Supabase addRow error:', error.message);
     // fallback to sheet
     try {
-      const sheet = await sheetService.getSheetCliente(userId);
+      const sheet = await getSheetService().getSheetCliente(userId);
       if (sheet) {
         const row = await sheet.addRow(rowData, { insert: true });
         await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
@@ -134,7 +228,7 @@ async function addRow(userId, rowData) {
 
   // dual-write: also write to sheet as backup
   try {
-    const sheet = await sheetService.getSheetCliente(userId);
+    const sheet = await getSheetService().getSheetCliente(userId);
     if (sheet) {
       const row = await sheet.addRow(rowData, { insert: true });
       await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
@@ -148,14 +242,14 @@ async function addRow(userId, rowData) {
 
 async function getRows(userId) {
   if (!USE_SUPABASE) {
-    const sheet = await sheetService.getSheetCliente(userId);
+    const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return [];
     return sheet.getRows();
   }
 
   const supabase = getSupabase();
   if (!supabase) {
-    const sheet = await sheetService.getSheetCliente(userId);
+    const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return [];
     return sheet.getRows();
   }
@@ -169,7 +263,7 @@ async function getRows(userId) {
 
     if (error) {
       console.error('Supabase getRows error:', error.message);
-      const sheet = await sheetService.getSheetCliente(userId);
+      const sheet = await getSheetService().getSheetCliente(userId);
       if (!sheet) return [];
       return sheet.getRows();
     }
@@ -224,10 +318,17 @@ async function getRows(userId) {
       async save() {
         if (this._updates) {
           const supabase2 = getSupabase();
+          const updates = { ...this._updates };
           await supabase2
             .from('movimientos')
-            .update(this._updates)
+            .update(updates)
             .eq('id', this.id);
+          try {
+            await syncRowUpdateToSheet(userId, row.id_unico, updates);
+          } catch (sheetError) {
+            console.error('Sheet sync update error:', sheetError.message);
+          }
+          Object.assign(row, updates);
           this._updates = {};
         }
       },
@@ -237,11 +338,16 @@ async function getRows(userId) {
           .from('movimientos')
           .delete()
           .eq('id', this.id);
+        try {
+          await syncRowDeleteToSheet(userId, row.id_unico);
+        } catch (sheetError) {
+          console.error('Sheet sync delete error:', sheetError.message);
+        }
       },
     }));
   } catch (err) {
     console.error('Supabase getRows catch:', err.message);
-    const sheet = await sheetService.getSheetCliente(userId);
+    const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return [];
     return sheet.getRows();
   }
@@ -274,6 +380,7 @@ async function upsertProfile(userId, profileData) {
     .from('profiles')
     .upsert({
       id: userId,
+      web_user_id: profileData.webUserId || null,
       email: profileData.email || null,
       display_name: profileData.display_name || null,
       sheet_id: profileData.sheetId || null,
@@ -290,7 +397,7 @@ async function upsertProfile(userId, profileData) {
 module.exports = {
   getSheetId,
   invalidateCache,
-  getDocCliente: sheetService.getDocCliente,
+  getDocCliente,
   getSheetCliente,
   obtenerDatosSheet,
   addRow,

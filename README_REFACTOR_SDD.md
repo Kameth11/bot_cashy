@@ -243,12 +243,12 @@ Los comandos slash y las entradas en lenguaje natural deben usar la misma base d
 - `/cobrar` y el flujo equivalente en lenguaje natural no divergen
 
 ### Estado de implementacion
-- revision de inline logic restante: pendiente
-- delegacion a `command.service`: pendiente
-- reuso desde NLP: pendiente
+- revision de inline logic restante: hecho
+- delegacion a `command.service`: hecho
+- reuso desde NLP: hecho
 
 ### Status
-- Pendiente
+- Hecho
 
 ---
 
@@ -308,9 +308,10 @@ Solo despues de confirmar paridad total, `index.js` raiz puede dejar de ser part
 - no existe funcionalidad exclusiva del legacy
 - el bot funciona completo desde `src/`
 - la documentacion identifica a `src/index.js` como entrypoint oficial
+- `index.js` raiz no puede ejecutarse por accidente
 
 ### Status
-- Pendiente
+- En progreso
 
 ---
 
@@ -342,16 +343,16 @@ En cada conversacion nueva:
 
 Trabajar sobre una sola subfase:
 
-`Spec 3 - prueba funcional real de comandos` o `Spec 2 - prueba real de agenda por foto`
+`Spec 7 - checklist funcional completo` o `Spec 2 - prueba real de agenda por foto`
 
 Prioridad sugerida:
 
 1. cerrar validacion real de `Spec 3`
 2. cerrar validacion real de `Spec 2`
-3. avanzar con `Spec 6`
+3. cerrar `Spec 7`
 
 Razon:
 
-- la mayor parte del refactor estructural ya esta implementada
+- la mayor parte del refactor estructural y la delegacion comun ya esta implementada
 - ahora el mayor valor esta en confirmar paridad observable
-- despues de eso conviene eliminar divergencias finales entre comandos y NLP
+- despues de eso conviene retirar el legacy de forma controlada

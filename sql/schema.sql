@@ -4,9 +4,12 @@
 -- Ejecutar en: Supabase Dashboard → SQL Editor
 -- =====================================
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Tabla de perfiles de usuario
 CREATE TABLE IF NOT EXISTS profiles (
   id BIGINT PRIMARY KEY,
+  web_user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
   email TEXT,
   display_name TEXT,
   sheet_id TEXT,
@@ -44,26 +47,54 @@ CREATE INDEX IF NOT EXISTS idx_movimientos_user_estado ON movimientos(user_id, e
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE movimientos ENABLE ROW LEVEL SECURITY;
 
--- Políticas: los usuarios solo ven/modifican sus propios datos
--- NOTA: para el bot usamos service_role key, esto es para el futuro dashboard web
+-- Políticas base para el futuro dashboard web.
+-- El bot backend puede usar service_role y saltar RLS.
 
 CREATE POLICY "Users can view own profile" ON profiles
-  FOR SELECT USING (true);
+  FOR SELECT USING (web_user_id = auth.uid());
 
 CREATE POLICY "Users can update own profile" ON profiles
-  FOR UPDATE USING (true);
+  FOR UPDATE USING (web_user_id = auth.uid());
 
 CREATE POLICY "Users can insert own profile" ON profiles
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (web_user_id = auth.uid());
 
 CREATE POLICY "Users can view own movimientos" ON movimientos
-  FOR SELECT USING (true);
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = user_id
+        AND p.web_user_id = auth.uid()
+    )
+  );
 
 CREATE POLICY "Users can insert own movimientos" ON movimientos
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = user_id
+        AND p.web_user_id = auth.uid()
+    )
+  );
 
 CREATE POLICY "Users can update own movimientos" ON movimientos
-  FOR UPDATE USING (true);
+  FOR UPDATE USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = user_id
+        AND p.web_user_id = auth.uid()
+    )
+  );
 
 CREATE POLICY "Users can delete own movimientos" ON movimientos
-  FOR DELETE USING (true);
+  FOR DELETE USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = user_id
+        AND p.web_user_id = auth.uid()
+    )
+  );

@@ -37,9 +37,9 @@ Ejemplos:
 "hola" -> {"intent":"desconocido","entities":{}}`;
 
 const FALLBACK_MODELS = [
+  'gemini-2.0-flash-001',
   'gemini-2.5-flash-lite',
   'gemini-2.5-flash',
-  'gemini-2.0-flash-001',
   'gemini-flash-lite-latest',
 ];
 
@@ -90,8 +90,15 @@ function createModel(ai, modelName) {
   });
 }
 
+function getPreferredModelName() {
+  const raw = String(GEMINI_MODEL || '').trim();
+  if (!raw) return 'gemini-2.0-flash-001';
+  if (raw.includes('latest')) return 'gemini-2.0-flash-001';
+  return raw;
+}
+
 async function findWorkingModel() {
-  const preferredModel = GEMINI_MODEL || 'gemini-flash-lite-latest';
+  const preferredModel = getPreferredModelName();
   const modelsToTry = [preferredModel, ...FALLBACK_MODELS.filter(m => m !== preferredModel)];
   const ai = getGenAI();
   if (!ai) {
@@ -136,20 +143,21 @@ function initModel() {
     return;
   }
 
-  const preferredModel = GEMINI_MODEL || 'gemini-flash-lite-latest';
   const ai = getGenAI();
   if (!ai) {
     modelReady = true;
     return;
   }
-  activeModel = createModel(ai, preferredModel);
-  activeModelName = preferredModel;
-  modelReady = true;
+  activeModel = null;
+  activeModelName = null;
+  modelReady = false;
 
-  console.log(`NLP: Modelo configurado: ${preferredModel}. Validando en background...`);
+  console.log(`NLP: Buscando modelo Gemini disponible. Preferido: ${getPreferredModelName()}`);
 
   findWorkingModel().then(() => {
-    console.log(`NLP: Listo. Modelo activo: ${activeModelName}`);
+    if (activeModelName) {
+      console.log(`NLP: Listo. Modelo activo: ${activeModelName}`);
+    }
   }).catch(() => {});
 }
 

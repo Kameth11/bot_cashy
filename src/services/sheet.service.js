@@ -5,10 +5,11 @@ const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const state = require('../state');
 const { toMovimiento, isValidMovimientoRow } = require('../utils/sheet-row');
 
-const db = USE_SUPABASE ? require('./db.service') : null;
+function getDbService() {
+  return USE_SUPABASE ? require('./db.service') : null;
+}
 
 function getSheetId(userId) {
-  if (db) return db.getSheetId(userId);
   const cliente = obtenerClientePorUserId(userId);
   if (cliente && cliente.sheetId) return cliente.sheetId;
   if (esAdminOriginal(userId) && SPREADSHEET_ID) return SPREADSHEET_ID;
@@ -16,12 +17,10 @@ function getSheetId(userId) {
 }
 
 function invalidateCache(userId) {
-  if (db) return db.invalidateCache(userId);
   state.docsCache.delete(userId);
 }
 
 async function getDocCliente(userId, fresh = false) {
-  if (db) return db.getDocCliente(userId);
   const sheetId = getSheetId(userId);
   if (!sheetId) return null;
 
@@ -35,7 +34,6 @@ async function getDocCliente(userId, fresh = false) {
 }
 
 async function getSheetCliente(userId) {
-  if (db) return db.getSheetCliente(userId);
   const docCliente = await getDocCliente(userId, true);
   if (!docCliente) return null;
   const sheet = docCliente.sheetsByIndex[0];
@@ -45,6 +43,7 @@ async function getSheetCliente(userId) {
 }
 
 async function obtenerDatosSheet(userId) {
+  const db = getDbService();
   if (db) return db.obtenerDatosSheet(userId);
   const sheetId = getSheetId(userId);
   if (!sheetId) {

@@ -7,6 +7,7 @@ bot.command('eliminar', async (ctx) => {
   try {
     const texto = ctx.message.text.replace('/eliminar', '').trim().toLowerCase();
     const result = await cmd.prepararEliminacion(ctx.from.id, texto || null);
+
     if (typeof result === 'string') {
       return ctx.reply(result, { parse_mode: 'Markdown' });
     }
@@ -16,7 +17,6 @@ bot.command('eliminar', async (ctx) => {
       parse_mode: 'Markdown',
       ...confirmButtons('confirm_delete', 'cancel_delete')
     });
-
   } catch (error) {
     console.error('Error /eliminar:', error.message);
     ctx.reply('❌ Error al buscar movimiento.');

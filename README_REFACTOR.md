@@ -242,7 +242,8 @@ Dejar de depender de `index.js` raiz
 
 ### Tareas
 - Confirmar que no queda ninguna funcionalidad exclusiva del legacy
-- Dejar `index.js` como backup temporal o eliminarlo
+- Dejar `index.js` deshabilitado para evitar uso accidental
+- Borrar `index.js` definitivamente despues de validar Gemini y paridad final
 - Documentar que el entrypoint oficial es `src/index.js`
 
 ### Validacion
@@ -250,7 +251,7 @@ Dejar de depender de `index.js` raiz
 
 ### Estado
 - [ ] Pendiente
-- [ ] En progreso
+- [x] En progreso
 - [ ] Hecho
 
 ---
@@ -280,9 +281,9 @@ En cada conversacion nueva:
 ## Proximo paso recomendado
 
 Empezar por:
-- **Fase 3 - Validacion funcional de comandos reales**
+- **Fase 7 - Verificacion de paridad total**
 
 Motivo:
-- La agenda por foto ya esta migrada pero falta probarla en Telegram
-- Los helpers de filas y el guardado de movimientos ya fueron centralizados
-- Lo siguiente con mas valor es probar paridad real y corregir desajustes chicos de comandos/documentacion
+- La mayor parte de la delegacion comun entre slash commands y NLP ya quedo centralizada en `command.service`
+- El parser rapido por palabras sigue siendo el primer intento antes de usar Gemini
+- Lo siguiente con mas valor es validar el comportamiento observable real en Telegram y cerrar la paridad con el legacy
