@@ -786,6 +786,16 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       metodo_pago: metodo_pago || null,
       estado: estadoFinal,
       categoria: categoriaFinal,
+      subcategoria: subcategoria || null,
+      pacienteNombre: pacienteNombre || null,
+      profesionalNombre: profesionalNombre || null,
+      proveedorNombre: proveedorNombre || null,
+      tratamientoNombre: tratamientoNombre || null,
+      fechaPrestacion: fechaPrestacion || null,
+      fechaCobroReal: fechaCobroReal || null,
+      fechaVencimiento: fechaVencimiento || null,
+      referenciaId: referenciaId || null,
+      notas: notas || null,
     });
     return { necesitaInfo: true, campo: 'descripcion', mensaje: '📝 ¿De quién o qué concepto es el movimiento?' };
   }
@@ -810,6 +820,16 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       metodoIndicado: metodo_pago || null,
       estado: estadoFinal,
       categoria: categoriaFinal,
+      subcategoria: subcategoria || null,
+      pacienteNombre: pacienteNombre || null,
+      profesionalNombre: profesionalNombre || null,
+      proveedorNombre: proveedorNombre || null,
+      tratamientoNombre: tratamientoNombre || null,
+      fechaPrestacion: fechaPrestacion || null,
+      fechaCobroReal: fechaCobroReal || null,
+      fechaVencimiento: fechaVencimiento || null,
+      referenciaId: referenciaId || null,
+      notas: notas || null,
     });
 
     return {
@@ -827,6 +847,16 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       moneda: monedaFinal,
       estado: estadoFinal,
       categoria: categoriaFinal,
+      subcategoria: subcategoria || null,
+      pacienteNombre: pacienteNombre || null,
+      profesionalNombre: profesionalNombre || null,
+      proveedorNombre: proveedorNombre || null,
+      tratamientoNombre: tratamientoNombre || null,
+      fechaPrestacion: fechaPrestacion || null,
+      fechaCobroReal: fechaCobroReal || null,
+      fechaVencimiento: fechaVencimiento || null,
+      referenciaId: referenciaId || null,
+      notas: notas || null,
     });
 
     return {

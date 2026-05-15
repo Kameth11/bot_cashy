@@ -105,20 +105,150 @@ function capitalizarFrase(text) {
   return text.split(' ').filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
+const TRATAMIENTO_KEYWORDS = [
+  'implante',
+  'ortodoncia',
+  'endodoncia',
+  'limpieza',
+  'blanqueamiento',
+  'extraccion',
+  'extracción',
+  'carilla',
+  'corona',
+  'protesis',
+  'prótesis',
+  'brackets',
+  'perno',
+  'conducto',
+];
+
+const EGRESO_CATEGORY_PATTERNS = [
+  { categoria: 'sueldos', pattern: /sueld/i },
+  { categoria: 'honorarios', pattern: /honorario/i },
+  { categoria: 'insumos', pattern: /insumo|guante|bracket|anestesia|material/i },
+  { categoria: 'alquiler', pattern: /alquiler/i },
+  { categoria: 'expensas', pattern: /expensa/i },
+  { categoria: 'servicios', pattern: /luz|agua|internet|telefono|servicio/i },
+  { categoria: 'impuestos', pattern: /impuesto|iva|ingresos\s+brutos|ganancia|monotributo/i },
+  { categoria: 'mantenimiento', pattern: /mantenimiento|autoclave|rayos\s*x|sillon|equipo|reparacion/i },
+  { categoria: 'software', pattern: /software|sistema|licencia|suscripcion/i },
+];
+
+function limpiarEntidad(text) {
+  return capitalizarFrase(
+    String(text || '')
+      .replace(/[.,;:!?]+$/g, '')
+      .replace(/^(?:de|del|a|al|con|por|para|paciente|proveedor)\s+/i, '')
+      .trim()
+  );
+}
+
+function extraerProfesional(rawText) {
+  const patterns = [
+    /\bcon\s+(dra?\.?\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b/i,
+    /\b(?:dra?\.?|doctora|doctor)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = String(rawText || '').match(pattern);
+    if (!match) continue;
+    const value = match[1] || match[0];
+    const normalized = value
+      .replace(/^(?:con\s+)?/i, '')
+      .replace(/\bdoctora\b/i, 'Dra')
+      .replace(/\bdoctor\b/i, 'Dr')
+      .replace(/\bdra?\.?/i, m => m.toLowerCase().startsWith('dra') ? 'Dra' : 'Dr');
+    return capitalizarFrase(normalized);
+  }
+
+  return null;
+}
+
+function extraerTratamiento(rawText, categoria = null) {
+  const original = String(rawText || '').trim();
+  if (!original) return null;
+
+  for (const keyword of TRATAMIENTO_KEYWORDS) {
+    const regex = new RegExp(`\\b${escapeRegex(keyword)}\\b`, 'i');
+    const match = original.match(regex);
+    if (match) return capitalizarFrase(match[0]);
+  }
+
+  if (categoria === 'consulta') return null;
+
+  const byConnector = original.match(/\b(?:por|para|tratamiento|servicio)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i);
+  if (byConnector && byConnector[1]) {
+    const cleaned = byConnector[1]
+      .replace(/\b(?:con|efectivo|transferencia|tarjeta|usd|u\$|pesos?)\b.*$/i, '')
+      .trim();
+    return capitalizarFrase(cleaned);
+  }
+
+  return null;
+}
+
+function extraerPaciente(rawText, categoria = null, tratamientoNombre = null, profesionalNombre = null) {
+  const original = String(rawText || '').trim();
+  if (!original) return null;
+
+  const patterns = [
+    /\b(?:de|a|paciente)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
+    /^(?:consulta|anticipo|cuota|saldo(?:\s+final)?|pendiente)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = original.match(pattern);
+    if (!match || !match[1]) continue;
+    let candidate = match[1]
+      .replace(/\b(?:por|para|con|efectivo|transferencia|tarjeta)\b.*$/i, '')
+      .trim();
+    if (tratamientoNombre) {
+      candidate = candidate.replace(new RegExp(`\\b${escapeRegex(tratamientoNombre)}\\b`, 'i'), '').trim();
+    }
+    if (profesionalNombre) {
+      candidate = candidate.replace(new RegExp(`\\b${escapeRegex(profesionalNombre)}\\b`, 'i'), '').trim();
+    }
+    const cleaned = limpiarEntidad(candidate);
+    if (cleaned) return cleaned;
+  }
+
+  if (categoria === 'consulta') {
+    const fallback = original.match(/^consulta\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b/i);
+    if (fallback && fallback[1]) return limpiarEntidad(fallback[1]);
+  }
+
+  return null;
+}
+
+function extraerProveedor(rawText) {
+  const original = String(rawText || '').trim();
+  if (!original) return null;
+
+  const patterns = [
+    /\b(?:a|proveedor)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = original.match(pattern);
+    if (!match || !match[1]) continue;
+    const candidate = match[1]
+      .replace(/\b(?:por|para|con|efectivo|transferencia|tarjeta)\b.*$/i, '')
+      .trim();
+    const cleaned = limpiarEntidad(candidate);
+    if (cleaned) return cleaned;
+  }
+
+  return null;
+}
+
 function inferirCategoriaRapida(tipo, descripcion = '', estado = 'Cobrado') {
   const desc = normalizar(descripcion).replace(/_/g, ' ');
 
   if (estado === 'Pendiente') return 'cobro_pendiente';
   if (tipo === 'gasto') {
-    if (/sueld/.test(desc)) return 'sueldos';
-    if (/honorario/.test(desc)) return 'honorarios';
-    if (/insumo|guante|bracket|anestesia|material/.test(desc)) return 'insumos';
-    if (/alquiler/.test(desc)) return 'alquiler';
-    if (/expensa/.test(desc)) return 'expensas';
-    if (/luz|agua|internet|telefono|servicio/.test(desc)) return 'servicios';
-    if (/impuesto|iva|ingresos brutos|ganancia|monotributo/.test(desc)) return 'impuestos';
-    if (/mantenimiento|autoclave|rayos x|sillon|equipo|reparacion/.test(desc)) return 'mantenimiento';
-    if (/software|sistema|licencia|suscripcion/.test(desc)) return 'software';
+    for (const rule of EGRESO_CATEGORY_PATTERNS) {
+      if (rule.pattern.test(desc)) return rule.categoria;
+    }
     return 'otro_egreso';
   }
 
@@ -185,6 +315,7 @@ function matchRegistrarEgresoExplicito(rawText, text) {
   const montoInfo = extraerMonto(rawText);
   const metodo_pago = extraerMetodo(text);
   const descripcion = capitalizarFrase(limpiarDescripcionMovimiento(extraerDescripcion(rawText, 'gasto', metodo_pago)));
+  const proveedorNombre = extraerProveedor(rawText);
 
   return {
     intent: 'registrar_movimiento',
@@ -195,6 +326,7 @@ function matchRegistrarEgresoExplicito(rawText, text) {
       moneda: montoInfo ? montoInfo.moneda : 'Pesos',
       metodo_pago,
       categoria: inferirCategoriaRapida('gasto', descripcion),
+      proveedorNombre,
     }
   };
 }
@@ -207,6 +339,10 @@ function matchRegistrarIngresoExplicito(rawText, text) {
   const montoInfo = extraerMonto(rawText);
   const metodo_pago = extraerMetodo(text);
   const descripcion = capitalizarFrase(limpiarDescripcionMovimiento(extraerDescripcion(rawText, 'ingreso', metodo_pago)));
+  const categoria = inferirCategoriaRapida('ingreso', descripcion);
+  const profesionalNombre = extraerProfesional(rawText);
+  const tratamientoNombre = extraerTratamiento(rawText, categoria);
+  const pacienteNombre = extraerPaciente(rawText, categoria, tratamientoNombre, profesionalNombre);
 
   return {
     intent: 'registrar_movimiento',
@@ -216,7 +352,10 @@ function matchRegistrarIngresoExplicito(rawText, text) {
       monto: montoInfo ? montoInfo.monto : null,
       moneda: montoInfo ? montoInfo.moneda : 'Pesos',
       metodo_pago,
-      categoria: inferirCategoriaRapida('ingreso', descripcion),
+      categoria,
+      pacienteNombre,
+      profesionalNombre,
+      tratamientoNombre,
     }
   };
 }
@@ -309,6 +448,9 @@ function matchRegistrarPendiente(rawText, text) {
   const montoInfo = extraerMonto(rawText);
   const metodo_pago = extraerMetodo(text);
   const descripcion = extraerDescripcionPendienteNombrePrimero(rawText) || extraerDescripcionPendiente(rawText);
+  const profesionalNombre = extraerProfesional(rawText);
+  const tratamientoNombre = extraerTratamiento(rawText, 'cobro_pendiente');
+  const pacienteNombre = extraerPaciente(rawText, 'cobro_pendiente', tratamientoNombre, profesionalNombre) || descripcion;
 
   return {
     intent: 'registrar_movimiento',
@@ -319,7 +461,10 @@ function matchRegistrarPendiente(rawText, text) {
       moneda: montoInfo ? montoInfo.moneda : 'Pesos',
       metodo_pago,
       estado: 'Pendiente',
-      categoria: 'cobro_pendiente'
+      categoria: 'cobro_pendiente',
+      pacienteNombre,
+      profesionalNombre,
+      tratamientoNombre,
     }
   };
 }
@@ -345,10 +490,26 @@ function matchRegistrarMovimiento(rawText, text) {
 
   const metodo_pago = extraerMetodo(text);
   const descripcion = extraerDescripcion(rawText, tipo, metodo_pago);
+  const categoria = inferirCategoriaRapida(tipo, descripcion);
+  const profesionalNombre = tipo === 'ingreso' ? extraerProfesional(rawText) : null;
+  const tratamientoNombre = tipo === 'ingreso' ? extraerTratamiento(rawText, categoria) : null;
+  const pacienteNombre = tipo === 'ingreso' ? extraerPaciente(rawText, categoria, tratamientoNombre, profesionalNombre) : null;
+  const proveedorNombre = tipo === 'gasto' ? extraerProveedor(rawText) : null;
 
   return {
     intent: 'registrar_movimiento',
-    entities: { tipo, descripcion, monto, moneda, metodo_pago, categoria: inferirCategoriaRapida(tipo, descripcion) }
+    entities: {
+      tipo,
+      descripcion,
+      monto,
+      moneda,
+      metodo_pago,
+      categoria,
+      pacienteNombre,
+      profesionalNombre,
+      tratamientoNombre,
+      proveedorNombre,
+    }
   };
 }
 

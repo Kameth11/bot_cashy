@@ -141,7 +141,18 @@ const INTENT_HANDLERS = {
       monto: entities.monto || null,
       moneda: entities.moneda || 'Pesos',
       metodo_pago: entities.metodo_pago || null,
-      estado: entities.estado || 'Cobrado'
+      estado: entities.estado || 'Cobrado',
+      categoria: entities.categoria || null,
+      subcategoria: entities.subcategoria || null,
+      pacienteNombre: entities.pacienteNombre || null,
+      profesionalNombre: entities.profesionalNombre || null,
+      proveedorNombre: entities.proveedorNombre || null,
+      tratamientoNombre: entities.tratamientoNombre || null,
+      fechaPrestacion: entities.fechaPrestacion || null,
+      fechaCobroReal: entities.fechaCobroReal || null,
+      fechaVencimiento: entities.fechaVencimiento || null,
+      referenciaId: entities.referenciaId || null,
+      notas: entities.notas || null,
     });
 
     if (resultado.necesitaInfo) {

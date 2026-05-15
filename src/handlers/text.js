@@ -66,6 +66,79 @@ function etiquetaCategoria(categoria) {
   return map[categoria] || categoria;
 }
 
+const TRATAMIENTO_KEYWORDS = [
+  'implante',
+  'ortodoncia',
+  'endodoncia',
+  'limpieza',
+  'blanqueamiento',
+  'extraccion',
+  'extracción',
+  'carilla',
+  'corona',
+  'protesis',
+  'prótesis',
+  'brackets',
+  'perno',
+  'conducto',
+];
+
+function extraerProfesionalDesdeTexto(text) {
+  const match = String(text || '').match(/\b(?:con\s+)?((?:dra?\.?|doctora|doctor)\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b/i);
+  if (!match || !match[1]) return null;
+  return sanitizarInput(match[1])
+    .replace(/\bdoctora\b/i, 'Dra')
+    .replace(/\bdoctor\b/i, 'Dr')
+    .replace(/\bdra?\.?/i, m => m.toLowerCase().startsWith('dra') ? 'Dra' : 'Dr');
+}
+
+function extraerTratamientoDesdeTexto(text) {
+  for (const keyword of TRATAMIENTO_KEYWORDS) {
+    const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+    const match = String(text || '').match(regex);
+    if (match) return sanitizarInput(match[0]);
+  }
+  return null;
+}
+
+function limpiarDescripcionBase(text, profesional, tratamiento) {
+  let cleaned = sanitizarInput(text || '');
+  if (profesional) {
+    cleaned = cleaned.replace(new RegExp(`\\bcon\\s+${profesional}\\b`, 'i'), '').replace(new RegExp(`\\b${profesional}\\b`, 'i'), '').trim();
+  }
+  if (tratamiento) {
+    cleaned = cleaned.replace(new RegExp(`\\b${tratamiento}\\b`, 'i'), '').trim();
+  }
+  return cleaned.replace(/\s+/g, ' ').trim();
+}
+
+function extraerPacienteDesdeDescripcion(comando, descripcion, profesional, tratamiento) {
+  const cleaned = limpiarDescripcionBase(descripcion, profesional, tratamiento)
+    .replace(/\b(?:de|del|para|por|paciente)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return null;
+  if (comando === 'consulta' || comando === 'pendiente') return cleaned;
+
+  const byConnector = String(descripcion || '').match(/\bde\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i);
+  if (byConnector && byConnector[1]) return sanitizarInput(byConnector[1]);
+  return null;
+}
+
+function inferirCamposDesdeComando(comando, descripcion, categoria) {
+  const profesionalNombre = extraerProfesionalDesdeTexto(descripcion);
+  const tratamientoNombre = extraerTratamientoDesdeTexto(descripcion);
+  const pacienteNombre = extraerPacienteDesdeDescripcion(comando, descripcion, profesionalNombre, tratamientoNombre);
+
+  return {
+    categoria,
+    pacienteNombre,
+    profesionalNombre,
+    tratamientoNombre,
+  };
+}
+
 function inferirCategoriaDesdeComando(comando, tipo, descripcion) {
   const desc = String(descripcion || '').trim().toLowerCase();
 
@@ -343,6 +416,16 @@ bot.on('text', async (ctx) => {
       metodo_pago: metodoPendiente,
       estado: pendingDesc.estado || 'Cobrado',
       categoria: pendingDesc.categoria || null,
+      subcategoria: pendingDesc.subcategoria || null,
+      pacienteNombre: pendingDesc.pacienteNombre || null,
+      profesionalNombre: pendingDesc.profesionalNombre || null,
+      proveedorNombre: pendingDesc.proveedorNombre || null,
+      tratamientoNombre: pendingDesc.tratamientoNombre || null,
+      fechaPrestacion: pendingDesc.fechaPrestacion || null,
+      fechaCobroReal: pendingDesc.fechaCobroReal || null,
+      fechaVencimiento: pendingDesc.fechaVencimiento || null,
+      referenciaId: pendingDesc.referenciaId || null,
+      notas: pendingDesc.notas || null,
     });
 
     if (resultado.necesitaInfo) {
@@ -389,7 +472,24 @@ bot.on('text', async (ctx) => {
     const datos = state.pendingCotizaciones.get(ctx.from.id);
     state.pendingCotizaciones.delete(ctx.from.id);
 
-    const { descripcion, monto, tipo, moneda, metodoIndicado, categoria } = datos;
+    const {
+      descripcion,
+      monto,
+      tipo,
+      moneda,
+      metodoIndicado,
+      categoria,
+      subcategoria,
+      pacienteNombre,
+      profesionalNombre,
+      proveedorNombre,
+      tratamientoNombre,
+      fechaPrestacion,
+      fechaCobroReal,
+      fechaVencimiento,
+      referenciaId,
+      notas,
+    } = datos;
 
     if (metodoIndicado) {
         const resultado = await cmd.guardarMovimiento(ctx.from.id, {
@@ -399,6 +499,16 @@ bot.on('text', async (ctx) => {
           moneda,
           metodo_pago: metodoIndicado,
           categoria,
+          subcategoria,
+          pacienteNombre,
+          profesionalNombre,
+          proveedorNombre,
+          tratamientoNombre,
+          fechaPrestacion,
+          fechaCobroReal,
+          fechaVencimiento,
+          referenciaId,
+          notas,
         }, {
           cotizacionUsada: cotizacion,
           estado: datos.estado || 'Cobrado',
@@ -414,6 +524,16 @@ bot.on('text', async (ctx) => {
           moneda,
           metodo_pago: null,
           categoria,
+          subcategoria,
+          pacienteNombre,
+          profesionalNombre,
+          proveedorNombre,
+          tratamientoNombre,
+          fechaPrestacion,
+          fechaCobroReal,
+          fechaVencimiento,
+          referenciaId,
+          notas,
         }, {
           cotizacionUsada: cotizacion,
           estado: 'Pendiente',
@@ -427,6 +547,16 @@ bot.on('text', async (ctx) => {
           tipo,
           moneda,
           categoria,
+          subcategoria,
+          pacienteNombre,
+          profesionalNombre,
+          proveedorNombre,
+          tratamientoNombre,
+          fechaPrestacion,
+          fechaCobroReal,
+          fechaVencimiento,
+          referenciaId,
+          notas,
           cotizacionUsada: cotizacion,
           estado: datos.estado || 'Cobrado'
         });
@@ -518,6 +648,16 @@ bot.on('text', async (ctx) => {
           moneda: pendingData.moneda,
           metodo_pago: metodo,
           categoria: pendingData.categoria || null,
+          subcategoria: pendingData.subcategoria || null,
+          pacienteNombre: pendingData.pacienteNombre || null,
+          profesionalNombre: pendingData.profesionalNombre || null,
+          proveedorNombre: pendingData.proveedorNombre || null,
+          tratamientoNombre: pendingData.tratamientoNombre || null,
+          fechaPrestacion: pendingData.fechaPrestacion || null,
+          fechaCobroReal: pendingData.fechaCobroReal || null,
+          fechaVencimiento: pendingData.fechaVencimiento || null,
+          referenciaId: pendingData.referenciaId || null,
+          notas: pendingData.notas || null,
         }, {
           cotizacionUsada: pendingData.cotizacionUsada,
           estado: pendingData.estado || 'Cobrado',
@@ -617,6 +757,7 @@ bot.on('text', async (ctx) => {
 
   const estado = comando === 'pendiente' ? 'Pendiente' : 'Cobrado';
   const categoria = inferirCategoriaDesdeComando(comando, tipo, descripcion);
+  const camposEstructurados = inferirCamposDesdeComando(comando, descripcion, categoria);
 
   const metodoIndicado = match[4] ? match[4].toLowerCase() : null;
 
@@ -628,6 +769,9 @@ bot.on('text', async (ctx) => {
       tipo,
       moneda,
       categoria,
+      pacienteNombre: camposEstructurados.pacienteNombre,
+      profesionalNombre: camposEstructurados.profesionalNombre,
+      tratamientoNombre: camposEstructurados.tratamientoNombre,
       metodoIndicado,
       estado,
     });
@@ -642,6 +786,9 @@ bot.on('text', async (ctx) => {
       tipo,
       moneda,
       categoria,
+      pacienteNombre: camposEstructurados.pacienteNombre,
+      profesionalNombre: camposEstructurados.profesionalNombre,
+      tratamientoNombre: camposEstructurados.tratamientoNombre,
       estado
     });
 
@@ -664,6 +811,9 @@ bot.on('text', async (ctx) => {
       metodo_pago: metodoIndicado,
       estado,
       categoria,
+      pacienteNombre: camposEstructurados.pacienteNombre,
+      profesionalNombre: camposEstructurados.profesionalNombre,
+      tratamientoNombre: camposEstructurados.tratamientoNombre,
     });
 
     ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
