@@ -4,6 +4,7 @@ const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { procesarFotoAgenda } = require('../services/vision.service');
 const { confirmButtons } = require('./actions');
+const { MAX_PHOTO_SIZE_BYTES, MAX_TURNOS_POR_IMAGEN } = require('../config');
 
 function tieneProcesoPendiente(userId) {
   return state.pendingAgendaConfirm.has(userId) ||
@@ -37,8 +38,17 @@ bot.on('photo', async (ctx) => {
       return ctx.reply('❌ No encontré una foto válida.');
     }
 
+    if (photo.file_size && photo.file_size > MAX_PHOTO_SIZE_BYTES) {
+      return ctx.reply(`⚠️ La imagen es demasiado pesada. Máximo: ${Math.round(MAX_PHOTO_SIZE_BYTES / (1024 * 1024))} MB.`);
+    }
+
     const fileLink = await ctx.telegram.getFileLink(photo.file_id);
-    const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
+    const response = await axios.get(fileLink.href, {
+      responseType: 'arraybuffer',
+      timeout: 20000,
+      maxContentLength: MAX_PHOTO_SIZE_BYTES,
+      maxBodyLength: MAX_PHOTO_SIZE_BYTES,
+    });
     const photoBuffer = Buffer.from(response.data, 'binary');
     const resultado = await procesarFotoAgenda(photoBuffer, 'image/jpeg');
 
@@ -63,6 +73,10 @@ bot.on('photo', async (ctx) => {
 
     if (!resultado.turnos || resultado.turnos.length === 0) {
       return ctx.reply('📭 No encontré turnos en la imagen. Probá con una foto más clara.');
+    }
+
+    if (resultado.turnos.length > MAX_TURNOS_POR_IMAGEN) {
+      return ctx.reply(`⚠️ Detecté demasiados turnos (${resultado.turnos.length}). Probá recortando la imagen antes de enviarla.`);
     }
 
     let msg = '📅 *Turnos encontrados:*\n\n';

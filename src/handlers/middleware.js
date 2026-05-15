@@ -1,6 +1,7 @@
 const { bot } = require('../lib/telegraf');
 const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
+const { RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_EVENTS, MAX_TEXT_LENGTH } = require('../config');
 
 const COMANDOS_PUBLICOS = new Set(['/start', '/unir', '/cancelar']);
 
@@ -19,6 +20,33 @@ bot.use((ctx, next) => {
   if (!ctx.from) return next();
 
   const userId = ctx.from.id;
+  const now = Date.now();
+  const rateState = state.userRateLimits.get(userId) || { timestamps: [], notifiedAt: 0 };
+  const timestamps = rateState.timestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW_MS);
+  timestamps.push(now);
+
+  if (timestamps.length > RATE_LIMIT_MAX_EVENTS) {
+    const puedeNotificar = rateState.notifiedAt + RATE_LIMIT_WINDOW_MS <= now;
+    state.userRateLimits.set(userId, {
+      timestamps,
+      notifiedAt: puedeNotificar ? now : rateState.notifiedAt,
+    });
+
+    if (puedeNotificar && ctx.reply) {
+      ctx.reply('⚠️ Demasiadas acciones seguidas. Esperá unos segundos e intentá otra vez.').catch(() => {});
+    }
+    return;
+  }
+
+  state.userRateLimits.set(userId, { timestamps, notifiedAt: 0 });
+
+  const text = ctx.message && typeof ctx.message.text === 'string' ? ctx.message.text : null;
+  if (text && text.length > MAX_TEXT_LENGTH) {
+    if (ctx.reply) {
+      ctx.reply(`⚠️ El mensaje es demasiado largo. Máximo: ${MAX_TEXT_LENGTH} caracteres.`).catch(() => {});
+    }
+    return;
+  }
 
   if (esAdminOriginal(userId)) {
     return next();

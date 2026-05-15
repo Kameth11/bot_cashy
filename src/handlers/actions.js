@@ -5,7 +5,7 @@ const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const clienteService = require('../services/cliente.service');
 const { invalidateCache } = require('../services/sheet.service');
-const { formatMonto } = require('../utils/formatter');
+const { formatMonto, escapeMarkdown } = require('../utils/formatter');
 const { convertirAPesos } = require('../services/movimiento.service');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const { guardarTurnosAgenda } = require('../services/agenda.service');
@@ -35,7 +35,7 @@ bot.action('confirm_delete', async (ctx) => {
     await fila.delete();
     invalidateCache(userId);
     await ctx.editMessageText(
-      '✅ *Movimiento eliminado*\n\n' + `📝 ${desc}`,
+      '✅ *Movimiento eliminado*\n\n' + `📝 ${escapeMarkdown(desc)}`,
       { parse_mode: 'Markdown' }
     );
   } catch (error) {
@@ -192,7 +192,7 @@ bot.action('confirm_edit', async (ctx) => {
 
     await ctx.editMessageText(
       `✅ *Movimiento actualizado*\n\n` +
-      `📝 ${fila.get('Descripcion')}\n` +
+      `📝 ${escapeMarkdown(fila.get('Descripcion'))}\n` +
       `💰 ${formatMonto(parseFloat(fila.get('Monto')), editData.moneda)}`,
       { parse_mode: 'Markdown' }
     );

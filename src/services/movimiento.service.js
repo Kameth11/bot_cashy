@@ -1,6 +1,6 @@
 const state = require('../state');
 const db = require('./db.service');
-const { formatMonto } = require('../utils/formatter');
+const { formatMonto, escapeMarkdown } = require('../utils/formatter');
 const { obtenerClientePorUserId } = require('../auth');
 
 function generarIDUnico() {
@@ -63,7 +63,7 @@ function crearMensajeMovimientoRegistrado({ tipo, descripcion, monto, moneda, me
 
   return (
     `${tipoEmoji} *¡${titulo.charAt(0).toUpperCase() + titulo.slice(1)}!*\n\n` +
-    `📝 Descripción: ${descripcion}\n` +
+    `📝 Descripción: ${escapeMarkdown(descripcion)}\n` +
     `💰 Monto: ${montoTexto}\n` +
     `📊 Estado: ${estadoFinal}\n` +
     (metodoPago ? `💳 Método: ${metodoPago}\n` : '') +
@@ -81,6 +81,18 @@ async function guardarMovimiento(userId, {
   estado = 'Cobrado',
   montoPesos,
   now = new Date(),
+  categoria = null,
+  subcategoria = null,
+  pacienteNombre = null,
+  profesionalNombre = null,
+  proveedorNombre = null,
+  tratamientoNombre = null,
+  fechaPrestacion = null,
+  fechaCobroReal = null,
+  fechaVencimiento = null,
+  referenciaId = null,
+  notas = null,
+  origenCarga = 'bot',
 }) {
   const { fechaStr, horaStr } = crearTimestampMovimiento(now);
   const cliente = obtenerClientePorUserId(userId);
@@ -102,7 +114,23 @@ async function guardarMovimiento(userId, {
     estado,
   });
 
-  const savedRow = await db.addRow(userId, rowData);
+  const savedRow = await db.addRow(userId, rowData, {
+    movimientoV2Data: {
+      categoria,
+      subcategoria,
+      pacienteNombre,
+      profesionalNombre,
+      proveedorNombre,
+      tratamientoNombre,
+      fechaPrestacion,
+      fechaCobroReal,
+      fechaVencimiento,
+      referenciaId,
+      notas,
+      origenCarga,
+      metodoPago,
+    },
+  });
   if (!savedRow) {
     throw new Error('sheet_no_configurado');
   }

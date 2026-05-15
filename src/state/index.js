@@ -21,6 +21,7 @@ const pendingReinicios = new Map();
 const pendingDescripcion = new Map();
 const pendingAgendaConfirm = new Map();
 const docsCache = new Map();
+const userRateLimits = new Map();
 
 module.exports = {
   get cotizacionDolar() { return cotizacionDolar; },
@@ -39,4 +40,5 @@ module.exports = {
   pendingDescripcion,
   pendingAgendaConfirm,
   docsCache,
+  userRateLimits,
 };

@@ -4,6 +4,21 @@ const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 const { getRowIdUnico } = require('../utils/sheet-row');
+const {
+  buildMovimientoV2Payload,
+  buildMovimientoV2UpdatePayload,
+  buildMovimientoV2CreationEvent,
+  buildMovimientoV2TransitionEvent,
+} = require('../utils/movimiento-v2');
+
+const v2CapabilityCache = {
+  checked: false,
+  movimientosV2: false,
+  movimientoEventosV2: false,
+};
+
+let v2CapabilityPromise = null;
+let missingV2TablesLogged = false;
 
 function getSheetService() {
   return require('./sheet.service');
@@ -60,6 +75,588 @@ async function ensureProfile(userId) {
   }
 }
 
+function isMissingRelationError(error) {
+  return Boolean(error && /relation .* does not exist|could not find the table/i.test(error.message || ''));
+}
+
+async function resolveV2Capabilities(supabase) {
+  if (!USE_SUPABASE || !supabase) {
+    return { movimientosV2: false, movimientoEventosV2: false };
+  }
+
+  if (v2CapabilityCache.checked) {
+    return {
+      movimientosV2: v2CapabilityCache.movimientosV2,
+      movimientoEventosV2: v2CapabilityCache.movimientoEventosV2,
+    };
+  }
+
+  if (v2CapabilityPromise) {
+    return v2CapabilityPromise;
+  }
+
+  v2CapabilityPromise = (async () => {
+    const result = {
+      movimientosV2: false,
+      movimientoEventosV2: false,
+    };
+
+    const movimientoCheck = await supabase.from('movimientos_v2').select('id').limit(1);
+    if (!movimientoCheck.error) {
+      result.movimientosV2 = true;
+    } else if (!isMissingRelationError(movimientoCheck.error)) {
+      console.error('Supabase movimientos_v2 check error:', movimientoCheck.error.message);
+    }
+
+    const eventoCheck = await supabase.from('movimiento_eventos_v2').select('id').limit(1);
+    if (!eventoCheck.error) {
+      result.movimientoEventosV2 = true;
+    } else if (!isMissingRelationError(eventoCheck.error)) {
+      console.error('Supabase movimiento_eventos_v2 check error:', eventoCheck.error.message);
+    }
+
+    if ((!result.movimientosV2 || !result.movimientoEventosV2) && !missingV2TablesLogged) {
+      missingV2TablesLogged = true;
+      console.log('Supabase v2 no disponible todavia. Continuo con el modelo actual.');
+    }
+
+    v2CapabilityCache.checked = true;
+    v2CapabilityCache.movimientosV2 = result.movimientosV2;
+    v2CapabilityCache.movimientoEventosV2 = result.movimientoEventosV2;
+    v2CapabilityPromise = null;
+    return result;
+  })();
+
+  return v2CapabilityPromise;
+}
+
+function buildLegacySnapshotFromRow(row) {
+  return {
+    id: row.id,
+    fecha: row.fecha,
+    hora: row.hora,
+    descripcion: row.descripcion,
+    monto: row.monto,
+    estado: row.estado,
+    tipo: row.tipo,
+    moneda: row.moneda,
+    metodo_pago: row.metodo_pago,
+    monto_pesos: row.monto_pesos,
+    id_unico: row.id_unico,
+  };
+}
+
+function buildLegacyRowDataFromSnapshot(snapshot) {
+  return {
+    Fecha: snapshot.fecha || '',
+    Hora: snapshot.hora || '',
+    Descripcion: snapshot.descripcion || '',
+    Monto: snapshot.monto,
+    Estado: snapshot.estado || '',
+    Tipo: snapshot.tipo || '',
+    Moneda: snapshot.moneda || 'Pesos',
+    MetodoPago: snapshot.metodo_pago || '',
+    ID_Unico: snapshot.id_unico || '',
+    MontoPesos: snapshot.monto_pesos,
+  };
+}
+
+async function insertMovimientoV2FromLegacy(supabase, userId, rowData, legacyRowId, metadata = {}) {
+  const capabilities = await resolveV2Capabilities(supabase);
+  if (!capabilities.movimientosV2) return null;
+
+  const payload = buildMovimientoV2Payload({
+    userId,
+    rowData,
+    legacyId: legacyRowId,
+    metadata,
+  });
+
+  const { data, error } = await supabase
+    .from('movimientos_v2')
+    .insert(payload)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Supabase movimientos_v2 insert error:', error.message);
+    return null;
+  }
+
+  if (capabilities.movimientoEventosV2) {
+    const creationEvent = buildMovimientoV2CreationEvent({
+      movimientoId: data.id,
+      userId,
+      movimientoData: data,
+    });
+
+    const { error: eventError } = await supabase
+      .from('movimiento_eventos_v2')
+      .insert(creationEvent);
+
+    if (eventError) {
+      console.error('Supabase movimiento_eventos_v2 creation error:', eventError.message);
+    }
+  }
+
+  return data;
+}
+
+async function getMovimientoV2ByLegacyRowId(supabase, legacyRowId) {
+  const capabilities = await resolveV2Capabilities(supabase);
+  if (!capabilities.movimientosV2 || !legacyRowId) return null;
+
+  const { data, error } = await supabase
+    .from('movimientos_v2')
+    .select('*')
+    .eq('legacy_row_id', String(legacyRowId))
+    .maybeSingle();
+
+  if (error) {
+    console.error('Supabase movimientos_v2 lookup error:', error.message);
+    return null;
+  }
+
+  return data;
+}
+
+async function syncLegacyUpdateToV2(supabase, userId, legacyRow, updates = {}) {
+  const capabilities = await resolveV2Capabilities(supabase);
+  if (!capabilities.movimientosV2 || !legacyRow?.id) return;
+
+  let currentV2 = await getMovimientoV2ByLegacyRowId(supabase, legacyRow.id);
+
+  if (!currentV2) {
+    const mergedSnapshot = { ...legacyRow, ...updates };
+    const rowData = buildLegacyRowDataFromSnapshot(mergedSnapshot);
+    currentV2 = await insertMovimientoV2FromLegacy(supabase, userId, rowData, legacyRow.id, {
+      origenCarga: 'migracion',
+    });
+    if (!currentV2) return;
+  }
+
+  const nextPayload = buildMovimientoV2UpdatePayload({
+    legacyRow,
+    updates,
+    currentV2,
+    allowPartialState: updates.estado !== undefined,
+  });
+
+  const { data: updatedV2, error } = await supabase
+    .from('movimientos_v2')
+    .update(nextPayload)
+    .eq('id', currentV2.id)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Supabase movimientos_v2 update error:', error.message);
+    return;
+  }
+
+  if (capabilities.movimientoEventosV2 && updates.estado !== undefined) {
+    const transitionEvent = buildMovimientoV2TransitionEvent({
+      movimientoId: currentV2.id,
+      userId,
+      previousV2: currentV2,
+      nextV2: updatedV2,
+      metodoPago: updates.metodo_pago,
+    });
+
+    if (transitionEvent) {
+      const { error: eventError } = await supabase
+        .from('movimiento_eventos_v2')
+        .insert(transitionEvent);
+
+      if (eventError) {
+        console.error('Supabase movimiento_eventos_v2 transition error:', eventError.message);
+      }
+    }
+  }
+}
+
+async function syncLegacyDeleteToV2(supabase, legacyRowId) {
+  const capabilities = await resolveV2Capabilities(supabase);
+  if (!capabilities.movimientosV2 || !legacyRowId) return;
+
+  const currentV2 = await getMovimientoV2ByLegacyRowId(supabase, legacyRowId);
+  if (!currentV2) return;
+
+  const { error } = await supabase
+    .from('movimientos_v2')
+    .delete()
+    .eq('id', currentV2.id);
+
+  if (error) {
+    console.error('Supabase movimientos_v2 delete error:', error.message);
+  }
+}
+
+function formatLegacyDate(value) {
+  if (!value) return '';
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(String(value))) {
+    return String(value);
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function formatLegacyHour(value) {
+  if (!value) return '';
+
+  if (/^\d{2}:\d{2}$/.test(String(value))) {
+    return String(value);
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function mapV2StateToLegacyState(estadoPago) {
+  const normalized = String(estadoPago || '').trim().toLowerCase();
+  if (['pendiente', 'parcial', 'vencido'].includes(normalized)) return 'Pendiente';
+  return 'Cobrado';
+}
+
+function getOutstandingFactor(row) {
+  const montoOriginal = parseFloat(row?.monto_original) || 0;
+  const montoPesos = parseFloat(row?.monto_pesos) || 0;
+  if (!montoOriginal || !montoPesos) return 1;
+  return montoPesos / montoOriginal;
+}
+
+function getCompatibleAmountBase(row) {
+  const estadoLegacy = mapV2StateToLegacyState(row?.estado_pago);
+  if (estadoLegacy === 'Pendiente') {
+    return Math.abs(parseFloat(row?.saldo_pendiente) || 0);
+  }
+  return Math.abs(parseFloat(row?.monto_original) || 0);
+}
+
+function mapV2RowToLegacySnapshot(row) {
+  const compatibleAmount = getCompatibleAmountBase(row);
+  const sign = row?.tipo_movimiento === 'egreso' ? -1 : 1;
+  const amountFactor = getOutstandingFactor(row);
+  const montoPesos = Math.round(compatibleAmount * amountFactor * 100) / 100;
+  const baseDate = row?.fecha_prestacion || row?.fecha_cobro_real || row?.fecha_carga || row?.created_at || null;
+  const legacyId = row?.legacy_row_id ? String(row.legacy_row_id) : `v2_${String(row?.id || 'sin-id').slice(0, 8)}`;
+
+  return {
+    id: row?.legacy_row_id || row?.id,
+    fecha: formatLegacyDate(baseDate),
+    hora: formatLegacyHour(row?.fecha_carga || row?.created_at || baseDate),
+    descripcion: row?.descripcion || '',
+    monto: sign * compatibleAmount,
+    estado: mapV2StateToLegacyState(row?.estado_pago),
+    tipo: row?.tipo_movimiento === 'egreso' ? 'Egreso' : 'Ingreso',
+    moneda: row?.moneda || 'Pesos',
+    metodo_pago: row?.metodo_pago || '',
+    monto_pesos: montoPesos,
+    id_unico: legacyId,
+    id_origen: '',
+    created_at: row?.fecha_carga || row?.created_at || null,
+  };
+}
+
+function mapLegacyDbRowToPlainData(row) {
+  return {
+    fecha: row.fecha || '',
+    hora: row.hora || '',
+    descripcion: row.descripcion || '',
+    monto: parseFloat(row.monto) || 0,
+    montoPesos: parseFloat(row.monto_pesos) || parseFloat(row.monto) || 0,
+    estado: row.estado || '',
+    tipo: row.tipo || '',
+    moneda: row.moneda || 'Pesos',
+    metodoPago: row.metodo_pago || '',
+    idUnico: row.id_unico || '',
+    _sortKey: row.created_at || null,
+  };
+}
+
+function mapV2RowToPlainData(row) {
+  const legacy = mapV2RowToLegacySnapshot(row);
+  return {
+    fecha: legacy.fecha,
+    hora: legacy.hora,
+    descripcion: legacy.descripcion,
+    monto: legacy.monto,
+    montoPesos: legacy.monto_pesos,
+    estado: legacy.estado,
+    tipo: legacy.tipo,
+    moneda: legacy.moneda,
+    metodoPago: legacy.metodo_pago,
+    idUnico: legacy.id_unico,
+    _sortKey: row.fecha_carga || row.created_at || null,
+  };
+}
+
+async function fetchLegacyRowsForUser(supabase, userId) {
+  const { data, error } = await supabase
+    .from('movimientos')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+}
+
+async function fetchV2RowsForUser(supabase, userId) {
+  const capabilities = await resolveV2Capabilities(supabase);
+  if (!capabilities.movimientosV2) return [];
+
+  const { data, error } = await supabase
+    .from('movimientos_v2')
+    .select('*')
+    .eq('user_id', userId)
+    .order('fecha_carga', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+}
+
+async function resolveReadModelRows(supabase, userId) {
+  const legacyRows = await fetchLegacyRowsForUser(supabase, userId);
+  const v2Rows = await fetchV2RowsForUser(supabase, userId);
+  const legacyIds = new Set(legacyRows.map(row => String(row.id)));
+  const v2OnlyRows = v2Rows.filter(row => !row.legacy_row_id || !legacyIds.has(String(row.legacy_row_id)));
+
+  return {
+    legacyRows,
+    v2OnlyRows,
+  };
+}
+
+function sortByKeyAsc(items, getKey) {
+  return [...items].sort((a, b) => {
+    const keyA = getKey(a) || '';
+    const keyB = getKey(b) || '';
+    return String(keyA).localeCompare(String(keyB));
+  });
+}
+
+function buildLegacySupabaseRowWrapper(userId, row) {
+  return {
+    _supabase: true,
+    id: row.id,
+    get(field) {
+      const map = {
+        'Fecha': row.fecha,
+        'fecha': row.fecha,
+        'Hora': row.hora,
+        'hora': row.hora,
+        'Descripcion': row.descripcion,
+        'descripcion': row.descripcion,
+        'Monto': row.monto,
+        'monto': row.monto,
+        'Estado': row.estado,
+        'estado': row.estado,
+        'Tipo': row.tipo,
+        'tipo': row.tipo,
+        'Moneda': row.moneda,
+        'moneda': row.moneda,
+        'MetodoPago': row.metodo_pago,
+        'metodopago': row.metodo_pago,
+        'ID_Unico': row.id_unico,
+        'ID_unico': row.id_unico,
+        'ID_uNico': row.id_unico,
+        'idunico': row.id_unico,
+        'MontoPesos': row.monto_pesos,
+        'montopesos': row.monto_pesos,
+        'ID_Origen': row.id_origen,
+      };
+      return map[field];
+    },
+    set(field, value) {
+      const map = {
+        'Descripcion': 'descripcion',
+        'descripcion': 'descripcion',
+        'Monto': 'monto',
+        'monto': 'monto',
+        'Estado': 'estado',
+        'estado': 'estado',
+        'Moneda': 'moneda',
+        'moneda': 'moneda',
+        'MetodoPago': 'metodo_pago',
+        'metodopago': 'metodo_pago',
+        'MontoPesos': 'monto_pesos',
+        'montopesos': 'monto_pesos',
+      };
+      if (map[field]) {
+        this._updates = this._updates || {};
+        this._updates[map[field]] = value;
+      }
+    },
+    async save() {
+      if (this._updates) {
+        const supabase2 = getSupabase();
+        const legacySnapshot = buildLegacySnapshotFromRow(row);
+        const updates = { ...this._updates };
+        await supabase2
+          .from('movimientos')
+          .update(updates)
+          .eq('id', this.id);
+        try {
+          await syncRowUpdateToSheet(userId, row.id_unico, updates);
+        } catch (sheetError) {
+          console.error('Sheet sync update error:', sheetError.message);
+        }
+        try {
+          await syncLegacyUpdateToV2(supabase2, userId, legacySnapshot, updates);
+        } catch (v2Error) {
+          console.error('Supabase movimientos_v2 sync update error:', v2Error.message);
+        }
+        Object.assign(row, updates);
+        this._updates = {};
+      }
+    },
+    async delete() {
+      const supabase2 = getSupabase();
+      const legacyRowId = row.id;
+      await supabase2
+        .from('movimientos')
+        .delete()
+        .eq('id', this.id);
+      try {
+        await syncRowDeleteToSheet(userId, row.id_unico);
+      } catch (sheetError) {
+        console.error('Sheet sync delete error:', sheetError.message);
+      }
+      try {
+        await syncLegacyDeleteToV2(supabase2, legacyRowId);
+      } catch (v2Error) {
+        console.error('Supabase movimientos_v2 sync delete error:', v2Error.message);
+      }
+    },
+    _sortKey: row.created_at || null,
+  };
+}
+
+function buildV2SupabaseRowWrapper(userId, row) {
+  return {
+    _supabase: true,
+    _v2: true,
+    id: row.id,
+    get(field) {
+      const legacy = mapV2RowToLegacySnapshot(row);
+      const map = {
+        'Fecha': legacy.fecha,
+        'fecha': legacy.fecha,
+        'Hora': legacy.hora,
+        'hora': legacy.hora,
+        'Descripcion': legacy.descripcion,
+        'descripcion': legacy.descripcion,
+        'Monto': legacy.monto,
+        'monto': legacy.monto,
+        'Estado': legacy.estado,
+        'estado': legacy.estado,
+        'Tipo': legacy.tipo,
+        'tipo': legacy.tipo,
+        'Moneda': legacy.moneda,
+        'moneda': legacy.moneda,
+        'MetodoPago': legacy.metodo_pago,
+        'metodopago': legacy.metodo_pago,
+        'ID_Unico': legacy.id_unico,
+        'ID_unico': legacy.id_unico,
+        'ID_uNico': legacy.id_unico,
+        'idunico': legacy.id_unico,
+        'MontoPesos': legacy.monto_pesos,
+        'montopesos': legacy.monto_pesos,
+      };
+      return map[field];
+    },
+    set(field, value) {
+      const map = {
+        'Descripcion': 'descripcion',
+        'descripcion': 'descripcion',
+        'Monto': 'monto',
+        'monto': 'monto',
+        'Estado': 'estado',
+        'estado': 'estado',
+        'Moneda': 'moneda',
+        'moneda': 'moneda',
+        'MetodoPago': 'metodo_pago',
+        'metodopago': 'metodo_pago',
+        'MontoPesos': 'monto_pesos',
+        'montopesos': 'monto_pesos',
+      };
+      if (map[field]) {
+        this._updates = this._updates || {};
+        this._updates[map[field]] = value;
+      }
+    },
+    async save() {
+      if (this._updates) {
+        const supabase2 = getSupabase();
+        const legacySnapshot = mapV2RowToLegacySnapshot(row);
+        const updates = { ...this._updates };
+        const nextPayload = buildMovimientoV2UpdatePayload({
+          legacyRow: legacySnapshot,
+          updates,
+          currentV2: row,
+          allowPartialState: updates.estado !== undefined,
+        });
+
+        const { data: updatedV2, error } = await supabase2
+          .from('movimientos_v2')
+          .update(nextPayload)
+          .eq('id', this.id)
+          .select('*')
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const capabilities = await resolveV2Capabilities(supabase2);
+        if (capabilities.movimientoEventosV2 && updates.estado !== undefined) {
+          const transitionEvent = buildMovimientoV2TransitionEvent({
+            movimientoId: row.id,
+            userId,
+            previousV2: row,
+            nextV2: updatedV2,
+            metodoPago: updates.metodo_pago,
+          });
+
+          if (transitionEvent) {
+            const { error: eventError } = await supabase2
+              .from('movimiento_eventos_v2')
+              .insert(transitionEvent);
+
+            if (eventError) {
+              console.error('Supabase movimiento_eventos_v2 direct transition error:', eventError.message);
+            }
+          }
+        }
+
+        Object.assign(row, updatedV2);
+        this._updates = {};
+      }
+    },
+    async delete() {
+      const supabase2 = getSupabase();
+      await supabase2
+        .from('movimientos_v2')
+        .delete()
+        .eq('id', this.id);
+    },
+    _sortKey: row.fecha_carga || row.created_at || null,
+  };
+}
+
 async function obtenerDatosSheet(userId) {
   if (!USE_SUPABASE) {
     return getSheetService().obtenerDatosSheet(userId);
@@ -71,33 +668,19 @@ async function obtenerDatosSheet(userId) {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('movimientos')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true });
+    const { legacyRows, v2OnlyRows } = await resolveReadModelRows(supabase, userId);
+    const combined = [
+      ...legacyRows.map(mapLegacyDbRowToPlainData),
+      ...v2OnlyRows.map(mapV2RowToPlainData),
+    ];
 
-    if (error) {
-      console.error('Supabase obtenerDatos error:', error.message);
-      return getSheetService().obtenerDatosSheet(userId);
-    }
-
-    return data.map(row => ({
-      fecha: row.fecha || '',
-      hora: row.hora || '',
-      descripcion: row.descripcion || '',
-      monto: parseFloat(row.monto) || 0,
-      montoPesos: parseFloat(row.monto_pesos) || parseFloat(row.monto) || 0,
-      estado: row.estado || '',
-      tipo: row.tipo || '',
-      moneda: row.moneda || 'Pesos',
-      metodoPago: row.metodo_pago || '',
-      idUnico: row.id_unico || '',
-    })).filter(d =>
+    return sortByKeyAsc(combined, row => row._sortKey)
+      .map(({ _sortKey, ...row }) => row)
+      .filter(d =>
       d.fecha && d.fecha.trim() !== '' &&
       d.descripcion && d.descripcion.trim() !== '' &&
       d.monto && d.monto !== 0
-    );
+      );
   } catch (err) {
     console.error('Supabase obtenerDatos catch:', err.message);
     return getSheetService().obtenerDatosSheet(userId);
@@ -162,7 +745,7 @@ async function getSheetCliente(userId) {
     _supabase: true,
     userId,
     async addRow(rowData, opts) {
-      return addRow(userId, rowData);
+      return addRow(userId, rowData, opts);
     },
     async getRows() {
       return getRows(userId);
@@ -170,7 +753,7 @@ async function getSheetCliente(userId) {
   };
 }
 
-async function addRow(userId, rowData) {
+async function addRow(userId, rowData, options = {}) {
   if (!USE_SUPABASE) {
     const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return null;
@@ -226,6 +809,18 @@ async function addRow(userId, rowData) {
     return rowData;
   }
 
+  try {
+    await insertMovimientoV2FromLegacy(
+      supabase,
+      userId,
+      rowData,
+      data?.id || null,
+      options.movimientoV2Data || {}
+    );
+  } catch (v2Error) {
+    console.error('Supabase movimientos_v2 sync insert error:', v2Error.message);
+  }
+
   // dual-write: also write to sheet as backup
   try {
     const sheet = await getSheetService().getSheetCliente(userId);
@@ -255,96 +850,13 @@ async function getRows(userId) {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('movimientos')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true });
+    const { legacyRows, v2OnlyRows } = await resolveReadModelRows(supabase, userId);
+    const combined = [
+      ...legacyRows.map(row => buildLegacySupabaseRowWrapper(userId, row)),
+      ...v2OnlyRows.map(row => buildV2SupabaseRowWrapper(userId, row)),
+    ];
 
-    if (error) {
-      console.error('Supabase getRows error:', error.message);
-      const sheet = await getSheetService().getSheetCliente(userId);
-      if (!sheet) return [];
-      return sheet.getRows();
-    }
-
-    return data.map(row => ({
-      _supabase: true,
-      id: row.id,
-      get(field) {
-        const map = {
-          'Fecha': row.fecha,
-          'fecha': row.fecha,
-          'Hora': row.hora,
-          'hora': row.hora,
-          'Descripcion': row.descripcion,
-          'descripcion': row.descripcion,
-          'Monto': row.monto,
-          'monto': row.monto,
-          'Estado': row.estado,
-          'estado': row.estado,
-          'Tipo': row.tipo,
-          'tipo': row.tipo,
-          'Moneda': row.moneda,
-          'moneda': row.moneda,
-          'MetodoPago': row.metodo_pago,
-          'metodopago': row.metodo_pago,
-          'ID_Unico': row.id_unico,
-          'ID_unico': row.id_unico,
-          'ID_uNico': row.id_unico,
-          'idunico': row.id_unico,
-          'MontoPesos': row.monto_pesos,
-          'montopesos': row.monto_pesos,
-          'ID_Origen': row.id_origen,
-        };
-        return map[field];
-      },
-      set(field, value) {
-        const map = {
-          'Descripcion': 'descripcion',
-          'descripcion': 'descripcion',
-          'Monto': 'monto',
-          'monto': 'monto',
-          'Estado': 'estado',
-          'estado': 'estado',
-          'Moneda': 'moneda',
-          'moneda': 'moneda',
-        };
-        if (map[field]) {
-          this._updates = this._updates || {};
-          this._updates[map[field]] = value;
-        }
-      },
-      async save() {
-        if (this._updates) {
-          const supabase2 = getSupabase();
-          const updates = { ...this._updates };
-          await supabase2
-            .from('movimientos')
-            .update(updates)
-            .eq('id', this.id);
-          try {
-            await syncRowUpdateToSheet(userId, row.id_unico, updates);
-          } catch (sheetError) {
-            console.error('Sheet sync update error:', sheetError.message);
-          }
-          Object.assign(row, updates);
-          this._updates = {};
-        }
-      },
-      async delete() {
-        const supabase2 = getSupabase();
-        await supabase2
-          .from('movimientos')
-          .delete()
-          .eq('id', this.id);
-        try {
-          await syncRowDeleteToSheet(userId, row.id_unico);
-        } catch (sheetError) {
-          console.error('Sheet sync delete error:', sheetError.message);
-        }
-      },
-    }));
+    return sortByKeyAsc(combined, row => row._sortKey);
   } catch (err) {
     console.error('Supabase getRows catch:', err.message);
     const sheet = await getSheetService().getSheetCliente(userId);

@@ -10,6 +10,7 @@ const {
 } = require('../auth');
 const clienteService = require('./cliente.service');
 const { beginInviteRegistration } = require('./invite.service');
+const { validarEmail, validarSheetId } = require('../utils/validation');
 
 function buildWelcomeMessage() {
   return (
@@ -61,9 +62,10 @@ async function handleStart(userId) {
 }
 
 async function handleEmailStep(userId, text) {
-  const email = text.trim().toLowerCase();
+  const emailValidation = validarEmail(text);
+  const email = emailValidation.valor;
 
-  if (!email.includes('@')) {
+  if (!emailValidation.ok) {
     const intentos = incrementIntentosEmail(userId);
     if (intentos >= MAX_INTENTOS_EMAIL) {
       state.pendingRegistros.delete(userId);
@@ -100,11 +102,11 @@ async function handleEmailStep(userId, text) {
 }
 
 async function handleSheetIdStep(userId, text, registro) {
-  const sheetId = text.trim();
-
-  if (sheetId.length < 20) {
+  const sheetValidation = validarSheetId(text);
+  if (!sheetValidation.ok) {
     return { message: '⚠️ El ID del spreadsheet parece muy corto. Intenta de nuevo:' };
   }
+  const sheetId = sheetValidation.valor;
 
   try {
     const docTest = new GoogleSpreadsheet(sheetId, serviceAccountAuth);

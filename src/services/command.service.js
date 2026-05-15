@@ -3,8 +3,10 @@ const db = require('./db.service');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 
 const { esHoy, esEstaSemana, esEsteMes, normalizarFecha } = require('../utils/date');
-const { formatMonto, formatFecha } = require('../utils/formatter');
+const { formatMonto, formatFecha, escapeMarkdown } = require('../utils/formatter');
 const { obtenerCotizacionDolar } = require('./cotizacion.service');
+const { sanitizarInput } = require('../utils/formatter');
+const { MAX_DESCRIPCION_LENGTH, MAX_MOVIMIENTO_MONTO, MAX_COTIZACION_DOLAR } = require('../config');
 const {
   calcularMontoPesos,
   crearMensajeMovimientoRegistrado,
@@ -88,7 +90,7 @@ async function ejecutarHoy(userId) {
   if (ingresos.length > 0) {
     msg += `💰 *Ingresos:*\n`;
     ingresos.forEach(d => {
-      msg += `✅ ${d.descripcion}\n`;
+      msg += `✅ ${escapeMarkdown(d.descripcion)}\n`;
       msg += `   ${formatMonto(d.monto, d.moneda)} - ${d.metodoPago || 'pendiente'}\n\n`;
     });
   }
@@ -96,7 +98,7 @@ async function ejecutarHoy(userId) {
   if (egresos.length > 0) {
     msg += `💸 *Egresos:*\n`;
     egresos.forEach(d => {
-      msg += `🔻 ${d.descripcion}\n`;
+      msg += `🔻 ${escapeMarkdown(d.descripcion)}\n`;
       msg += `   ${formatMonto(d.monto, d.moneda)} - ${d.metodoPago || 'pendiente'}\n\n`;
     });
   }
@@ -201,7 +203,7 @@ async function ejecutarIngresos(userId) {
 
   let msg = `💰 *ÚLTIMOS INGRESOS*\n\n`;
   ultimos.forEach(d => {
-    msg += `✅ ${d.descripcion}\n`;
+    msg += `✅ ${escapeMarkdown(d.descripcion)}\n`;
     msg += `   ${formatMonto(d.monto, d.moneda)} - ${d.metodoPago || 'sin método'}\n`;
     msg += `   ${formatFecha(d.fecha)} ${d.hora}\n\n`;
   });
@@ -225,7 +227,7 @@ async function ejecutarEgresos(userId) {
 
   let msg = `💸 *ÚLTIMOS EGRESOS*\n\n`;
   ultimos.forEach(d => {
-    msg += `🔻 ${d.descripcion}\n`;
+    msg += `🔻 ${escapeMarkdown(d.descripcion)}\n`;
     msg += `   ${formatMonto(d.monto, d.moneda)} - ${d.metodoPago || 'sin método'}\n`;
     msg += `   ${formatFecha(d.fecha)} ${d.hora}\n\n`;
   });
@@ -253,7 +255,7 @@ async function ejecutarPendientes(userId) {
   if (pendientesHoy.length > 0) {
     msg += `📅 *Hoy:*\n`;
     pendientesHoy.forEach(d => {
-      msg += `• ${d.descripcion} - ${formatMonto(d.monto, d.moneda)}\n`;
+      msg += `• ${escapeMarkdown(d.descripcion)} - ${formatMonto(d.monto, d.moneda)}\n`;
     });
     msg += `\n`;
   }
@@ -261,7 +263,7 @@ async function ejecutarPendientes(userId) {
   if (pendientesAntiguos.length > 0) {
     msg += `📆 *Anteriores:*\n`;
     pendientesAntiguos.slice(0, 10).forEach(d => {
-      msg += `• ${d.descripcion} - ${formatFecha(d.fecha)} - ${formatMonto(d.monto, d.moneda)}\n`;
+      msg += `• ${escapeMarkdown(d.descripcion)} - ${formatFecha(d.fecha)} - ${formatMonto(d.monto, d.moneda)}\n`;
     });
     if (pendientesAntiguos.length > 10) {
       msg += `... y ${pendientesAntiguos.length - 10} más\n`;
@@ -338,7 +340,7 @@ async function ejecutarCobrar(userId, nombre) {
   if (!filaActual) {
     let msg = `⏳ *Movimientos pendientes:*\n\n`;
     pendientes.slice(-5).forEach((f, i) => {
-      msg += `• ${getRowDescripcion(f, '')}\n`;
+      msg += `• ${escapeMarkdown(getRowDescripcion(f, ''))}\n`;
     });
     msg += `\nUsa: /cobrar [nombre] o /cobrar [nombre] [monto]`;
     return msg;
@@ -362,7 +364,7 @@ async function ejecutarCobrar(userId, nombre) {
 
       return (
         `🧾 *Cobro parcial registrado*\n\n` +
-        `📝 ${getRowDescripcion(filaActual, '')}\n` +
+        `📝 ${escapeMarkdown(getRowDescripcion(filaActual, ''))}\n` +
         `💸 Cobrado ahora: ${formatMonto(montoCobrado, getRowMoneda(filaActual, 'Pesos'))}\n` +
         `⏳ Saldo pendiente: ${formatMonto(signo * nuevoSaldo, getRowMoneda(filaActual, 'Pesos'))}`
       );
@@ -375,7 +377,7 @@ async function ejecutarCobrar(userId, nombre) {
 
   return (
     `✅ *¡Marcado como cobrado!*\n\n` +
-    `📝 ${getRowDescripcion(filaActual, '')}`
+    `📝 ${escapeMarkdown(getRowDescripcion(filaActual, ''))}`
   );
 }
 
@@ -403,7 +405,7 @@ async function ejecutarEditar(userId, nombre) {
   if (coincidencias.length > 1) {
     let msg = `⚠️ *Varias coincidencias:*\n\n`;
     coincidencias.slice(0, 5).forEach((c, i) => {
-      msg += `${i + 1}. ${getRowDescripcion(c, '')}\n`;
+      msg += `${i + 1}. ${escapeMarkdown(getRowDescripcion(c, ''))}\n`;
       msg += `   ${formatMonto(getRowMonto(c, 0), getRowMoneda(c, 'Pesos'))} - ${getRowFecha(c)}\n\n`;
     });
     msg += `\nEspecificá mejor: /editar [ID completo]`;
@@ -441,7 +443,7 @@ async function ejecutarEliminar(userId, nombre) {
       const desc = getRowDescripcion(f);
       const monto = getRowMonto(f, 0);
       const fecha = getRowFecha(f, '');
-      msg += `${i + 1}. ${desc}\n`;
+      msg += `${i + 1}. ${escapeMarkdown(desc)}\n`;
       msg += `   $${monto} - ${fecha}\n\n`;
     });
 
@@ -454,7 +456,7 @@ async function ejecutarEliminar(userId, nombre) {
     coincidencias.slice(0, 5).forEach((c, i) => {
       const f = c.fila;
       const desc = getRowDescripcion(f);
-      msg += `${i + 1}. ${desc}\n`;
+      msg += `${i + 1}. ${escapeMarkdown(desc)}\n`;
       msg += `   ${formatMonto(getRowMonto(f, 0), getRowMoneda(f, 'Pesos'))} - ${getRowFecha(f)}\n\n`;
     });
     msg += `\nEspecificá mejor el nombre o usa /listar para ver todos.`;
@@ -480,7 +482,7 @@ async function ejecutarListar(userId) {
     const fecha = getRowFecha(f, '');
     const id = getRowIdUnico(f, 'sin-id');
 
-    msg += `${i + 1}. ${desc}\n`;
+    msg += `${i + 1}. ${escapeMarkdown(desc)}\n`;
     msg += `   $${monto} - ${fecha}\n`;
     msg += `   ID: \`${id}\`\n\n`;
   });
@@ -561,7 +563,7 @@ async function prepararEliminacion(userId, nombre) {
     mensaje:
       `⚠️ *¿ELIMINAR ESTE MOVIMIENTO?*\n\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `📝 ${desc}\n` +
+      `📝 ${escapeMarkdown(desc)}\n` +
       `💰 ${formatMonto(monto, moneda)}\n` +
       `📅 ${fecha} ${hora}\n` +
       `🏷️ Tipo: ${tipo}\n` +
@@ -614,12 +616,41 @@ function buildHelpMessage() {
 }
 
 async function guardarMovimiento(userId, datos, opciones = {}) {
-  const { descripcion, monto, tipo, moneda, metodo_pago } = datos;
+  const {
+    descripcion,
+    monto,
+    tipo,
+    moneda,
+    metodo_pago,
+    categoria,
+    subcategoria,
+    pacienteNombre,
+    profesionalNombre,
+    proveedorNombre,
+    tratamientoNombre,
+    fechaPrestacion,
+    fechaCobroReal,
+    fechaVencimiento,
+    referenciaId,
+    notas,
+  } = datos;
   const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares' : 'Pesos';
   const montoFinal = parseFloat(monto);
+  const descripcionFinal = sanitizarInput(descripcion, MAX_DESCRIPCION_LENGTH);
   const estadoFinal = opciones.estado || datos.estado || 'Cobrado';
 
+  if (!descripcionFinal || descripcionFinal.length < 2) {
+    throw new Error('descripcion_invalida');
+  }
+
+  if (!Number.isFinite(montoFinal) || montoFinal === 0 || Math.abs(montoFinal) > MAX_MOVIMIENTO_MONTO) {
+    throw new Error('monto_invalido');
+  }
+
   let cotizacionUsada = opciones.cotizacionUsada || null;
+  if (cotizacionUsada && (!Number.isFinite(cotizacionUsada) || cotizacionUsada <= 0 || cotizacionUsada > MAX_COTIZACION_DOLAR)) {
+    throw new Error('cotizacion_invalida');
+  }
   if (monedaFinal === 'Dólares' && !cotizacionUsada) {
     if (!state.cotizacionDolar) await obtenerCotizacionDolar();
     cotizacionUsada = state.cotizacionDolar;
@@ -633,13 +664,24 @@ async function guardarMovimiento(userId, datos, opciones = {}) {
 
   const montoPesos = opciones.montoPesos || calcularMontoPesos(montoFinal, monedaFinal, cotizacionUsada);
   const { rowData, idUnico, fechaStr } = await persistirMovimiento(userId, {
-    descripcion,
+    descripcion: descripcionFinal,
     monto: montoFinal,
     tipo,
     moneda: monedaFinal,
     metodoPago: metodo_pago,
     estado: estadoFinal,
     montoPesos,
+    categoria: opciones.categoria || categoria || null,
+    subcategoria: opciones.subcategoria || subcategoria || null,
+    pacienteNombre: opciones.pacienteNombre || pacienteNombre || null,
+    profesionalNombre: opciones.profesionalNombre || profesionalNombre || null,
+    proveedorNombre: opciones.proveedorNombre || proveedorNombre || null,
+    tratamientoNombre: opciones.tratamientoNombre || tratamientoNombre || null,
+    fechaPrestacion: opciones.fechaPrestacion || fechaPrestacion || null,
+    fechaCobroReal: opciones.fechaCobroReal || fechaCobroReal || null,
+    fechaVencimiento: opciones.fechaVencimiento || fechaVencimiento || null,
+    referenciaId: opciones.referenciaId || referenciaId || null,
+    notas: opciones.notas || notas || null,
   });
 
   return {
@@ -651,7 +693,7 @@ async function guardarMovimiento(userId, datos, opciones = {}) {
     cotizacionUsada,
     mensaje: crearMensajeMovimientoRegistrado({
       tipo,
-      descripcion,
+      descripcion: descripcionFinal,
       monto: montoFinal,
       moneda: monedaFinal,
       metodoPago: metodo_pago,
@@ -682,9 +724,41 @@ function normalizarTipoMovimiento(tipo, monto = null) {
   return 'Ingreso';
 }
 
+function inferirCategoriaInicial(tipo, estado = 'Cobrado') {
+  const raw = tipo == null ? '' : String(tipo).trim().toLowerCase();
+
+  if (['consulta'].includes(raw)) return 'consulta';
+  if (['servicio', 'tratamiento'].includes(raw)) return 'tratamiento';
+  if (['anticipo'].includes(raw)) return 'anticipo';
+  if (['sena', 'seña'].includes(raw)) return 'sena';
+  if (['cuota'].includes(raw)) return 'cuota';
+  if (['saldo_final', 'saldo'].includes(raw)) return 'saldo_final';
+  if (estado === 'Pendiente') return 'cobro_pendiente';
+  return null;
+}
+
 async function registrarMovimientoDesdeNLP(userId, datos) {
-  const { tipo, descripcion, monto, moneda, metodo_pago, estado } = datos;
+  const {
+    tipo,
+    descripcion,
+    monto,
+    moneda,
+    metodo_pago,
+    estado,
+    categoria,
+    subcategoria,
+    pacienteNombre,
+    profesionalNombre,
+    proveedorNombre,
+    tratamientoNombre,
+    fechaPrestacion,
+    fechaCobroReal,
+    fechaVencimiento,
+    referenciaId,
+    notas,
+  } = datos;
   const estadoFinal = estado === 'Pendiente' ? 'Pendiente' : 'Cobrado';
+  const categoriaFinal = categoria || inferirCategoriaInicial(tipo, estadoFinal);
 
   if (!monto || isNaN(monto) || monto === 0) {
     return { necesitaInfo: true, campo: 'monto', mensaje: '💰 ¿De cuánto es el movimiento? Ingresá el monto:' };
@@ -697,11 +771,13 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       moneda: moneda || 'Pesos',
       metodo_pago: metodo_pago || null,
       estado: estadoFinal,
+      categoria: categoriaFinal,
     });
     return { necesitaInfo: true, campo: 'descripcion', mensaje: '📝 ¿De quién o qué concepto es el movimiento?' };
   }
 
   let montoFinal = parseFloat(monto);
+  const descripcionFinal = descripcion ? sanitizarInput(descripcion, MAX_DESCRIPCION_LENGTH) : null;
 
   const tipoFinal = normalizarTipoMovimiento(tipo, montoFinal);
   if (tipoFinal === 'Egreso' && montoFinal > 0) {
@@ -713,12 +789,13 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
   if (monedaFinal === 'Dólares') {
     state.pendingCotizaciones.set(userId, {
       comando: tipoFinal === 'Egreso' ? 'gasto' : 'consulta',
-      descripcion: descripcion,
+      descripcion: descripcionFinal,
       monto: montoFinal,
       tipo: tipoFinal,
       moneda: monedaFinal,
       metodoIndicado: metodo_pago || null,
       estado: estadoFinal,
+      categoria: categoriaFinal,
     });
 
     return {
@@ -730,28 +807,40 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
 
   if (!metodo_pago && estadoFinal !== 'Pendiente') {
     state.pendingPayments.set(userId, {
-      descripcion: descripcion,
+      descripcion: descripcionFinal,
       monto: montoFinal,
       tipo: tipoFinal,
       moneda: monedaFinal,
       estado: estadoFinal,
+      categoria: categoriaFinal,
     });
 
     return {
       necesitaInfo: true,
       campo: 'metodo_pago',
       mensaje: '💳 *¿Cómo pagaste?*\n\nResponde: efectivo / transferencia / tarjeta',
-     _pendingData: { tipo: tipoFinal, descripcion, monto: montoFinal, moneda: monedaFinal }
+     _pendingData: { tipo: tipoFinal, descripcion: descripcionFinal, monto: montoFinal, moneda: monedaFinal }
     };
   }
 
   return guardarMovimiento(userId, {
-    descripcion,
+    descripcion: descripcionFinal,
     monto: montoFinal,
     tipo: tipoFinal,
     moneda: monedaFinal,
     metodo_pago,
     estado: estadoFinal,
+    categoria: categoriaFinal,
+    subcategoria,
+    pacienteNombre,
+    profesionalNombre,
+    proveedorNombre,
+    tratamientoNombre,
+    fechaPrestacion,
+    fechaCobroReal,
+    fechaVencimiento,
+    referenciaId,
+    notas,
   });
 }
 

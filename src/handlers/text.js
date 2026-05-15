@@ -2,11 +2,12 @@ const { bot } = require('../lib/telegraf');
 const { METODOS_VALIDOS, COMANDOS_INGRESO, COMANDOS_EGRESO } = require('../config');
 const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
-const { formatMonto, sanitizarInput } = require('../utils/formatter');
+const { formatMonto, sanitizarInput, escapeMarkdown } = require('../utils/formatter');
 const geminiService = require('../services/gemini.service');
 const { handleNLPIntent } = require('../handlers/nlp');
 const { quickParse } = require('../services/quick_nlp.service');
 const registrationService = require('../services/registration.service');
+const { validarTextoUsuario, normalizarDescripcion, validarMonto, validarCotizacion } = require('../utils/validation');
 
 function shouldHandleWithQuickParseFirst(result) {
   if (!result || !result.intent) return false;
@@ -56,6 +57,11 @@ bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
   const userId = ctx.from.id;
 
+  const textValidation = validarTextoUsuario(text);
+  if (!textValidation.ok) {
+    return ctx.reply('⚠️ El mensaje es inválido o demasiado largo.');
+  }
+
   if (text.startsWith('/')) return;
 
   if (state.pendingReinicios.has(userId)) {
@@ -97,7 +103,8 @@ bot.on('text', async (ctx) => {
       monto: pendingDesc.monto,
       moneda: pendingDesc.moneda,
       metodo_pago: metodoPendiente,
-      estado: pendingDesc.estado || 'Cobrado'
+      estado: pendingDesc.estado || 'Cobrado',
+      categoria: pendingDesc.categoria || null,
     });
 
     if (resultado.necesitaInfo) {
@@ -129,12 +136,14 @@ bot.on('text', async (ctx) => {
   }
 
   if (state.pendingCotizaciones.has(ctx.from.id)) {
-    const cotizacion = parseFloat(text);
+    const cotizacionValidation = validarCotizacion(text.replace(',', '.'));
 
-    if (isNaN(cotizacion) || cotizacion <= 0) {
+    if (!cotizacionValidation.ok) {
       ctx.reply('⚠️ Cotización inválida. Ingresá un número positivo (ej: 1250):');
       return;
     }
+
+    const cotizacion = cotizacionValidation.valor;
 
     state.cotizacionDolar = cotizacion;
     state.cotizacionFecha = new Date();
@@ -142,19 +151,20 @@ bot.on('text', async (ctx) => {
     const datos = state.pendingCotizaciones.get(ctx.from.id);
     state.pendingCotizaciones.delete(ctx.from.id);
 
-    const { descripcion, monto, tipo, moneda, metodoIndicado } = datos;
+    const { descripcion, monto, tipo, moneda, metodoIndicado, categoria } = datos;
 
     if (metodoIndicado) {
-      const resultado = await cmd.guardarMovimiento(ctx.from.id, {
-        descripcion,
-        monto,
-        tipo,
-        moneda,
-        metodo_pago: metodoIndicado,
-      }, {
-        cotizacionUsada: cotizacion,
-        estado: datos.estado || 'Cobrado',
-      });
+        const resultado = await cmd.guardarMovimiento(ctx.from.id, {
+          descripcion,
+          monto,
+          tipo,
+          moneda,
+          metodo_pago: metodoIndicado,
+          categoria,
+        }, {
+          cotizacionUsada: cotizacion,
+          estado: datos.estado || 'Cobrado',
+        });
 
       ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
     } else {
@@ -165,6 +175,7 @@ bot.on('text', async (ctx) => {
           tipo,
           moneda,
           metodo_pago: null,
+          categoria,
         }, {
           cotizacionUsada: cotizacion,
           estado: 'Pendiente',
@@ -177,6 +188,7 @@ bot.on('text', async (ctx) => {
           monto,
           tipo,
           moneda,
+          categoria,
           cotizacionUsada: cotizacion,
           estado: datos.estado || 'Cobrado'
         });
@@ -199,7 +211,11 @@ bot.on('text', async (ctx) => {
       if (text === '-' || text === '- -') {
         editData.descripcion = editData.descripcionOriginal;
       } else {
-        editData.descripcion = sanitizarInput(text);
+        const descripcionValidada = normalizarDescripcion(text);
+        if (!descripcionValidada.ok) {
+          return ctx.reply('⚠️ La descripción es inválida. Ingresá un texto más claro y corto:');
+        }
+        editData.descripcion = descripcionValidada.valor;
       }
       editData.step = 'monto';
       state.pendingEdits.set(ctx.from.id, editData);
@@ -213,11 +229,15 @@ bot.on('text', async (ctx) => {
     }
 
     if (editData.step === 'monto') {
-      const nuevoMonto = parseFloat(text);
-      if (text === '-' || text === '- -' || isNaN(nuevoMonto)) {
+      const nuevoMonto = parseFloat(text.replace(',', '.'));
+      if (text === '-' || text === '- -') {
         editData.nuevoMonto = editData.montoOriginal;
       } else {
-        editData.nuevoMonto = editData.tipo === 'Egreso' && nuevoMonto > 0 ? -nuevoMonto : nuevoMonto;
+        const montoValidado = validarMonto(nuevoMonto);
+        if (!montoValidado.ok) {
+          return ctx.reply('⚠️ El monto es inválido. Ingresá un número razonable distinto de 0:');
+        }
+        editData.nuevoMonto = editData.tipo === 'Egreso' && montoValidado.valor > 0 ? -montoValidado.valor : montoValidado.valor;
       }
       editData.step = 'confirmar';
       state.pendingEdits.set(ctx.from.id, editData);
@@ -232,7 +252,7 @@ bot.on('text', async (ctx) => {
 
       ctx.reply(
         `📝 *Resumen de cambios:*\n\n` +
-        `Descripción: ${editData.descripcion}\n` +
+        `Descripción: ${escapeMarkdown(editData.descripcion)}\n` +
         `Monto: ${formatMonto(editData.nuevoMonto, editData.moneda)}`,
         {
           parse_mode: 'Markdown',
@@ -259,6 +279,7 @@ bot.on('text', async (ctx) => {
           tipo: pendingData.tipo,
           moneda: pendingData.moneda,
           metodo_pago: metodo,
+          categoria: pendingData.categoria || null,
         }, {
           cotizacionUsada: pendingData.cotizacionUsada,
           estado: pendingData.estado || 'Cobrado',
@@ -328,8 +349,16 @@ bot.on('text', async (ctx) => {
   }
 
   const comando = match[1].toLowerCase();
-  const descripcion = sanitizarInput(match[2]);
-  let monto = parseFloat(match[3]);
+  const descripcionValidada = normalizarDescripcion(match[2]);
+  if (!descripcionValidada.ok) {
+    return ctx.reply('⚠️ La descripción es inválida.');
+  }
+  const descripcion = descripcionValidada.valor;
+  const montoValidado = validarMonto(match[3].replace(',', '.'));
+  if (!montoValidado.ok) {
+    return ctx.reply('❌ Error: el monto es inválido o demasiado grande.');
+  }
+  let monto = montoValidado.valor;
 
   let tipo = '';
   let moneda = 'Pesos';
@@ -349,6 +378,15 @@ bot.on('text', async (ctx) => {
   }
 
   const estado = comando === 'pendiente' ? 'Pendiente' : 'Cobrado';
+  const categoria = comando === 'consulta'
+    ? 'consulta'
+    : comando === 'servicio'
+      ? 'tratamiento'
+      : comando === 'pendiente'
+        ? 'cobro_pendiente'
+        : tipo === 'Egreso'
+          ? 'otro_egreso'
+          : null;
 
   const metodoIndicado = match[4] ? match[4].toLowerCase() : null;
 
@@ -359,6 +397,7 @@ bot.on('text', async (ctx) => {
       monto,
       tipo,
       moneda,
+      categoria,
       metodoIndicado,
       estado,
     });
@@ -372,6 +411,7 @@ bot.on('text', async (ctx) => {
       monto,
       tipo,
       moneda,
+      categoria,
       estado
     });
 
@@ -381,10 +421,6 @@ bot.on('text', async (ctx) => {
       { parse_mode: 'Markdown' }
     );
     return;
-  }
-
-  if (isNaN(monto) || monto === 0) {
-    return ctx.reply('❌ Error: El monto no puede ser 0.');
   }
 
   try {
@@ -397,6 +433,7 @@ bot.on('text', async (ctx) => {
       moneda,
       metodo_pago: metodoIndicado,
       estado,
+      categoria,
     });
 
     ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });

@@ -39,6 +39,7 @@ bot.command('pendiente', async (ctx) => {
       moneda,
       metodo_pago: metodo,
       estado: 'Pendiente',
+      categoria: 'cobro_pendiente',
     }, {
       estado: 'Pendiente',
     });
