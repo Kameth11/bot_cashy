@@ -71,6 +71,40 @@ function getRowMetodoPago(row, fallback = '') {
   return getField(row, ['MetodoPago', 'metodopago'], fallback);
 }
 
+function getRowCategoria(row, fallback = '') {
+  return getField(row, ['Categoria', 'categoria'], fallback);
+}
+
+function getRowPaciente(row, fallback = '') {
+  return getField(row, ['Paciente', 'paciente'], fallback);
+}
+
+function getRowProfesional(row, fallback = '') {
+  return getField(row, ['Profesional', 'profesional'], fallback);
+}
+
+function getRowTratamiento(row, fallback = '') {
+  return getField(row, ['Tratamiento', 'tratamiento'], fallback);
+}
+
+function getRowProveedor(row, fallback = '') {
+  return getField(row, ['Proveedor', 'proveedor'], fallback);
+}
+
+function getRowFechaPrestacion(row, fallback = '') {
+  return getField(row, ['FechaPrestacion', 'fechaprestacion'], fallback);
+}
+
+function getRowFechaVencimiento(row, fallback = '') {
+  return getField(row, ['FechaVencimiento', 'fechavencimiento'], fallback);
+}
+
+function getRowSaldoPendiente(row, fallback = 0) {
+  const raw = getField(row, ['SaldoPendiente', 'saldopendiente'], fallback);
+  const parsed = parseFloat(raw);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
 function toMovimiento(row) {
   return {
     fecha: getRowFecha(row, ''),
@@ -83,6 +117,14 @@ function toMovimiento(row) {
     moneda: getRowMoneda(row, 'Pesos'),
     metodoPago: getRowMetodoPago(row, ''),
     idUnico: getRowIdUnico(row, ''),
+    categoria: getRowCategoria(row, ''),
+    paciente: getRowPaciente(row, ''),
+    profesional: getRowProfesional(row, ''),
+    tratamiento: getRowTratamiento(row, ''),
+    proveedor: getRowProveedor(row, ''),
+    fechaPrestacion: getRowFechaPrestacion(row, ''),
+    fechaVencimiento: getRowFechaVencimiento(row, ''),
+    saldoPendiente: getRowSaldoPendiente(row, 0),
   };
 }
 
@@ -108,6 +150,14 @@ module.exports = {
   getRowTipo,
   getRowMoneda,
   getRowMetodoPago,
+  getRowCategoria,
+  getRowPaciente,
+  getRowProfesional,
+  getRowTratamiento,
+  getRowProveedor,
+  getRowFechaPrestacion,
+  getRowFechaVencimiento,
+  getRowSaldoPendiente,
   toMovimiento,
   isValidMovimientoRow,
 };

@@ -9,6 +9,91 @@ const { quickParse } = require('../services/quick_nlp.service');
 const registrationService = require('../services/registration.service');
 const { validarTextoUsuario, normalizarDescripcion, validarMonto, validarCotizacion } = require('../utils/validation');
 
+const CATEGORIAS_INGRESO_PACIENTE = {
+  consulta: 'consulta',
+  tratamiento: 'tratamiento',
+  servicio: 'tratamiento',
+  anticipo: 'anticipo',
+  adelanto: 'anticipo',
+  sena: 'sena',
+  seña: 'sena',
+  cuota: 'cuota',
+  saldo: 'saldo_final',
+  saldo_final: 'saldo_final',
+};
+
+function normalizarCategoriaIngresoPaciente(text) {
+  const normalized = sanitizarInput(text || '', 40)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_');
+
+  return CATEGORIAS_INGRESO_PACIENTE[normalized] || null;
+}
+
+function normalizarMonedaTexto(text) {
+  const normalized = sanitizarInput(text || '', 20)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (['$', 'peso', 'pesos', 'ars'].includes(normalized)) return 'Pesos';
+  if (['u$', 'usd', 'dolar', 'dolares', 'dolar_es', 'dolar estadounidense'].includes(normalized)) return 'Dólares';
+  return null;
+}
+
+function normalizarSiNo(text) {
+  const normalized = sanitizarInput(text || '', 10)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (['si', 's', 'yes', 'y'].includes(normalized)) return true;
+  if (['no', 'n'].includes(normalized)) return false;
+  return null;
+}
+
+function etiquetaCategoria(categoria) {
+  const map = {
+    consulta: 'consulta',
+    tratamiento: 'tratamiento',
+    anticipo: 'anticipo',
+    sena: 'seña',
+    cuota: 'cuota',
+    saldo_final: 'saldo final',
+  };
+  return map[categoria] || categoria;
+}
+
+function inferirCategoriaDesdeComando(comando, tipo, descripcion) {
+  const desc = String(descripcion || '').trim().toLowerCase();
+
+  if (comando === 'consulta') return 'consulta';
+  if (comando === 'servicio') {
+    if (/anticipo|adelanto/.test(desc)) return 'anticipo';
+    if (/sena|seña|reserva/.test(desc)) return 'sena';
+    if (/cuota/.test(desc)) return 'cuota';
+    if (/saldo/.test(desc)) return 'saldo_final';
+    return 'tratamiento';
+  }
+  if (comando === 'pendiente') return 'cobro_pendiente';
+  if (tipo === 'Egreso') {
+    if (/sueld/.test(desc)) return 'sueldos';
+    if (/honorario/.test(desc)) return 'honorarios';
+    if (/insumo|guante|bracket|anestesia|material/.test(desc)) return 'insumos';
+    if (/alquiler/.test(desc)) return 'alquiler';
+    if (/expensa/.test(desc)) return 'expensas';
+    if (/luz|agua|internet|telefono|servicio/.test(desc)) return 'servicios';
+    if (/impuesto|iva|ingresos brutos|ganancia|monotributo/.test(desc)) return 'impuestos';
+    if (/mantenimiento|autoclave|rayos x|sillon|equipo|reparacion/.test(desc)) return 'mantenimiento';
+    if (/software|sistema|licencia|suscripcion/.test(desc)) return 'software';
+    return 'otro_egreso';
+  }
+
+  return null;
+}
+
 function shouldHandleWithQuickParseFirst(result) {
   if (!result || !result.intent) return false;
 
@@ -72,6 +157,159 @@ bot.on('text', async (ctx) => {
     const result = await registrationService.handlePendingRegistration(userId, text);
     if (result) {
       return ctx.reply(result.message, result.parse_mode ? { parse_mode: result.parse_mode } : undefined);
+    }
+  }
+
+  if (state.pendingIngresoPacientes.has(userId)) {
+    const pendingIngreso = state.pendingIngresoPacientes.get(userId);
+    const payload = pendingIngreso.data;
+
+    if (pendingIngreso.step === 'paciente') {
+      const pacienteValidado = normalizarDescripcion(text);
+      if (!pacienteValidado.ok) {
+        return ctx.reply('⚠️ El nombre del paciente es inválido. Escribí un nombre más claro:');
+      }
+
+      payload.pacienteNombre = pacienteValidado.valor;
+      pendingIngreso.step = 'profesional';
+      state.pendingIngresoPacientes.set(userId, pendingIngreso);
+
+      return ctx.reply('2. Escribí el profesional responsable:');
+    }
+
+    if (pendingIngreso.step === 'profesional') {
+      const profesionalValidado = normalizarDescripcion(text);
+      if (!profesionalValidado.ok) {
+        return ctx.reply('⚠️ El profesional es inválido. Escribí un nombre más claro:');
+      }
+
+      payload.profesionalNombre = profesionalValidado.valor;
+      pendingIngreso.step = 'categoria';
+      state.pendingIngresoPacientes.set(userId, pendingIngreso);
+
+      return ctx.reply(
+        '3. Indicá la categoría:\n\n' +
+        'consulta / tratamiento / anticipo / seña / cuota / saldo final'
+      );
+    }
+
+    if (pendingIngreso.step === 'categoria') {
+      const categoria = normalizarCategoriaIngresoPaciente(text);
+      if (!categoria) {
+        return ctx.reply('⚠️ Categoría inválida. Usá: consulta / tratamiento / anticipo / seña / cuota / saldo final');
+      }
+
+      payload.categoria = categoria;
+      pendingIngreso.step = 'detalle';
+      state.pendingIngresoPacientes.set(userId, pendingIngreso);
+
+      return ctx.reply('4. Escribí el tratamiento o detalle adicional. Si no querés agregarlo, respondé `-`.', {
+        parse_mode: 'Markdown'
+      });
+    }
+
+    if (pendingIngreso.step === 'detalle') {
+      if (text !== '-' && text !== '- -') {
+        const detalleValidado = normalizarDescripcion(text);
+        if (!detalleValidado.ok) {
+          return ctx.reply('⚠️ El detalle es inválido. Escribí algo más claro o `-` para omitirlo.');
+        }
+        payload.tratamientoNombre = detalleValidado.valor;
+      }
+
+      pendingIngreso.step = 'monto';
+      state.pendingIngresoPacientes.set(userId, pendingIngreso);
+      return ctx.reply('5. Escribí el monto:');
+    }
+
+    if (pendingIngreso.step === 'monto') {
+      const montoValidado = validarMonto(text.replace(',', '.'));
+      if (!montoValidado.ok) {
+        return ctx.reply('⚠️ El monto es inválido. Ingresá un número razonable distinto de 0:');
+      }
+
+      payload.monto = montoValidado.valor;
+      pendingIngreso.step = 'moneda';
+      state.pendingIngresoPacientes.set(userId, pendingIngreso);
+      return ctx.reply('6. Indicá la moneda: pesos o dólares');
+    }
+
+    if (pendingIngreso.step === 'moneda') {
+      const moneda = normalizarMonedaTexto(text);
+      if (!moneda) {
+        return ctx.reply('⚠️ Moneda inválida. Respondé: pesos o dólares');
+      }
+
+      payload.moneda = moneda;
+      pendingIngreso.step = 'cobrado';
+      state.pendingIngresoPacientes.set(userId, pendingIngreso);
+      return ctx.reply('7. ¿Ya se cobró? Respondé si o no');
+    }
+
+    if (pendingIngreso.step === 'cobrado') {
+      const cobrado = normalizarSiNo(text);
+      if (cobrado === null) {
+        return ctx.reply('⚠️ Respuesta inválida. Respondé: si o no');
+      }
+
+      payload.estado = cobrado ? 'Cobrado' : 'Pendiente';
+
+      if (!cobrado) {
+        state.pendingIngresoPacientes.delete(userId);
+        const descripcionFinal = payload.tratamientoNombre
+          ? `${etiquetaCategoria(payload.categoria)} ${payload.pacienteNombre} - ${payload.tratamientoNombre}`
+          : `${etiquetaCategoria(payload.categoria)} ${payload.pacienteNombre}`;
+
+        const resultado = await cmd.guardarMovimiento(userId, {
+          descripcion: descripcionFinal,
+          monto: payload.monto,
+          tipo: payload.tipo,
+          moneda: payload.moneda,
+          metodo_pago: null,
+          estado: 'Pendiente',
+          categoria: payload.categoria,
+          pacienteNombre: payload.pacienteNombre,
+          profesionalNombre: payload.profesionalNombre,
+          tratamientoNombre: payload.tratamientoNombre,
+        }, {
+          estado: 'Pendiente',
+        });
+
+        return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
+      }
+
+      pendingIngreso.step = 'metodo';
+      state.pendingIngresoPacientes.set(userId, pendingIngreso);
+      return ctx.reply('8. Indicá el método de pago: efectivo / transferencia / tarjeta');
+    }
+
+    if (pendingIngreso.step === 'metodo') {
+      const metodo = text.toLowerCase().trim();
+      if (!METODOS_VALIDOS.includes(metodo)) {
+        return ctx.reply('⚠️ Método inválido. Respondé: efectivo / transferencia / tarjeta');
+      }
+
+      payload.metodo_pago = metodo;
+      state.pendingIngresoPacientes.delete(userId);
+
+      const descripcionFinal = payload.tratamientoNombre
+        ? `${etiquetaCategoria(payload.categoria)} ${payload.pacienteNombre} - ${payload.tratamientoNombre}`
+        : `${etiquetaCategoria(payload.categoria)} ${payload.pacienteNombre}`;
+
+      const resultado = await cmd.guardarMovimiento(userId, {
+        descripcion: descripcionFinal,
+        monto: payload.monto,
+        tipo: payload.tipo,
+        moneda: payload.moneda,
+        metodo_pago: payload.metodo_pago,
+        estado: 'Cobrado',
+        categoria: payload.categoria,
+        pacienteNombre: payload.pacienteNombre,
+        profesionalNombre: payload.profesionalNombre,
+        tratamientoNombre: payload.tratamientoNombre,
+      });
+
+      return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
     }
   }
 
@@ -378,15 +616,7 @@ bot.on('text', async (ctx) => {
   }
 
   const estado = comando === 'pendiente' ? 'Pendiente' : 'Cobrado';
-  const categoria = comando === 'consulta'
-    ? 'consulta'
-    : comando === 'servicio'
-      ? 'tratamiento'
-      : comando === 'pendiente'
-        ? 'cobro_pendiente'
-        : tipo === 'Egreso'
-          ? 'otro_egreso'
-          : null;
+  const categoria = inferirCategoriaDesdeComando(comando, tipo, descripcion);
 
   const metodoIndicado = match[4] ? match[4].toLowerCase() : null;
 

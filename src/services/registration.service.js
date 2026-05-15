@@ -11,6 +11,7 @@ const {
 const clienteService = require('./cliente.service');
 const { beginInviteRegistration } = require('./invite.service');
 const { validarEmail, validarSheetId } = require('../utils/validation');
+const { ensureSheetStructure } = require('./sheet.service');
 
 function buildWelcomeMessage() {
   return (
@@ -111,6 +112,11 @@ async function handleSheetIdStep(userId, text, registro) {
   try {
     const docTest = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
     await docTest.loadInfo();
+    const firstSheet = docTest.sheetsByIndex[0];
+    if (!firstSheet) {
+      return { message: '❌ El spreadsheet no tiene ninguna hoja disponible. Crea una pestaña e intenta de nuevo.' };
+    }
+    await ensureSheetStructure(firstSheet);
 
     const datosCliente = {
       sheetId,

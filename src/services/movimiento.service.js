@@ -31,7 +31,27 @@ function calcularMontoPesos(monto, moneda, cotizacionUsada = state.cotizacionDol
   return convertirAPesos(monto, moneda);
 }
 
-function construirRowData({ fechaStr, horaStr, descripcion, monto, tipo, moneda, metodoPago, idUnico, montoPesos, idOrigen, estado = 'Cobrado' }) {
+function construirRowData({
+  fechaStr,
+  horaStr,
+  descripcion,
+  monto,
+  tipo,
+  moneda,
+  metodoPago,
+  idUnico,
+  montoPesos,
+  idOrigen,
+  estado = 'Cobrado',
+  categoria = '',
+  paciente = '',
+  profesional = '',
+  tratamiento = '',
+  proveedor = '',
+  fechaPrestacion = '',
+  fechaVencimiento = '',
+  saldoPendiente = 0,
+}) {
   return {
     'Fecha': fechaStr,
     'Hora': horaStr,
@@ -43,7 +63,15 @@ function construirRowData({ fechaStr, horaStr, descripcion, monto, tipo, moneda,
     'MetodoPago': metodoPago || '',
     'ID_Unico': idUnico,
     'MontoPesos': montoPesos,
-    'ID_Origen': idOrigen
+    'ID_Origen': idOrigen,
+    'Categoria': categoria || '',
+    'Paciente': paciente || '',
+    'Profesional': profesional || '',
+    'Tratamiento': tratamiento || '',
+    'Proveedor': proveedor || '',
+    'FechaPrestacion': fechaPrestacion || '',
+    'FechaVencimiento': fechaVencimiento || '',
+    'SaldoPendiente': saldoPendiente,
   };
 }
 
@@ -112,6 +140,14 @@ async function guardarMovimiento(userId, {
     montoPesos: montoPesosFinal,
     idOrigen,
     estado,
+    categoria,
+    paciente: pacienteNombre,
+    profesional: profesionalNombre,
+    tratamiento: tratamientoNombre,
+    proveedor: proveedorNombre,
+    fechaPrestacion: fechaPrestacion || fechaStr,
+    fechaVencimiento,
+    saldoPendiente: estado === 'Pendiente' ? Math.abs(monto) : 0,
   });
 
   const savedRow = await db.addRow(userId, rowData, {

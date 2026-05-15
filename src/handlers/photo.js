@@ -15,7 +15,8 @@ function tieneProcesoPendiente(userId) {
     state.pendingPayments.has(userId) ||
     state.pendingLimpiezas.has(userId) ||
     state.pendingReinicios.has(userId) ||
-    state.pendingDescripcion.has(userId);
+    state.pendingDescripcion.has(userId) ||
+    state.pendingIngresoPacientes.has(userId);
 }
 
 bot.on('photo', async (ctx) => {

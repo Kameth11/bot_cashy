@@ -4,7 +4,7 @@ const SYSTEM_PROMPT = `Eres un parser de mensajes de cashflow de Argentina. Tu U
 
 Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, desconocido
 
-registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null)
+registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), categoria(string|null)
 cobrar/editar/eliminar_movimiento: nombre(string|null)
 Todos los demas intents: entities vacio {}
 
@@ -15,19 +15,20 @@ Interpretacion:
 - "salio", "salieron", "se fue", "se me fue" suelen indicar gasto.
 - Si dice "consulta" o "servicio", consideralo ingreso.
 - Si menciona mercadopago o mp, usar metodo_pago "transferencia".
+- Si puedes inferir categoria, usa una de estas: consulta, tratamiento, anticipo, sena, cuota, saldo_final, cobro_pendiente, sueldos, honorarios, insumos, alquiler, expensas, servicios, impuestos, mantenimiento, software, otro_ingreso, otro_egreso.
 - Si el usuario dice que alguien "ya pagó", "me pagó", "me transfirió", "entró lo de" o "cobré lo de", normalmente es cobrar_movimiento cuando se refiere a una deuda pendiente existente.
 - Si la frase describe plata que entra o sale como un hecho nuevo para registrar, usar registrar_movimiento.
 - Para cobrar_movimiento, extrae el nombre/persona/concepto en nombre.
 
 Ejemplos:
-"cobre 15000 de Juan en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo"}}
-"gaste 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null}}
-"servicio endodoncia U$50 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dolares","metodo_pago":"transferencia"}}
-"entro 15 lucas de Juan" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":null}}
-"me entraron 20k por transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":null,"monto":20000,"moneda":"Pesos","metodo_pago":"transferencia"}}
-"salieron 8 lucas en insumos" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Insumos","monto":8000,"moneda":"Pesos","metodo_pago":null}}
-"entro guita de Pedro" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Pedro","monto":null,"moneda":"Pesos","metodo_pago":null}}
-"se me fueron 12 lucas en materiales" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Materiales","monto":12000,"moneda":"Pesos","metodo_pago":null}}
+"cobre 15000 de Juan en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"tratamiento"}}
+"gaste 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null,"categoria":"alquiler"}}
+"servicio endodoncia U$50 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dolares","metodo_pago":"transferencia","categoria":"tratamiento"}}
+"entro 15 lucas de Juan" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":null,"categoria":"tratamiento"}}
+"me entraron 20k por transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":null,"monto":20000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"otro_ingreso"}}
+"salieron 8 lucas en insumos" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Insumos","monto":8000,"moneda":"Pesos","metodo_pago":null,"categoria":"insumos"}}
+"entro guita de Pedro" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Pedro","monto":null,"moneda":"Pesos","metodo_pago":null,"categoria":"tratamiento"}}
+"se me fueron 12 lucas en materiales" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Materiales","monto":12000,"moneda":"Pesos","metodo_pago":null,"categoria":"insumos"}}
 "me pagó Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "ya entró lo de Marta" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Marta"}}
 "Juan me transfirió" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
@@ -274,6 +275,39 @@ function normalizarNombre(nombre) {
   return text || null;
 }
 
+function normalizarCategoria(categoria) {
+  if (categoria == null) return null;
+  const text = String(categoria)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_');
+
+  const allowed = new Set([
+    'consulta',
+    'tratamiento',
+    'anticipo',
+    'sena',
+    'cuota',
+    'saldo_final',
+    'cobro_pendiente',
+    'sueldos',
+    'honorarios',
+    'insumos',
+    'alquiler',
+    'expensas',
+    'servicios',
+    'impuestos',
+    'mantenimiento',
+    'software',
+    'otro_ingreso',
+    'otro_egreso',
+  ]);
+
+  return allowed.has(text) ? text : null;
+}
+
 function normalizarNlpResult(parsed) {
   if (!parsed || typeof parsed !== 'object' || !parsed.intent) {
     return null;
@@ -289,6 +323,7 @@ function normalizarNlpResult(parsed) {
     normalized.entities.descripcion = normalizarDescripcion(normalized.entities.descripcion);
     normalized.entities.moneda = normalizarMoneda(normalized.entities.moneda);
     normalized.entities.metodo_pago = normalizarMetodoPago(normalized.entities.metodo_pago);
+    normalized.entities.categoria = normalizarCategoria(normalized.entities.categoria);
 
     if (normalized.entities.monto !== null && normalized.entities.monto !== undefined) {
       const monto = parseFloat(String(normalized.entities.monto).replace(',', '.'));

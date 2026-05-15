@@ -13,6 +13,7 @@ bot.command('cancelar', (ctx) => {
   state.pendingPayments.delete(userId);
   state.pendingLimpiezas.delete(userId);
   state.pendingAgendaConfirm.delete(userId);
+  state.pendingIngresoPacientes.delete(userId);
   ctx.reply('❌ Proceso cancelado.');
 });
 

@@ -757,6 +757,7 @@ async function addRow(userId, rowData, options = {}) {
   if (!USE_SUPABASE) {
     const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return null;
+    await getSheetService().ensureSheetStructure(sheet);
     const row = await sheet.addRow(rowData, { insert: true });
     await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
     return row;
@@ -766,6 +767,7 @@ async function addRow(userId, rowData, options = {}) {
   if (!supabase) {
     const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return null;
+    await getSheetService().ensureSheetStructure(sheet);
     const row = await sheet.addRow(rowData, { insert: true });
     await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
     return row;
@@ -800,6 +802,7 @@ async function addRow(userId, rowData, options = {}) {
     try {
       const sheet = await getSheetService().getSheetCliente(userId);
       if (sheet) {
+        await getSheetService().ensureSheetStructure(sheet);
         const row = await sheet.addRow(rowData, { insert: true });
         await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
       }
@@ -825,6 +828,7 @@ async function addRow(userId, rowData, options = {}) {
   try {
     const sheet = await getSheetService().getSheetCliente(userId);
     if (sheet) {
+      await getSheetService().ensureSheetStructure(sheet);
       const row = await sheet.addRow(rowData, { insert: true });
       await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
     }

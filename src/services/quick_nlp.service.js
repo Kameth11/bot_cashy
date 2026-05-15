@@ -105,6 +105,31 @@ function capitalizarFrase(text) {
   return text.split(' ').filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
+function inferirCategoriaRapida(tipo, descripcion = '', estado = 'Cobrado') {
+  const desc = normalizar(descripcion).replace(/_/g, ' ');
+
+  if (estado === 'Pendiente') return 'cobro_pendiente';
+  if (tipo === 'gasto') {
+    if (/sueld/.test(desc)) return 'sueldos';
+    if (/honorario/.test(desc)) return 'honorarios';
+    if (/insumo|guante|bracket|anestesia|material/.test(desc)) return 'insumos';
+    if (/alquiler/.test(desc)) return 'alquiler';
+    if (/expensa/.test(desc)) return 'expensas';
+    if (/luz|agua|internet|telefono|servicio/.test(desc)) return 'servicios';
+    if (/impuesto|iva|ingresos brutos|ganancia|monotributo/.test(desc)) return 'impuestos';
+    if (/mantenimiento|autoclave|rayos x|sillon|equipo|reparacion/.test(desc)) return 'mantenimiento';
+    if (/software|sistema|licencia|suscripcion/.test(desc)) return 'software';
+    return 'otro_egreso';
+  }
+
+  if (/consulta/.test(desc)) return 'consulta';
+  if (/anticipo|adelanto/.test(desc)) return 'anticipo';
+  if (/sena|seña|reserva/.test(desc)) return 'sena';
+  if (/cuota/.test(desc)) return 'cuota';
+  if (/saldo/.test(desc)) return 'saldo_final';
+  return 'tratamiento';
+}
+
 function limpiarDescripcionMovimiento(text) {
   return String(text || '')
     .replace(/^(?:se\s+le\s+|le\s+)?/i, '')
@@ -169,6 +194,7 @@ function matchRegistrarEgresoExplicito(rawText, text) {
       monto: montoInfo ? montoInfo.monto : null,
       moneda: montoInfo ? montoInfo.moneda : 'Pesos',
       metodo_pago,
+      categoria: inferirCategoriaRapida('gasto', descripcion),
     }
   };
 }
@@ -190,6 +216,7 @@ function matchRegistrarIngresoExplicito(rawText, text) {
       monto: montoInfo ? montoInfo.monto : null,
       moneda: montoInfo ? montoInfo.moneda : 'Pesos',
       metodo_pago,
+      categoria: inferirCategoriaRapida('ingreso', descripcion),
     }
   };
 }
@@ -291,7 +318,8 @@ function matchRegistrarPendiente(rawText, text) {
       monto: montoInfo ? montoInfo.monto : null,
       moneda: montoInfo ? montoInfo.moneda : 'Pesos',
       metodo_pago,
-      estado: 'Pendiente'
+      estado: 'Pendiente',
+      categoria: 'cobro_pendiente'
     }
   };
 }
@@ -320,7 +348,7 @@ function matchRegistrarMovimiento(rawText, text) {
 
   return {
     intent: 'registrar_movimiento',
-    entities: { tipo, descripcion, monto, moneda, metodo_pago }
+    entities: { tipo, descripcion, monto, moneda, metodo_pago, categoria: inferirCategoriaRapida(tipo, descripcion) }
   };
 }
 

@@ -581,7 +581,8 @@ function buildHelpMessage() {
     '`servicio [tratamiento] $[monto] [metodo]`\n' +
     '`gasto [descripcion] $-[monto]`\n' +
     '`pendiente [paciente/concepto] $[monto]`\n' +
-    '`/pendiente [paciente/concepto] $[monto]`\n\n' +
+    '`/pendiente [paciente/concepto] $[monto]`\n' +
+    '`/ingreso_paciente` - Carga guiada con paciente, profesional y categoría\n\n' +
     '💬 *Primero intenta interpretar palabras clave sin IA.*\n' +
     'Si no alcanza, recurre al parser remoto para lenguaje natural.\n\n' +
     '📸 *Agenda por foto:*\n' +
@@ -724,8 +725,9 @@ function normalizarTipoMovimiento(tipo, monto = null) {
   return 'Ingreso';
 }
 
-function inferirCategoriaInicial(tipo, estado = 'Cobrado') {
+function inferirCategoriaInicial(tipo, estado = 'Cobrado', descripcion = '') {
   const raw = tipo == null ? '' : String(tipo).trim().toLowerCase();
+  const desc = String(descripcion || '').trim().toLowerCase();
 
   if (['consulta'].includes(raw)) return 'consulta';
   if (['servicio', 'tratamiento'].includes(raw)) return 'tratamiento';
@@ -733,6 +735,18 @@ function inferirCategoriaInicial(tipo, estado = 'Cobrado') {
   if (['sena', 'seña'].includes(raw)) return 'sena';
   if (['cuota'].includes(raw)) return 'cuota';
   if (['saldo_final', 'saldo'].includes(raw)) return 'saldo_final';
+  if (['gasto', 'egreso'].includes(raw)) {
+    if (/sueld/.test(desc)) return 'sueldos';
+    if (/honorario/.test(desc)) return 'honorarios';
+    if (/insumo|guante|bracket|anestesia|material/.test(desc)) return 'insumos';
+    if (/alquiler/.test(desc)) return 'alquiler';
+    if (/expensa/.test(desc)) return 'expensas';
+    if (/luz|agua|internet|telefono|servicio/.test(desc)) return 'servicios';
+    if (/impuesto|iva|ingresos brutos|ganancia|monotributo/.test(desc)) return 'impuestos';
+    if (/mantenimiento|autoclave|rayos x|sillon|equipo|reparacion/.test(desc)) return 'mantenimiento';
+    if (/software|sistema|licencia|suscripcion/.test(desc)) return 'software';
+    return 'otro_egreso';
+  }
   if (estado === 'Pendiente') return 'cobro_pendiente';
   return null;
 }
@@ -758,7 +772,7 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     notas,
   } = datos;
   const estadoFinal = estado === 'Pendiente' ? 'Pendiente' : 'Cobrado';
-  const categoriaFinal = categoria || inferirCategoriaInicial(tipo, estadoFinal);
+  const categoriaFinal = categoria || inferirCategoriaInicial(tipo, estadoFinal, descripcion);
 
   if (!monto || isNaN(monto) || monto === 0) {
     return { necesitaInfo: true, campo: 'monto', mensaje: '💰 ¿De cuánto es el movimiento? Ingresá el monto:' };

@@ -46,14 +46,14 @@ NOTA: Este email está en tu .env como GOOGLE_SERVICE_ACCOUNT_EMAIL
 PASO 4: PREPARAR LAS COLUMNAS DEL SHEET
 ═══════════════════════════════════════════════════════════════════════════════
 
-En la primera fila del sheet, crear estas columnas (exactamente así):
+Si el sheet está vacío o incompleto, el bot puede completar estas columnas automáticamente al registrarlo. Igual esta es la estructura esperada:
 
-   A              B         C            D        E         F        G          H             I           J            K
-   Fecha        Hora    Descripcion   Monto    Estado    Tipo    Moneda   MetodoPago    ID_unico   MontoPesos   ID_Origen
+   A              B         C            D        E         F        G          H             I           J            K          L         M         N             O             P          Q                 R                  S
+   Fecha        Hora    Descripcion   Monto    Estado    Tipo    Moneda   MetodoPago    ID_unico   MontoPesos   ID_Origen  Categoria Paciente Profesional   Tratamiento   Proveedor  FechaPrestacion  FechaVencimiento  SaldoPendiente
 
-Copiar y pegar esta fila exacta en la primera fila del sheet:
+Copiar y pegar esta fila exacta en la primera fila del sheet si querés dejarlo listo manualmente:
 ═══════════════════════════════════════════════════════════════════════════════
-Fecha	Hora	Descripcion	Monto	Estado	Tipo	Moneda	MetodoPago	ID_unico	MontoPesos	ID_Origen
+Fecha	Hora	Descripcion	Monto	Estado	Tipo	Moneda	MetodoPago	ID_unico	MontoPesos	ID_Origen	Categoria	Paciente	Profesional	Tratamiento	Proveedor	FechaPrestacion	FechaVencimiento	SaldoPendiente
 ═══════════════════════════════════════════════════════════════════════════════
 
 IMPORTANTE: Los encabezados deben ser exactamente esos nombres.

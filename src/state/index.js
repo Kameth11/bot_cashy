@@ -20,6 +20,7 @@ const pendingLimpiezas = new Map();
 const pendingReinicios = new Map();
 const pendingDescripcion = new Map();
 const pendingAgendaConfirm = new Map();
+const pendingIngresoPacientes = new Map();
 const docsCache = new Map();
 const userRateLimits = new Map();
 
@@ -39,6 +40,7 @@ module.exports = {
   pendingReinicios,
   pendingDescripcion,
   pendingAgendaConfirm,
+  pendingIngresoPacientes,
   docsCache,
   userRateLimits,
 };

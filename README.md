@@ -144,18 +144,18 @@ Luego reiniciar el bot.
 
 ## Estructura del Google Sheet
 
-El sheet debe tener estas columnas (encabezados):
+El sheet usa estas columnas. Si faltan, el bot las agrega automaticamente al registrar el sheet o antes de escribir nuevos movimientos.
 
-| Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_unico | MontoPesos | ID_Origen |
-|-------|------|-------------|-------|--------|------|--------|-------------|----------|------------|-----------|
-| Fecha | Hora | Descripción | Monto | Estado | Tipo | Moneda | Método de Pago | ID único | Monto en Pesos | ID del Origen |
+| Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_unico | MontoPesos | ID_Origen | Categoria | Paciente | Profesional | Tratamiento | Proveedor | FechaPrestacion | FechaVencimiento | SaldoPendiente |
+|-------|------|-------------|-------|--------|------|--------|-------------|----------|------------|-----------|-----------|----------|-------------|-------------|-----------|-----------------|------------------|----------------|
+| Fecha | Hora | Descripción | Monto | Estado | Tipo | Moneda | Método de Pago | ID único | Monto en Pesos | ID del Origen | Categoría | Paciente | Profesional | Tratamiento | Proveedor | Fecha de prestación | Fecha de vencimiento | Saldo pendiente |
 
 ### Ejemplo de datos
 
-| Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_unico | MontoPesos | ID_Origen |
-|-------|------|-------------|-------|--------|------|--------|-------------|----------|------------|-----------|
-| 13/04/2026 | 10:30 | Consulta Juan Perez | 15000 | Cobrado | Ingreso | Pesos | efectivo | mov_123456 | 15000 | juan@empresa.com |
-| 13/04/2026 | 11:00 | Tratamiento Endodoncia | 50 | Cobrado | Ingreso | Dólares | transferencia | mov_123457 | 62500 | maria@empresa.com |
+| Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_unico | MontoPesos | ID_Origen | Categoria | Paciente | Profesional | Tratamiento | Proveedor | FechaPrestacion | FechaVencimiento | SaldoPendiente |
+|-------|------|-------------|-------|--------|------|--------|-------------|----------|------------|-----------|-----------|----------|-------------|-------------|-----------|-----------------|------------------|----------------|
+| 13/04/2026 | 10:30 | Consulta Juan Perez | 15000 | Cobrado | Ingreso | Pesos | efectivo | mov_123456 | 15000 | juan@empresa.com | consulta | Juan Perez | Dra Lopez | Consulta |  | 13/04/2026 |  | 0 |
+| 13/04/2026 | 11:00 | Tratamiento Endodoncia | 50 | Cobrado | Ingreso | Dólares | transferencia | mov_123457 | 62500 | maria@empresa.com | tratamiento | Maria Gomez | Dr Perez | Endodoncia |  | 13/04/2026 |  | 0 |
 
 ### Columna ID_Origen
 

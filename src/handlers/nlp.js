@@ -61,7 +61,8 @@ const INTENT_HANDLERS = {
       '`consulta Juan Perez $15000 efectivo` (ingreso pesos)\n' +
       '`servicio Endodoncia U$50 transferencia` (ingreso dólares)\n' +
       '`gasto Insumos $-500` (egreso)\n' +
-      '`pendiente Juan Perez $15000` (ingreso sin cobrar)\n\n' +
+      '`pendiente Juan Perez $15000` (ingreso sin cobrar)\n' +
+      '`/ingreso_paciente` (carga guiada con paciente, profesional y categoría)\n\n' +
       '💬 *También podés escribir en lenguaje natural:*\n' +
       '`cobré 15000 de Juan Perez en efectivo`\n' +
       '`gasté 5000 en alquiler`\n' +
