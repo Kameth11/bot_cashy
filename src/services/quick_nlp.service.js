@@ -145,8 +145,8 @@ function limpiarEntidad(text) {
 
 function extraerProfesional(rawText) {
   const patterns = [
-    /\bcon\s+(dra?\.?\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b/i,
-    /\b(?:dra?\.?|doctora|doctor)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b/i,
+    /\bcon\s+((?:dra?\.?|doctora|doctor)\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b/i,
+    /\b((?:dra?\.?|doctora|doctor)\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2})\b/i,
   ];
 
   for (const pattern of patterns) {
@@ -208,6 +208,7 @@ function extraerPaciente(rawText, categoria = null, tratamientoNombre = null, pr
     if (profesionalNombre) {
       candidate = candidate.replace(new RegExp(`\\b${escapeRegex(profesionalNombre)}\\b`, 'i'), '').trim();
     }
+    candidate = candidate.replace(/\b(?:dra?\.?|dr\.?|doctora|doctor)\b.*$/i, '').trim();
     const cleaned = limpiarEntidad(candidate);
     if (cleaned) return cleaned;
   }
@@ -241,8 +242,10 @@ function extraerProveedor(rawText) {
   return null;
 }
 
-function inferirCategoriaRapida(tipo, descripcion = '', estado = 'Cobrado') {
+function inferirCategoriaRapida(tipo, descripcion = '', estado = 'Cobrado', rawText = '') {
   const desc = normalizar(descripcion).replace(/_/g, ' ');
+  const original = normalizar(rawText).replace(/_/g, ' ');
+  const source = `${original} ${desc}`.trim();
 
   if (estado === 'Pendiente') return 'cobro_pendiente';
   if (tipo === 'gasto') {
@@ -252,11 +255,11 @@ function inferirCategoriaRapida(tipo, descripcion = '', estado = 'Cobrado') {
     return 'otro_egreso';
   }
 
-  if (/consulta/.test(desc)) return 'consulta';
-  if (/anticipo|adelanto/.test(desc)) return 'anticipo';
-  if (/sena|seña|reserva/.test(desc)) return 'sena';
-  if (/cuota/.test(desc)) return 'cuota';
-  if (/saldo/.test(desc)) return 'saldo_final';
+  if (/consulta/.test(source)) return 'consulta';
+  if (/anticipo|adelanto/.test(source)) return 'anticipo';
+  if (/sena|seña|reserva/.test(source)) return 'sena';
+  if (/cuota/.test(source)) return 'cuota';
+  if (/saldo(?:\s+final)?/.test(source)) return 'saldo_final';
   return 'tratamiento';
 }
 
@@ -325,7 +328,7 @@ function matchRegistrarEgresoExplicito(rawText, text) {
       monto: montoInfo ? montoInfo.monto : null,
       moneda: montoInfo ? montoInfo.moneda : 'Pesos',
       metodo_pago,
-      categoria: inferirCategoriaRapida('gasto', descripcion),
+       categoria: inferirCategoriaRapida('gasto', descripcion, 'Cobrado', rawText),
       proveedorNombre,
     }
   };
@@ -339,7 +342,7 @@ function matchRegistrarIngresoExplicito(rawText, text) {
   const montoInfo = extraerMonto(rawText);
   const metodo_pago = extraerMetodo(text);
   const descripcion = capitalizarFrase(limpiarDescripcionMovimiento(extraerDescripcion(rawText, 'ingreso', metodo_pago)));
-  const categoria = inferirCategoriaRapida('ingreso', descripcion);
+  const categoria = inferirCategoriaRapida('ingreso', descripcion, 'Cobrado', rawText);
   const profesionalNombre = extraerProfesional(rawText);
   const tratamientoNombre = extraerTratamiento(rawText, categoria);
   const pacienteNombre = extraerPaciente(rawText, categoria, tratamientoNombre, profesionalNombre);
@@ -406,7 +409,7 @@ const KEYWORD_INTENTS = [
   { intent: 'listar_movimientos', words: ['listar', 'listado'], phrases: ['ver todo', 'ver movimientos', 'todos los movimientos', 'ver todos', 'lista de movimientos', 'lista completa', 'ver lista'] },
 ];
 
-const INGRESO_WORDS = ['cobre', 'cobro', 'me pagaron', 'me pago', 'pagaron', 'se cobro', 'se cobraron', 'se pago', 'se pagaron', 'ingrese', 'ingreso', 'ingresaron', 'cargue', 'cargo', 'facture', 'facturo', 'recibi', 'consulta', 'servicio', 'atendi', 'entro', 'entraron', 'me entro', 'me entraron', 'cobraron', 'cobramos', 'depositaron', 'transferieron', 'vendi', 'vendio', 'cobraste', 'cobro', 'pagamos', 'cayo', 'cayo lo de', 'entró', 'me entró', 'seño', 'seña', 'sena', 'honorarios', 'honorario', 'liquide', 'liquidaron'];
+const INGRESO_WORDS = ['cobre', 'cobro', 'me pagaron', 'me pago', 'pagaron', 'se cobro', 'se cobraron', 'se pago', 'se pagaron', 'ingrese', 'ingreso', 'ingresaron', 'cargue', 'cargo', 'facture', 'facturo', 'recibi', 'consulta', 'servicio', 'anticipo', 'adelanto', 'seño', 'seña', 'sena', 'cuota', 'saldo', 'saldo final', 'atendi', 'entro', 'entraron', 'me entro', 'me entraron', 'cobraron', 'cobramos', 'depositaron', 'transferieron', 'vendi', 'vendio', 'cobraste', 'cobro', 'pagamos', 'cayo', 'cayo lo de', 'entró', 'me entró', 'honorarios', 'honorario', 'liquide', 'liquidaron'];
 
 const EGRESO_WORDS = ['gaste', 'gasto', 'se gasto', 'pague', 'costo de', 'compre', 'compra', 'sali', 'salida', 'egrese', 'egreso', 'salio', 'salieron', 'se fue', 'se me fue', 'costo', 'erogo', 'abone', 'aboné', 'puse', 'inverti', 'invertí', 'debite', 'debité'];
 
@@ -490,7 +493,7 @@ function matchRegistrarMovimiento(rawText, text) {
 
   const metodo_pago = extraerMetodo(text);
   const descripcion = extraerDescripcion(rawText, tipo, metodo_pago);
-  const categoria = inferirCategoriaRapida(tipo, descripcion);
+  const categoria = inferirCategoriaRapida(tipo, descripcion, 'Cobrado', rawText);
   const profesionalNombre = tipo === 'ingreso' ? extraerProfesional(rawText) : null;
   const tratamientoNombre = tipo === 'ingreso' ? extraerTratamiento(rawText, categoria) : null;
   const pacienteNombre = tipo === 'ingreso' ? extraerPaciente(rawText, categoria, tratamientoNombre, profesionalNombre) : null;

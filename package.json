@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node src/index.js",
+    "test": "jest --runInBand",
     "gemini:check": "node scripts/check-gemini-models.js"
   },
   "dependencies": {
@@ -17,5 +18,8 @@
     "google-spreadsheet": "^4.0.0",
     "openai": "^4.67.0",
     "telegraf": "^4.16.0"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
   }
 }

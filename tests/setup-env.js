@@ -1,0 +1,8 @@
+process.env.BOT_TOKEN = process.env.BOT_TOKEN || 'test-bot-token';
+process.env.SPREADSHEET_ID = process.env.SPREADSHEET_ID || 'test-spreadsheet-id';
+process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || 'test@example.com';
+process.env.GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY || '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----';
+process.env.AUTHORIZED_USER_ID = process.env.AUTHORIZED_USER_ID || '123456';
+process.env.ALLOWED_EMAILS = process.env.ALLOWED_EMAILS || 'test@example.com';
+process.env.COTIZACION_DEFAULT = process.env.COTIZACION_DEFAULT || '1200';
+process.env.USE_SUPABASE = process.env.USE_SUPABASE || 'false';
