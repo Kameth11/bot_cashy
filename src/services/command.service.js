@@ -626,6 +626,7 @@ async function guardarMovimiento(userId, datos, opciones = {}) {
     categoria,
     subcategoria,
     pacienteNombre,
+    pagadorNombre,
     profesionalNombre,
     proveedorNombre,
     tratamientoNombre,
@@ -675,6 +676,7 @@ async function guardarMovimiento(userId, datos, opciones = {}) {
     categoria: opciones.categoria || categoria || null,
     subcategoria: opciones.subcategoria || subcategoria || null,
     pacienteNombre: opciones.pacienteNombre || pacienteNombre || null,
+    pagadorNombre: opciones.pagadorNombre || pagadorNombre || null,
     profesionalNombre: opciones.profesionalNombre || profesionalNombre || null,
     proveedorNombre: opciones.proveedorNombre || proveedorNombre || null,
     tratamientoNombre: opciones.tratamientoNombre || tratamientoNombre || null,
@@ -682,7 +684,7 @@ async function guardarMovimiento(userId, datos, opciones = {}) {
     fechaCobroReal: opciones.fechaCobroReal || fechaCobroReal || null,
     fechaVencimiento: opciones.fechaVencimiento || fechaVencimiento || null,
     referenciaId: opciones.referenciaId || referenciaId || null,
-    notas: opciones.notas || notas || null,
+    notas: mergeNotasConPagador(opciones.notas || notas || null, opciones.pagadorNombre || pagadorNombre || null),
   });
 
   return {
@@ -751,6 +753,18 @@ function inferirCategoriaInicial(tipo, estado = 'Cobrado', descripcion = '') {
   return null;
 }
 
+function mergeNotasConPagador(notas, pagadorNombre) {
+  const notasBase = notas ? String(notas).trim() : '';
+  const pagador = pagadorNombre ? sanitizarInput(pagadorNombre, MAX_DESCRIPCION_LENGTH) : '';
+
+  if (!pagador) return notasBase || null;
+  if (new RegExp(`(^|\\n)Pagador:\\s*${pagador.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\n|$)`, 'i').test(notasBase)) {
+    return notasBase || null;
+  }
+
+  return notasBase ? `${notasBase}\nPagador: ${pagador}` : `Pagador: ${pagador}`;
+}
+
 async function registrarMovimientoDesdeNLP(userId, datos) {
   const {
     tipo,
@@ -762,6 +776,7 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     categoria,
     subcategoria,
     pacienteNombre,
+    pagadorNombre,
     profesionalNombre,
     proveedorNombre,
     tratamientoNombre,
@@ -773,6 +788,9 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
   } = datos;
   const estadoFinal = estado === 'Pendiente' ? 'Pendiente' : 'Cobrado';
   const categoriaFinal = categoria || inferirCategoriaInicial(tipo, estadoFinal, descripcion);
+  const tratamientoNombreFinal = categoriaFinal === 'consulta'
+    ? (tratamientoNombre || 'Consulta')
+    : (tratamientoNombre || null);
 
   if (!monto || isNaN(monto) || monto === 0) {
     return { necesitaInfo: true, campo: 'monto', mensaje: '💰 ¿De cuánto es el movimiento? Ingresá el monto:' };
@@ -788,9 +806,10 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       categoria: categoriaFinal,
       subcategoria: subcategoria || null,
       pacienteNombre: pacienteNombre || null,
+      pagadorNombre: pagadorNombre || null,
       profesionalNombre: profesionalNombre || null,
       proveedorNombre: proveedorNombre || null,
-      tratamientoNombre: tratamientoNombre || null,
+      tratamientoNombre: tratamientoNombreFinal,
       fechaPrestacion: fechaPrestacion || null,
       fechaCobroReal: fechaCobroReal || null,
       fechaVencimiento: fechaVencimiento || null,
@@ -822,9 +841,10 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       categoria: categoriaFinal,
       subcategoria: subcategoria || null,
       pacienteNombre: pacienteNombre || null,
+      pagadorNombre: pagadorNombre || null,
       profesionalNombre: profesionalNombre || null,
       proveedorNombre: proveedorNombre || null,
-      tratamientoNombre: tratamientoNombre || null,
+      tratamientoNombre: tratamientoNombreFinal,
       fechaPrestacion: fechaPrestacion || null,
       fechaCobroReal: fechaCobroReal || null,
       fechaVencimiento: fechaVencimiento || null,
@@ -849,9 +869,10 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       categoria: categoriaFinal,
       subcategoria: subcategoria || null,
       pacienteNombre: pacienteNombre || null,
+      pagadorNombre: pagadorNombre || null,
       profesionalNombre: profesionalNombre || null,
       proveedorNombre: proveedorNombre || null,
-      tratamientoNombre: tratamientoNombre || null,
+      tratamientoNombre: tratamientoNombreFinal,
       fechaPrestacion: fechaPrestacion || null,
       fechaCobroReal: fechaCobroReal || null,
       fechaVencimiento: fechaVencimiento || null,
@@ -874,12 +895,13 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     moneda: monedaFinal,
     metodo_pago,
     estado: estadoFinal,
-    categoria: categoriaFinal,
-    subcategoria,
-    pacienteNombre,
-    profesionalNombre,
-    proveedorNombre,
-    tratamientoNombre,
+      categoria: categoriaFinal,
+      subcategoria,
+      pacienteNombre,
+      pagadorNombre,
+      profesionalNombre,
+      proveedorNombre,
+      tratamientoNombre: tratamientoNombreFinal,
     fechaPrestacion,
     fechaCobroReal,
     fechaVencimiento,

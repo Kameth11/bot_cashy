@@ -128,7 +128,7 @@ function extraerPacienteDesdeDescripcion(comando, descripcion, profesional, trat
 
 function inferirCamposDesdeComando(comando, descripcion, categoria) {
   const profesionalNombre = extraerProfesionalDesdeTexto(descripcion);
-  const tratamientoNombre = extraerTratamientoDesdeTexto(descripcion);
+  const tratamientoNombre = extraerTratamientoDesdeTexto(descripcion) || (categoria === 'consulta' ? 'Consulta' : null);
   const pacienteNombre = extraerPacienteDesdeDescripcion(comando, descripcion, profesionalNombre, tratamientoNombre);
 
   return {
@@ -418,6 +418,7 @@ bot.on('text', async (ctx) => {
       categoria: pendingDesc.categoria || null,
       subcategoria: pendingDesc.subcategoria || null,
       pacienteNombre: pendingDesc.pacienteNombre || null,
+      pagadorNombre: pendingDesc.pagadorNombre || null,
       profesionalNombre: pendingDesc.profesionalNombre || null,
       proveedorNombre: pendingDesc.proveedorNombre || null,
       tratamientoNombre: pendingDesc.tratamientoNombre || null,
@@ -481,6 +482,7 @@ bot.on('text', async (ctx) => {
       categoria,
       subcategoria,
       pacienteNombre,
+      pagadorNombre,
       profesionalNombre,
       proveedorNombre,
       tratamientoNombre,
@@ -501,6 +503,7 @@ bot.on('text', async (ctx) => {
           categoria,
           subcategoria,
           pacienteNombre,
+          pagadorNombre,
           profesionalNombre,
           proveedorNombre,
           tratamientoNombre,
@@ -526,6 +529,7 @@ bot.on('text', async (ctx) => {
           categoria,
           subcategoria,
           pacienteNombre,
+          pagadorNombre,
           profesionalNombre,
           proveedorNombre,
           tratamientoNombre,
@@ -650,6 +654,7 @@ bot.on('text', async (ctx) => {
           categoria: pendingData.categoria || null,
           subcategoria: pendingData.subcategoria || null,
           pacienteNombre: pendingData.pacienteNombre || null,
+          pagadorNombre: pendingData.pagadorNombre || null,
           profesionalNombre: pendingData.profesionalNombre || null,
           proveedorNombre: pendingData.proveedorNombre || null,
           tratamientoNombre: pendingData.tratamientoNombre || null,

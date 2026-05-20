@@ -15,7 +15,25 @@ describe('quickParse', () => {
         categoria: 'consulta',
         pacienteNombre: 'Juan Perez',
         profesionalNombre: null,
-        tratamientoNombre: null,
+        tratamientoNombre: 'Consulta',
+      },
+    });
+  });
+
+  test('toma al paciente correcto cuando el nombre viene antes de vino por consulta', () => {
+    const result = quickParse('Diego vino por consulta');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'ingreso',
+        descripcion: 'Diego',
+        monto: null,
+        moneda: 'Pesos',
+        categoria: 'consulta',
+        pacienteNombre: 'Diego',
+        profesionalNombre: null,
+        tratamientoNombre: 'Consulta',
       },
     });
   });
@@ -65,6 +83,126 @@ describe('quickParse', () => {
         monto: 20000,
         moneda: 'Pesos',
         pacienteNombre: 'Marta',
+      },
+    });
+  });
+
+  test('parsea tu ejemplo con paciente como destinatario del pago', () => {
+    const result = quickParse('Le pagaron a Diego 400mil pesos en efectivo');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'ingreso',
+        descripcion: 'Diego',
+        monto: 400000,
+        metodo_pago: 'efectivo',
+        pacienteNombre: 'Diego',
+      },
+    });
+  });
+
+  test('no rompe si hay monto pero falta descripcion en cobro explicito', () => {
+    const result = quickParse('me pagaron 400mil efectivo');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'ingreso',
+        descripcion: null,
+        monto: 400000,
+        metodo_pago: 'efectivo',
+        pacienteNombre: null,
+      },
+    });
+  });
+
+  test('parsea paciente cuando el nombre va primero en un cobro', () => {
+    const result = quickParse('Diego me pagó 400mil en efectivo');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'ingreso',
+        descripcion: 'Diego',
+        monto: 400000,
+        metodo_pago: 'efectivo',
+        pacienteNombre: 'Diego',
+      },
+    });
+  });
+
+  test('no arrastra conectores al paciente cuando falta monto', () => {
+    const result = quickParse('Le pagaron a Diego en efectivo');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        descripcion: 'Diego',
+        metodo_pago: 'efectivo',
+        pacienteNombre: 'Diego',
+      },
+    });
+  });
+
+  test('parsea transferencia hacia el paciente usando le transfirieron', () => {
+    const result = quickParse('Le transfirieron a Diego 400 mil');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        descripcion: 'Diego',
+        monto: 400000,
+        pacienteNombre: 'Diego',
+      },
+    });
+  });
+
+  test('separa destinatario y pagador en ingresos de terceros', () => {
+    const result = quickParse('Le pagaron a Laura de DientesFacil 400mil pesos en efectivo');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        descripcion: 'Laura',
+        monto: 400000,
+        metodo_pago: 'efectivo',
+        pacienteNombre: 'Laura',
+        pagadorNombre: 'DientesFacil',
+      },
+    });
+  });
+
+  test('prioriza al paciente correcto cuando el sujeto le paga al profesional por consulta', () => {
+    const result = quickParse('Laura Santillan le pagó a Diego 500000 pesos en efectivo por una consulta');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'ingreso',
+        descripcion: 'Laura Santillan',
+        monto: 500000,
+        metodo_pago: 'efectivo',
+        categoria: 'consulta',
+        pacienteNombre: 'Laura Santillan',
+        pagadorNombre: 'Laura Santillan',
+        profesionalNombre: 'Diego',
+        tratamientoNombre: 'Consulta',
+      },
+    });
+  });
+
+  test('parsea gasto cuando una persona le paga a un proveedor no clínico', () => {
+    const result = quickParse('Laura Santillan le pagó al gasista 500000 pesos en efectivo');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'gasto',
+        descripcion: 'Gasista',
+        monto: 500000,
+        metodo_pago: 'efectivo',
+        proveedorNombre: 'Gasista',
       },
     });
   });

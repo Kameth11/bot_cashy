@@ -80,7 +80,32 @@ describe('registrarMovimientoDesdeNLP', () => {
       metodo_pago: 'efectivo',
       categoria: 'consulta',
       pacienteNombre: 'Juan Perez',
+      tratamientoNombre: 'Consulta',
     });
+  });
+
+  test('completa tratamiento Consulta por defecto al persistir una consulta', async () => {
+    const result = await commandService.registrarMovimientoDesdeNLP(108, {
+      tipo: 'consulta',
+      descripcion: 'Diego',
+      monto: 15000,
+      moneda: 'Pesos',
+      metodo_pago: 'efectivo',
+      categoria: 'consulta',
+      pacienteNombre: 'Diego',
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      idUnico: 'mov_test_123',
+      mensaje: 'mock:Diego:Cobrado',
+    });
+    expect(movimientoService.guardarMovimiento).toHaveBeenCalledWith(108, expect.objectContaining({
+      descripcion: 'Diego',
+      categoria: 'consulta',
+      pacienteNombre: 'Diego',
+      tratamientoNombre: 'Consulta',
+    }));
   });
 
   test('pide cotización para movimientos en dólares', async () => {
@@ -156,6 +181,30 @@ describe('registrarMovimientoDesdeNLP', () => {
       estado: 'Pendiente',
       categoria: 'cobro_pendiente',
       pacienteNombre: 'Marta',
+    }));
+  });
+
+  test('persiste pagador separado cuando el NLP lo trae', async () => {
+    const result = await commandService.registrarMovimientoDesdeNLP(107, {
+      tipo: 'ingreso',
+      descripcion: 'Laura',
+      monto: 400000,
+      moneda: 'Pesos',
+      metodo_pago: 'efectivo',
+      pacienteNombre: 'Laura',
+      pagadorNombre: 'DientesFacil',
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      idUnico: 'mov_test_123',
+      mensaje: 'mock:Laura:Cobrado',
+    });
+    expect(movimientoService.guardarMovimiento).toHaveBeenCalledWith(107, expect.objectContaining({
+      descripcion: 'Laura',
+      pacienteNombre: 'Laura',
+      pagadorNombre: 'DientesFacil',
+      notas: 'Pagador: DientesFacil',
     }));
   });
 
