@@ -230,7 +230,6 @@ bot.action('confirm_agenda', async (ctx) => {
       `📅 Fecha: ${fechaStr}\n` +
       `${huboErrores ? `❌ No se pudieron guardar ${errores} de ${total} turno${total !== 1 ? 's' : ''}\n` : ''}` +
       `${grupos.length > 0 ? `🗂️ Bloques: ${grupos.join(' | ')}\n` : ''}` +
-      `${huboErrores ? `❌ No se pudieron guardar ${errores} de ${total} turno${total !== 1 ? 's' : ''}\n` : ''}` +
       `📊 Ver en tu Google Sheet (tab "Agenda")`,
       { parse_mode: 'Markdown' }
     );

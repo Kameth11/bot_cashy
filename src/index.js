@@ -2,6 +2,7 @@
 const { bot } = require('./lib/telegraf');
 const { obtenerCotizacionDolar } = require('./services/cotizacion.service');
 const { initModel } = require('./services/gemini.service');
+const { startApi } = require('./api');
 const state = require('./state');
 
 // Load middleware (must be first, before commands)
@@ -44,12 +45,13 @@ require('./handlers/photo');
 // Load callback action handlers (for inline buttons)
 require('./handlers/actions');
 
-// Launch bot
+// Launch bot + API
 bot.launch().then(async () => {
   console.log('Bot iniciado correctamente');
   initModel();
   await obtenerCotizacionDolar();
   console.log(`Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
+  await startApi();
 }).catch(err => {
   console.error('Error al iniciar:', err);
 });

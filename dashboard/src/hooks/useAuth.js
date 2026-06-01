@@ -1,0 +1,60 @@
+import { useState, useEffect, useCallback } from 'react';
+import { api } from '../services/api';
+
+const STORAGE_KEY = 'cashy_token';
+const USER_KEY = 'cashy_user';
+
+export function useAuth() {
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem(USER_KEY);
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [loading, setLoading] = useState(true);
+
+  const requestCode = useCallback(async (userId) => {
+    const { data } = await api.post('/api/auth/request-code', { userId });
+    return data;
+  }, []);
+
+  const login = useCallback(async (userId, code) => {
+    const { data } = await api.post('/api/auth/verify', { userId, code });
+    if (!data.token) throw new Error('Token no recibido');
+    localStorage.setItem(STORAGE_KEY, data.token);
+    if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    setUser(data.user);
+    return data;
+  }, []);
+
+  const loginDemo = useCallback(() => {
+    localStorage.setItem(STORAGE_KEY, 'demo-token');
+    localStorage.setItem(USER_KEY, JSON.stringify({ userId: 'demo', isAdmin: false }));
+    setUser({ userId: 'demo', isAdmin: false });
+  }, []);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(USER_KEY);
+    setUser(null);
+  }, []);
+
+  useEffect(() => {
+    async function check() {
+      try {
+        const { data } = await api.get('/api/auth/me');
+        if (data?.user) {
+          setUser(data.user);
+          localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+        }
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(USER_KEY);
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (localStorage.getItem(STORAGE_KEY)) check();
+    else setLoading(false);
+  }, []);
+
+  return { user, loading, login, requestCode, loginDemo, logout };
+}

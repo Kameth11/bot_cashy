@@ -49,16 +49,20 @@ async function ejecutarBalance(userId) {
   const semana = datos.filter(d => esEstaSemana(d.fecha));
   const mes = datos.filter(d => esEsteMes(d.fecha));
 
-  const totalHoy = hoy.reduce((sum, d) => sum + (d.monto || 0), 0);
-  const totalSemana = semana.reduce((sum, d) => sum + (d.monto || 0), 0);
-  const totalMes = mes.reduce((sum, d) => sum + (d.monto || 0), 0);
+  const ingresosHoy = hoy.filter(d => d.tipo === 'Ingreso').reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+  const egresosHoy = hoy.filter(d => d.tipo === 'Egreso').reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
 
-  const ingresosHoy = hoy.filter(d => d.tipo === 'Ingreso').reduce((sum, d) => sum + d.monto, 0);
-  const egresosHoy = hoy.filter(d => d.tipo === 'Egreso').reduce((sum, d) => sum + Math.abs(d.monto), 0);
+  const ingresosSemana = semana.filter(d => d.tipo === 'Ingreso').reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+  const egresosSemana = semana.filter(d => d.tipo === 'Egreso').reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
+  const totalSemana = ingresosSemana - egresosSemana;
+
+  const ingresosMes = mes.filter(d => d.tipo === 'Ingreso').reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+  const egresosMes = mes.filter(d => d.tipo === 'Egreso').reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
+  const totalMes = ingresosMes - egresosMes;
 
   const pendientes = datos.filter(d => d.estado === 'Pendiente');
   const pendientesHoy = pendientes.filter(d => esHoy(d.fecha));
-  const totalPendiente = pendientes.reduce((sum, d) => sum + (d.monto || 0), 0);
+  const totalPendiente = pendientes.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
 
   return (
     `💰 *RESUMEN DE CAJA*\n\n` +
@@ -103,8 +107,8 @@ async function ejecutarHoy(userId) {
     });
   }
 
-  const totalIngresos = ingresos.reduce((sum, d) => sum + d.monto, 0);
-  const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.monto), 0);
+  const totalIngresos = ingresos.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+  const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
 
   msg += `━━━━━━━━━━━━━━━\n`;
   msg += `💰 Ingresos: $${totalIngresos.toLocaleString()}\n`;
@@ -125,8 +129,8 @@ async function ejecutarSemana(userId) {
   const ingresos = semana.filter(d => d.tipo === 'Ingreso');
   const egresos = semana.filter(d => d.tipo === 'Egreso');
 
-  const totalIngresos = ingresos.reduce((sum, d) => sum + d.monto, 0);
-  const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.monto), 0);
+  const totalIngresos = ingresos.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+  const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
 
   const porDia = {};
   semana.forEach(d => {
@@ -136,9 +140,9 @@ async function ejecutarSemana(userId) {
     }
     porDia[fechaKey].cantidad++;
     if (d.tipo === 'Ingreso') {
-      porDia[fechaKey].ingresos += d.monto;
+      porDia[fechaKey].ingresos += (d.montoPesos || 0);
     } else {
-      porDia[fechaKey].egresos += Math.abs(d.monto);
+      porDia[fechaKey].egresos += Math.abs(d.montoPesos || 0);
     }
   });
 
@@ -173,8 +177,8 @@ async function ejecutarMes(userId) {
   const ingresos = mes.filter(d => d.tipo === 'Ingreso');
   const egresos = mes.filter(d => d.tipo === 'Egreso');
 
-  const totalIngresos = ingresos.reduce((sum, d) => sum + d.monto, 0);
-  const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.monto), 0);
+  const totalIngresos = ingresos.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+  const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
 
   const dolares = mes.filter(d => d.moneda === 'Dólares');
   const pesos = mes.filter(d => d.moneda === 'Pesos');
@@ -208,7 +212,7 @@ async function ejecutarIngresos(userId) {
     msg += `   ${formatFecha(d.fecha)} ${d.hora}\n\n`;
   });
 
-  const total = ingresos.reduce((sum, d) => sum + d.monto, 0);
+  const total = ingresos.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
   msg += `━━━━━━━━━━━━━━━\n`;
   msg += `💵 Total ingresos: $${total.toLocaleString()}`;
 
@@ -232,7 +236,7 @@ async function ejecutarEgresos(userId) {
     msg += `   ${formatFecha(d.fecha)} ${d.hora}\n\n`;
   });
 
-  const total = egresos.reduce((sum, d) => sum + Math.abs(d.monto), 0);
+  const total = egresos.reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
   msg += `━━━━━━━━━━━━━━━\n`;
   msg += `💵 Total egresos: $${total.toLocaleString()}`;
 
@@ -270,7 +274,7 @@ async function ejecutarPendientes(userId) {
     }
   }
 
-  const totalPendiente = pendientes.reduce((sum, d) => sum + (d.monto || 0), 0);
+  const totalPendiente = pendientes.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
   msg += `\n━━━━━━━━━━━━━━━\n`;
   msg += `💵 Total pendiente: $${totalPendiente.toLocaleString()}`;
 

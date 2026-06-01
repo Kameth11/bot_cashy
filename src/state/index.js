@@ -9,19 +9,62 @@ if (COTIZACION_DEFAULT) {
   console.log(`Usando cotizacion default: ${cotizacionDolar}`);
 }
 
-const pendingRegistros = new Map();
-const pendingCodigos = new Map();
-const pendingPayments = new Map();
-const pendingIntentosEmail = new Map();
-const pendingDeletes = new Map();
-const pendingEdits = new Map();
-const pendingCotizaciones = new Map();
-const pendingLimpiezas = new Map();
-const pendingReinicios = new Map();
-const pendingDescripcion = new Map();
-const pendingAgendaConfirm = new Map();
-const pendingIngresoPacientes = new Map();
-const docsCache = new Map();
+// Map con TTL automático. Si el usuario no completa un flujo en `ttlMs`,
+// la entrada expira sola y no queda "colgado".
+class TTLMap {
+  constructor(ttlMs = 30 * 60 * 1000) {
+    this._map = new Map();
+    this._ttl = ttlMs;
+  }
+
+  set(key, value) {
+    if (this._map.has(key)) {
+      clearTimeout(this._map.get(key)._timer);
+    }
+    const timer = setTimeout(() => this._map.delete(key), this._ttl);
+    // Permite que el proceso cierre sin esperar el timer
+    if (timer.unref) timer.unref();
+    this._map.set(key, { value, _timer: timer });
+  }
+
+  get(key) {
+    return this._map.has(key) ? this._map.get(key).value : undefined;
+  }
+
+  has(key) {
+    return this._map.has(key);
+  }
+
+  delete(key) {
+    if (this._map.has(key)) {
+      clearTimeout(this._map.get(key)._timer);
+      this._map.delete(key);
+    }
+  }
+
+  get size() {
+    return this._map.size;
+  }
+}
+
+// Flujos de conversación pendientes — expiran a los 30 minutos
+const pendingRegistros      = new TTLMap();
+const pendingCodigos        = new TTLMap();
+const pendingPayments       = new TTLMap();
+const pendingIntentosEmail  = new TTLMap();
+const pendingDeletes        = new TTLMap();
+const pendingEdits          = new TTLMap();
+const pendingCotizaciones   = new TTLMap();
+const pendingLimpiezas      = new TTLMap();
+const pendingReinicios      = new TTLMap();
+const pendingDescripcion    = new TTLMap();
+const pendingAgendaConfirm  = new TTLMap();
+const pendingIngresoPacientes = new TTLMap();
+
+// Cache de documentos — TTL más largo (2 horas)
+const docsCache = new TTLMap(2 * 60 * 60 * 1000);
+
+// Rate limits — ventana de 1 minuto
 const userRateLimits = new Map();
 
 module.exports = {

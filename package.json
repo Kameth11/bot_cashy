@@ -7,15 +7,20 @@
     "start": "node src/index.js",
     "dev": "node src/index.js",
     "test": "jest --runInBand",
-    "gemini:check": "node scripts/check-gemini-models.js"
+    "gemini:check": "node scripts/check-gemini-models.js",
+    "dashboard": "cd dashboard && npm run dev",
+    "dashboard:build": "cd dashboard && npm run build"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "2.49.1",
     "axios": "^1.6.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.3.0",
+    "express": "^5.2.1",
     "google-auth-library": "^9.0.0",
     "google-spreadsheet": "^4.0.0",
+    "jsonwebtoken": "^9.0.3",
     "openai": "^4.67.0",
     "telegraf": "^4.16.0"
   },
