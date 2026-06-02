@@ -46,31 +46,55 @@ function normalizarNumero(raw) {
 }
 
 function extraerMonto(rawText) {
-  const patterns = [
+  // Euros first to avoid ambiguity with $
+  const euroPatterns = [
+    /€\s*(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/i,
+    /(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?\s*€/i,
+    /eur\s*(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/i,
+    /(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?\s+euros?\b/i,
+  ];
+  for (const p of euroPatterns) {
+    const m = rawText.match(p);
+    if (m && m[1]) {
+      const val = normalizarNumero(`${m[1]}${m[2] ? ` ${m[2]}` : ''}`);
+      if (val && val > 0) return { monto: val, moneda: 'Euros' };
+    }
+  }
+
+  // USD
+  const usdPatterns = [
     /u\$s?\s*(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/i,
     /usd\s*(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/i,
-    /u\$s?\s*(\d+(?:[.,]\d{1,2})?)/i,
-    /usd\s*(\d+(?:[.,]\d{1,2})?)/i,
+  ];
+  for (const p of usdPatterns) {
+    const m = rawText.match(p);
+    if (m && m[1]) {
+      const val = normalizarNumero(`${m[1]}${m[2] ? ` ${m[2]}` : ''}`);
+      if (val && val > 0) return { monto: val, moneda: 'Dólares' };
+    }
+  }
+
+  // Pesos and generic amounts
+  const pesoPatterns = [
     /\$\s*(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/i,
     /(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)\b/i,
     /(\d+(?:[.,]\d{1,2})?)\s*(?:pesos|mangos|guita|plata|dolares?|usd)/i,
   ];
-  for (const p of patterns) {
+  for (const p of pesoPatterns) {
     const m = rawText.match(p);
-    if (m) {
-      const valueToken = `${m[1]}${m[2] ? ` ${m[2]}` : ''}`;
-        const val = normalizarNumero(valueToken);
-        if (!isNaN(val) && val > 0) {
-          const isUsd = /u\$s?|usd|dolar/i.test(rawText.substring(Math.max(0, m.index - 5), m.index + m[0].length + 5));
-          return { monto: val, moneda: isUsd ? 'Dólares' : 'Pesos' };
-        }
+    if (m && m[1]) {
+      const val = normalizarNumero(`${m[1]}${m[2] ? ` ${m[2]}` : ''}`);
+      if (val && val > 0) {
+        const isUsd = /u\$s?|usd|dolar/i.test(rawText.substring(Math.max(0, m.index - 5), m.index + m[0].length + 5));
+        return { monto: val, moneda: isUsd ? 'Dólares' : 'Pesos' };
       }
+    }
   }
+
   const simple = rawText.match(/\b(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?\b/i);
-  if (simple) {
-    const valueToken = `${simple[1]}${simple[2] ? ` ${simple[2]}` : ''}`;
-    const val = normalizarNumero(valueToken);
-    if (!isNaN(val) && val > 0) {
+  if (simple && simple[1]) {
+    const val = normalizarNumero(`${simple[1]}${simple[2] ? ` ${simple[2]}` : ''}`);
+    if (val && val > 0) {
       const isUsd = /u\$s?|usd|dolar/i.test(rawText);
       return { monto: val, moneda: isUsd ? 'Dólares' : 'Pesos' };
     }
@@ -89,11 +113,14 @@ function extraerMetodo(text) {
 function limpiarTextoPendienteBase(text) {
   return String(text || '')
     .replace(/\b(?:por\s+cobrar|sin\s+cobrar)\b/gi, ' ')
+    .replace(/€\s*\d+(?:[.,]\d{1,2})?\s*(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/gi, ' ')
+    .replace(/\d+(?:[.,]\d{1,2})?\s*€/gi, ' ')
+    .replace(/eur\s*\d+(?:[.,]\d{1,2})?\s*(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/gi, ' ')
     .replace(/u\$s?\s*\d+(?:[.,]\d{1,2})?\s*(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/gi, ' ')
     .replace(/usd\s*\d+(?:[.,]\d{1,2})?\s*(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/gi, ' ')
     .replace(/\$\s*\d+(?:[.,]\d{1,2})?\s*(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/gi, ' ')
     .replace(/\b\d+(?:[.,]\d{1,2})?\s*(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?\b/gi, ' ')
-    .replace(/\b(?:pesos|mangos|guita|plata|dolares?|usd)\b/gi, ' ')
+    .replace(/\b(?:pesos|mangos|guita|plata|dolares?|usd|euros?|eur)\b/gi, ' ')
     .replace(/\b(?:efectivo|contado|cash|transferencia|transfer|transf|tf|tbu|cbu|alias|deposito|mercadopago|mercado\s*pago|mp|qr|tarjeta|debito|credito|visa|master|mc|posnet)\b/gi, ' ')
     .replace(/[.,;:!?]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -285,7 +312,7 @@ function extraerProveedor(rawText) {
   if (!original) return null;
 
   const patterns = [
-    /\b(?:a|proveedor)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
+    /\b(?:al?|proveedor)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
   ];
 
   for (const pattern of patterns) {
@@ -425,7 +452,7 @@ function extraerDescripcionPendienteNombrePrimero(rawText) {
 }
 
 function matchRegistrarEgresoExplicito(rawText, text) {
-  const expensePattern = /^(?:se\s+le\s+pago\s+a|se\s+le\s+pag[oó]\s+a|le\s+pague\s+a|le\s+pagu[eé]\s+a|pague\s+a|pagu[eé]\s+a|abone\s+a|abon[eé]\s+a)\s+(.+)$/i;
+  const expensePattern = /^(?:se\s+le\s+pago\s+a(?:l)?|se\s+le\s+pag[oó]\s+a(?:l)?|le\s+pague\s+a(?:l)?|le\s+pagu[eé]\s+a(?:l)?|pague\s+a(?:l)?|pagu[eé]\s+a(?:l)?|abone\s+a(?:l)?|abon[eé]\s+a(?:l)?|le\s+pagamos\s+a(?:l)?|pagamos\s+a(?:l)?)\s+(.+)$/i;
   const match = String(rawText || '').trim().match(expensePattern);
   if (!match || !match[1]) return null;
 
@@ -496,7 +523,7 @@ function extraerDescripcion(rawText, tipo, metodo) {
     if (/^\d+(?:[.,]\d{1,2})?$/.test(wNorm)) continue;
     if (/^\d+(?:[.,]\d{1,2})?(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)$/.test(wNorm)) continue;
     if (/^[\$u\$s]*\d+(?:[.,]\d{1,2})?(?:lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?$/.test(wordsOrig[i].replace(/[Uu]\$[Ss]?/, ''))) continue;
-    if (/^(pesos|mangos|guita|plata|dola?r(?:es)?|usd|\$|u\$s?|lucas?|luca|mil|k|palos?|palo|millon(?:es)?)$/.test(wNorm)) continue;
+    if (/^(pesos|mangos|guita|plata|dola?r(?:es)?|usd|euros?|eur|\$|u\$s?|€|lucas?|luca|mil|k|palos?|palo|millon(?:es)?)$/.test(wNorm)) continue;
     if (allTipoWords.some(tw => wNorm === normalizar(tw))) continue;
     if (/^(cobre|cobro|pago|gaste|gasto|pague|ingrese|ingreso|ingresaron|cargue|cargo|facture|facturo|recibi|compre|sali|egrese|egreso|consulta|servicio|entro|entraron|entrada|salio|salieron|fueron|vendi|depositaron|transferieron|transfirieron|abone|abonar|cayo|cayo|entro|seña|sena|honorario|honorarios|cobranza)$/i.test(wNorm)) continue;
     if (metodo === 'efectivo' && /^(efectivo|contado|cash)$/.test(wNorm)) continue;
@@ -528,9 +555,9 @@ const KEYWORD_INTENTS = [
   { intent: 'listar_movimientos', words: ['listar', 'listado'], phrases: ['ver todo', 'ver movimientos', 'todos los movimientos', 'ver todos', 'lista de movimientos', 'lista completa', 'ver lista'] },
 ];
 
-const INGRESO_WORDS = ['cobre', 'cobro', 'me pagaron', 'me pago', 'le pagaron', 'pagaron', 'se cobro', 'se cobraron', 'se pago', 'se pagaron', 'ingrese', 'ingreso', 'ingresaron', 'cargue', 'cargo', 'facture', 'facturo', 'recibi', 'consulta', 'servicio', 'anticipo', 'adelanto', 'seño', 'seña', 'sena', 'cuota', 'saldo', 'saldo final', 'atendi', 'vino', 'vinieron', 'entro', 'entraron', 'me entro', 'me entraron', 'cobraron', 'cobramos', 'depositaron', 'le depositaron', 'transferieron', 'transfirieron', 'le transfirieron', 'vendi', 'vendio', 'cobraste', 'cobro', 'pagamos', 'cayo', 'cayo lo de', 'entró', 'me entró', 'honorarios', 'honorario', 'liquide', 'liquidaron'];
+const INGRESO_WORDS = ['cobre', 'cobro', 'me pagaron', 'me pago', 'le pagaron', 'pagaron', 'se cobro', 'se cobraron', 'se pago', 'se pagaron', 'ingrese', 'ingreso', 'ingresaron', 'cargue', 'cargo', 'facture', 'facturo', 'recibi', 'consulta', 'servicio', 'anticipo', 'adelanto', 'seño', 'seña', 'sena', 'cuota', 'saldo', 'saldo final', 'atendi', 'vino', 'vinieron', 'entro', 'entraron', 'me entro', 'me entraron', 'cobraron', 'cobramos', 'depositaron', 'le depositaron', 'transferieron', 'transfirieron', 'le transfirieron', 'vendi', 'vendio', 'cobraste', 'cobro', 'cayo', 'cayo lo de', 'entró', 'me entró', 'honorarios', 'honorario', 'liquide', 'liquidaron'];
 
-const EGRESO_WORDS = ['gaste', 'gasto', 'se gasto', 'pague', 'costo de', 'compre', 'compra', 'sali', 'salida', 'egrese', 'egreso', 'salio', 'salieron', 'se fue', 'se me fue', 'costo', 'erogo', 'abone', 'aboné', 'puse', 'inverti', 'invertí', 'debite', 'debité'];
+const EGRESO_WORDS = ['gaste', 'gasto', 'se gasto', 'pague', 'costo de', 'compre', 'compra', 'sali', 'salida', 'egrese', 'egreso', 'salio', 'salieron', 'se fue', 'se me fue', 'costo', 'erogo', 'abone', 'aboné', 'puse', 'inverti', 'invertí', 'debite', 'debité', 'pagamos'];
 
 function matchKeywordIntent(text) {
   let bestMatch = null;

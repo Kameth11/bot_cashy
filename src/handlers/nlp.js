@@ -3,6 +3,7 @@ const cmd = require('../services/command.service');
 const state = require('../state');
 const { handleSheetCommand } = require('./commands/sheet');
 const { confirmButtons } = require('./actions');
+const { mostrarConfirmacion } = require('./nlp-confirm');
 
 const INTENT_HANDLERS = {
   ver_balance: async (ctx, entities) => {
@@ -135,7 +136,7 @@ const INTENT_HANDLERS = {
   },
 
   registrar_movimiento: async (ctx, entities) => {
-    const resultado = await cmd.registrarMovimientoDesdeNLP(ctx.from.id, {
+    await mostrarConfirmacion(ctx, {
       tipo: entities.tipo || 'ingreso',
       descripcion: entities.descripcion || null,
       monto: entities.monto || null,
@@ -145,6 +146,7 @@ const INTENT_HANDLERS = {
       categoria: entities.categoria || null,
       subcategoria: entities.subcategoria || null,
       pacienteNombre: entities.pacienteNombre || null,
+      pagadorNombre: entities.pagadorNombre || null,
       profesionalNombre: entities.profesionalNombre || null,
       proveedorNombre: entities.proveedorNombre || null,
       tratamientoNombre: entities.tratamientoNombre || null,
@@ -154,20 +156,6 @@ const INTENT_HANDLERS = {
       referenciaId: entities.referenciaId || null,
       notas: entities.notas || null,
     });
-
-    if (resultado.necesitaInfo) {
-      return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
-    }
-
-    if (resultado.error) {
-      return ctx.reply(resultado.error);
-    }
-
-    if (resultado.success) {
-      return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
-    }
-
-    return ctx.reply('❌ Error al registrar movimiento.');
   }
 };
 

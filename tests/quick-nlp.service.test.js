@@ -344,4 +344,46 @@ describe('quickParse', () => {
       },
     });
   });
+
+  test('parsea pago al proveedor con artículo "al"', () => {
+    const result = quickParse('se le pago al gasista 400 euros');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'gasto',
+        monto: 400,
+        moneda: 'Euros',
+        proveedorNombre: 'Gasista',
+      },
+    });
+  });
+
+  test('parsea pago al proveedor con "pagué al"', () => {
+    const result = quickParse('pagué al electricista 15000');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'gasto',
+        monto: 15000,
+        proveedorNombre: 'Electricista',
+      },
+    });
+  });
+
+  test('parsea pago al proveedor con "le pagamos al"', () => {
+    const result = quickParse('le pagamos al plomero $8000 transferencia');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'gasto',
+        monto: 8000,
+        moneda: 'Pesos',
+        metodo_pago: 'transferencia',
+        proveedorNombre: 'Plomero',
+      },
+    });
+  });
 });

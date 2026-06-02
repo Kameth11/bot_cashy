@@ -8,6 +8,7 @@ const { handleNLPIntent } = require('../handlers/nlp');
 const { quickParse } = require('../services/quick_nlp.service');
 const registrationService = require('../services/registration.service');
 const { validarTextoUsuario, normalizarDescripcion, validarMonto, validarCotizacion } = require('../utils/validation');
+const { actualizarCampoNlp, crearMensajeConfirmacion, discardButtons } = require('./nlp-confirm');
 
 const CATEGORIAS_INGRESO_PACIENTE = {
   consulta: 'consulta',
@@ -40,6 +41,7 @@ function normalizarMonedaTexto(text) {
 
   if (['$', 'peso', 'pesos', 'ars'].includes(normalized)) return 'Pesos';
   if (['u$', 'usd', 'dolar', 'dolares', 'dolar_es', 'dolar estadounidense'].includes(normalized)) return 'Dólares';
+  if (['eur', 'euro', 'euros', '€'].includes(normalized)) return 'Euros';
   return null;
 }
 
@@ -208,7 +210,7 @@ function extraerMetodoDesdeDescripcion(text) {
 const cmd = require('../services/command.service');
 const { confirmButtons } = require('./actions');
 
-const regexMsg = /^(consulta|servicio|gasto|pendiente)\s+(.+?)\s+(?:\$|U\$|USD)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
+const regexMsg = /^(consulta|servicio|gasto|pendiente)\s+(.+?)\s+(?:\$|U\$|USD|€|EUR)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
 bot.on('text', async (ctx) => {
   try {
@@ -224,6 +226,20 @@ bot.on('text', async (ctx) => {
 
   if (state.pendingReinicios.has(userId)) {
     return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+  }
+
+  // NLP confirmation flow
+  if (state.pendingNlpMovimientos.has(userId)) {
+    const pending = state.pendingNlpMovimientos.get(userId);
+    if (pending.editingCampo) {
+      return actualizarCampoNlp(ctx, userId, pending, text);
+    }
+    // New text while a movement is pending confirmation → ask to discard
+    return ctx.reply(
+      `⚠️ Tenés un movimiento pendiente de confirmación:\n\n${crearMensajeConfirmacion(pending.entities)}\n\n` +
+      `¿Qué hacemos con tu nuevo mensaje?`,
+      { parse_mode: 'Markdown', ...discardButtons() }
+    );
   }
 
   if (state.pendingRegistros.has(userId)) {
@@ -304,19 +320,20 @@ bot.on('text', async (ctx) => {
       payload.monto = montoValidado.valor;
       pendingIngreso.step = 'moneda';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
-      return ctx.reply('6. Indicá la moneda: pesos o dólares');
+      return ctx.reply('6. Indicá la moneda: pesos, dólares o euros');
     }
 
     if (pendingIngreso.step === 'moneda') {
       const moneda = normalizarMonedaTexto(text);
       if (!moneda) {
-        return ctx.reply('⚠️ Moneda inválida. Respondé: pesos o dólares');
+        return ctx.reply('⚠️ Moneda inválida. Respondé: pesos, dólares o euros');
       }
 
       payload.moneda = moneda;
       pendingIngreso.step = 'cobrado';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
       return ctx.reply('7. ¿Ya se cobró? Respondé si o no');
+
     }
 
     if (pendingIngreso.step === 'cobrado') {
@@ -699,6 +716,14 @@ bot.on('text', async (ctx) => {
       await ctx.reply('🧠 Procesando...').catch(() => {});
 
       try {
+        // Try targeted movement extractor first (cheaper, handles Euros)
+        const movResult = await geminiService.parseMovimientoEntidades(userId, text);
+        if (movResult && movResult.entities && movResult.entities.monto) {
+          const handled = await handleNLPIntent(ctx, movResult);
+          if (handled) return;
+        }
+
+        // Fall back to full intent+entity NLP for other intents
         const nlpResult = await geminiService.parseMessage(userId, text);
         if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
           const handled = await handleNLPIntent(ctx, nlpResult);
@@ -719,14 +744,12 @@ bot.on('text', async (ctx) => {
     }
 
     return ctx.reply(
-      '⚠️ No entendí tu mensaje.\n\n' +
-      'Podés escribir en lenguaje natural:\n' +
-      '`entraron 15 lucas de Juan`\n' +
-      '`se me fueron 8 lucas en insumos`\n' +
-      '`ya me pagó Juan`\n' +
-      '`cuánto tengo?`\n\n' +
-      'O usa el formato: `consulta [paciente] $[monto] [metodo]`\n\n' +
-      'Usa /ayuda para ver todos los comandos.',
+      'No entendí bien ese mensaje 🤔\n\n' +
+      'Podés intentar con un formato más claro, por ejemplo:\n' +
+      '  • `consulta Juan $15000 efectivo`\n' +
+      '  • `gasto insumos $500 transferencia`\n' +
+      '  • `me deben €200 de García`\n\n' +
+      'O usá /registrar para cargarlo paso a paso.',
       { parse_mode: 'Markdown' }
     );
   }
@@ -749,6 +772,8 @@ bot.on('text', async (ctx) => {
   const textOriginal = text.toLowerCase();
   if (textOriginal.includes('u$') || textOriginal.includes('usd')) {
     moneda = 'Dólares';
+  } else if (textOriginal.includes('€') || textOriginal.includes('eur')) {
+    moneda = 'Euros';
   }
 
   if (COMANDOS_INGRESO.includes(comando)) {
@@ -782,6 +807,28 @@ bot.on('text', async (ctx) => {
     });
 
     return ctx.reply(await cmd.construirMensajeCotizacion(monto), { parse_mode: 'Markdown' });
+  }
+
+  if (moneda === 'Euros') {
+    try {
+      await ctx.reply('⏳ Registrando...');
+      const resultado = await cmd.guardarMovimiento(ctx.from.id, {
+        descripcion,
+        monto,
+        tipo,
+        moneda,
+        metodo_pago: metodoIndicado,
+        estado,
+        categoria,
+        pacienteNombre: camposEstructurados.pacienteNombre,
+        profesionalNombre: camposEstructurados.profesionalNombre,
+        tratamientoNombre: camposEstructurados.tratamientoNombre,
+      });
+      return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('Error al guardar en euros:', error.message);
+      return ctx.reply('❌ Error al guardar en Google Sheets.');
+    }
   }
 
   if (!metodoIndicado && estado !== 'Pendiente') {

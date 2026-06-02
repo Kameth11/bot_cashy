@@ -13,6 +13,9 @@ function convertirAPesos(monto, moneda) {
   if (moneda === 'Dólares' && state.cotizacionDolar) {
     return Math.round(monto * state.cotizacionDolar * 100) / 100;
   }
+  if (moneda === 'Euros' && state.cotizacionEuro) {
+    return Math.round(monto * state.cotizacionEuro * 100) / 100;
+  }
   return monto;
 }
 
@@ -23,11 +26,15 @@ function crearTimestampMovimiento(now = new Date()) {
   };
 }
 
-function calcularMontoPesos(monto, moneda, cotizacionUsada = state.cotizacionDolar) {
-  if (moneda === 'Dólares' && cotizacionUsada) {
-    return Math.round(Math.abs(monto) * cotizacionUsada * 100) / 100;
+function calcularMontoPesos(monto, moneda, cotizacionUsada = null) {
+  if (moneda === 'Dólares') {
+    const cot = cotizacionUsada || state.cotizacionDolar;
+    if (cot) return Math.round(Math.abs(monto) * cot * 100) / 100;
   }
-
+  if (moneda === 'Euros') {
+    const cot = cotizacionUsada || state.cotizacionEuro;
+    if (cot) return Math.round(Math.abs(monto) * cot * 100) / 100;
+  }
   return convertirAPesos(monto, moneda);
 }
 
@@ -90,6 +97,11 @@ function crearMensajeMovimientoRegistrado({ tipo, descripcion, monto, moneda, me
     montoTexto = `U$${Math.abs(monto).toLocaleString()} (cotización: $${cotizacionUsada.toLocaleString()})`;
     if (montoPesos !== null) {
       montoTexto += `\n💵 En pesos: $${montoPesos.toLocaleString()}`;
+    }
+  } else if (moneda === 'Euros' && cotizacionUsada) {
+    montoTexto = `€${Math.abs(monto).toLocaleString()} (cotización: $${cotizacionUsada.toLocaleString()})`;
+    if (montoPesos !== null) {
+      montoTexto += `\n💶 En pesos: $${montoPesos.toLocaleString()}`;
     }
   }
 

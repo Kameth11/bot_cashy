@@ -640,7 +640,9 @@ async function guardarMovimiento(userId, datos, opciones = {}) {
     referenciaId,
     notas,
   } = datos;
-  const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares' : 'Pesos';
+  const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares'
+    : (moneda === 'Euros' || moneda === 'euros' || moneda === 'EUR') ? 'Euros'
+    : 'Pesos';
   const montoFinal = parseFloat(monto);
   const descripcionFinal = sanitizarInput(descripcion, MAX_DESCRIPCION_LENGTH);
   const estadoFinal = opciones.estado || datos.estado || 'Cobrado';
@@ -657,14 +659,17 @@ async function guardarMovimiento(userId, datos, opciones = {}) {
   if (cotizacionUsada && (!Number.isFinite(cotizacionUsada) || cotizacionUsada <= 0 || cotizacionUsada > MAX_COTIZACION_DOLAR)) {
     throw new Error('cotizacion_invalida');
   }
+  if (!state.cotizacionDolar) await obtenerCotizacionDolar();
   if (monedaFinal === 'Dólares' && !cotizacionUsada) {
-    if (!state.cotizacionDolar) await obtenerCotizacionDolar();
     cotizacionUsada = state.cotizacionDolar;
-  } else if (monedaFinal !== 'Dólares' && !state.cotizacionDolar) {
-    await obtenerCotizacionDolar();
+  } else if (monedaFinal === 'Euros' && !cotizacionUsada) {
+    cotizacionUsada = state.cotizacionEuro;
   }
 
   if (monedaFinal === 'Dólares' && !cotizacionUsada) {
+    throw new Error('cotizacion_no_disponible');
+  }
+  if (monedaFinal === 'Euros' && !cotizacionUsada) {
     throw new Error('cotizacion_no_disponible');
   }
 
@@ -831,7 +836,9 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     montoFinal = -montoFinal;
   }
 
-  const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares' : 'Pesos';
+  const monedaFinal = (moneda === 'Dólares' || moneda === 'Dolares') ? 'Dólares'
+    : (moneda === 'Euros' || moneda === 'euros' || moneda === 'EUR') ? 'Euros'
+    : 'Pesos';
 
   if (monedaFinal === 'Dólares') {
     state.pendingCotizaciones.set(userId, {
@@ -861,6 +868,32 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       campo: 'cotizacion',
       mensaje: await construirMensajeCotizacion(montoFinal)
     };
+  }
+
+  if (monedaFinal === 'Euros') {
+    if (!state.cotizacionDolar) await obtenerCotizacionDolar();
+    const cotizacionEuro = state.cotizacionEuro;
+    if (!cotizacionEuro) throw new Error('cotizacion_no_disponible');
+    return guardarMovimiento(userId, {
+      descripcion: descripcionFinal,
+      monto: montoFinal,
+      tipo: tipoFinal,
+      moneda: monedaFinal,
+      metodo_pago: metodo_pago || null,
+      estado: estadoFinal,
+      categoria: categoriaFinal,
+      subcategoria,
+      pacienteNombre,
+      pagadorNombre,
+      profesionalNombre,
+      proveedorNombre,
+      tratamientoNombre: tratamientoNombreFinal,
+      fechaPrestacion,
+      fechaCobroReal,
+      fechaVencimiento,
+      referenciaId,
+      notas,
+    }, { cotizacionUsada: cotizacionEuro, estado: estadoFinal });
   }
 
   if (!metodo_pago && estadoFinal !== 'Pendiente') {

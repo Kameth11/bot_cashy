@@ -44,6 +44,7 @@ require('./handlers/photo');
 
 // Load callback action handlers (for inline buttons)
 require('./handlers/actions');
+require('./handlers/nlp-confirm');
 
 // Launch bot + API
 bot.launch().then(async () => {

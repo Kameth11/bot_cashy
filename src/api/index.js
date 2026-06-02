@@ -256,7 +256,9 @@ app.post('/api/movimientos', authMiddleware, async (req, res) => {
     const descripcion = String(body.descripcion || '').trim();
     const monto = Math.abs(parseFloat(body.monto) || 0);
     const tipo = body.tipo === 'Egreso' ? 'Egreso' : 'Ingreso';
-    const moneda = body.moneda === 'Dólares' ? 'Dólares' : 'Pesos';
+    const moneda = body.moneda === 'Dólares' ? 'Dólares'
+      : body.moneda === 'Euros' ? 'Euros'
+      : 'Pesos';
     const metodoPago = body.metodoPago || '';
     const estado = body.estado === 'Pendiente' ? 'Pendiente' : 'Cobrado';
     const categoria = body.categoria || '';

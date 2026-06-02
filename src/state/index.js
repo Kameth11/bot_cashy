@@ -2,6 +2,7 @@ const { COTIZACION_DEFAULT } = require('../config');
 
 let cotizacionDolar = null;
 let cotizacionFecha = null;
+let cotizacionEuro = null;
 
 if (COTIZACION_DEFAULT) {
   cotizacionDolar = COTIZACION_DEFAULT;
@@ -42,6 +43,11 @@ class TTLMap {
     }
   }
 
+  clear() {
+    for (const { _timer } of this._map.values()) clearTimeout(_timer);
+    this._map.clear();
+  }
+
   get size() {
     return this._map.size;
   }
@@ -50,6 +56,8 @@ class TTLMap {
 // Flujos de conversación pendientes — expiran a los 30 minutos
 const pendingRegistros      = new TTLMap();
 const pendingCodigos        = new TTLMap();
+// Movimientos NLP pendientes de confirmación — expiran a los 5 minutos
+const pendingNlpMovimientos = new TTLMap(5 * 60 * 1000);
 const pendingPayments       = new TTLMap();
 const pendingIntentosEmail  = new TTLMap();
 const pendingDeletes        = new TTLMap();
@@ -72,6 +80,13 @@ module.exports = {
   set cotizacionDolar(val) { cotizacionDolar = val; },
   get cotizacionFecha() { return cotizacionFecha; },
   set cotizacionFecha(val) { cotizacionFecha = val; },
+  get cotizacionEuro() {
+    if (cotizacionEuro) return cotizacionEuro;
+    if (cotizacionDolar) return Math.round(cotizacionDolar * 1.08 * 100) / 100;
+    return null;
+  },
+  set cotizacionEuro(val) { cotizacionEuro = val; },
+  pendingNlpMovimientos,
   pendingRegistros,
   pendingCodigos,
   pendingPayments,

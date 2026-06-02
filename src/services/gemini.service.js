@@ -4,7 +4,7 @@ const SYSTEM_PROMPT = `Eres un parser de mensajes de cashflow de Argentina. Tu U
 
 Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, desconocido
 
-registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), categoria(string|null), pacienteNombre(string|null), pagadorNombre(string|null), profesionalNombre(string|null), tratamientoNombre(string|null), proveedorNombre(string|null)
+registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"/"Euros"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), categoria(string|null), pacienteNombre(string|null), pagadorNombre(string|null), profesionalNombre(string|null), tratamientoNombre(string|null), proveedorNombre(string|null)
 cobrar/editar/eliminar_movimiento: nombre(string|null)
 Todos los demas intents: entities vacio {}
 
@@ -15,6 +15,7 @@ Interpretacion:
 - "salio", "salieron", "se fue", "se me fue" suelen indicar gasto.
 - Si dice "consulta" o "servicio", consideralo ingreso.
 - Si menciona mercadopago o mp, usar metodo_pago "transferencia".
+- Monedas: $ o pesos → "Pesos"; U$, USD, dólares → "Dolares"; €, EUR, euros → "Euros".
 - Si puedes inferir categoria, usa una de estas: consulta, tratamiento, anticipo, sena, cuota, saldo_final, cobro_pendiente, sueldos, honorarios, insumos, alquiler, expensas, servicios, impuestos, mantenimiento, software, otro_ingreso, otro_egreso.
 - Si puedes separar entidades, usa estos campos:
   - pacienteNombre: para pacientes
@@ -49,6 +50,8 @@ Ejemplos:
 "cuanto tengo" -> {"intent":"ver_balance","entities":{}}
 "ya me pago Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "borrar gasto insumos" -> {"intent":"eliminar_movimiento","entities":{"nombre":"insumos"}}
+"honorarios €200 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Honorarios","monto":200,"moneda":"Euros","metodo_pago":"transferencia","categoria":"honorarios","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
+"insumos €50 efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Insumos","monto":50,"moneda":"Euros","metodo_pago":"efectivo","categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
 "hola" -> {"intent":"desconocido","entities":{}}`;
 
 const FALLBACK_MODELS = [
@@ -307,7 +310,8 @@ function normalizarMetodoPago(metodo) {
 function normalizarMoneda(moneda) {
   if (!moneda) return 'Pesos';
   const raw = String(moneda).trim().toLowerCase();
-  if (['dolares', 'dólares', 'dolar', 'dólar', 'usd', 'u$s', 'us$'].includes(raw)) return 'Dolares';
+  if (['dolares', 'dólares', 'dolar', 'dólar', 'usd', 'u$s', 'us$'].includes(raw)) return 'Dólares';
+  if (['euros', 'euro', 'eur', '€'].includes(raw)) return 'Euros';
   return 'Pesos';
 }
 
@@ -527,13 +531,14 @@ async function parseMessage(userId, text) {
         console.log('NLP: JSON reparado exitosamente');
         parsed = JSON.parse(repaired);
       } else {
-        console.error('NLP: JSON invalido irrecuperable:', jsonStr.substring(0, 150));
+        console.error(`NLP [${userId}]: JSON invalido irrecuperable. Texto usuario: "${text.substring(0, 80)}"`);
+        console.error(`NLP [${userId}]: Respuesta cruda (${responseText.length}b):`, responseText.substring(0, 200));
         return null;
       }
     }
 
     if (!parsed.intent) {
-      console.error('NLP: respuesta sin intent');
+      console.error(`NLP [${userId}]: respuesta sin intent. Texto usuario: "${text.substring(0, 80)}"`);
       return null;
     }
 
@@ -577,4 +582,122 @@ async function parseMessage(userId, text) {
   }
 }
 
-module.exports = { parseMessage, initModel, canAttemptRemoteNlp };
+const MOVIMIENTO_PROMPT = `Sos el asistente de cashflow de un consultorio odontológico argentino.
+Extraé los datos del movimiento del texto del usuario.
+
+MONEDAS SOPORTADAS:
+- "Pesos" → símbolo $ o sin símbolo, o palabras "pesos"
+- "Dólares" → símbolo U$, USD, u$s, dólares, "dolar"
+- "Euros" → símbolo €, EUR, euros, "euro"
+
+ENTIDADES A EXTRAER:
+- tipo: "Ingreso" o "Egreso"
+- estado: "Cobrado" o "Pendiente"
+- monto: número positivo (el tipo define si es ingreso o egreso)
+- moneda: "Pesos", "Dólares" o "Euros"
+- metodo_pago: "efectivo", "transferencia", "tarjeta" o null
+- categoria: null si no está claro
+- pacienteNombre: null si no se menciona
+- profesionalNombre: null si no se menciona
+- tratamientoNombre: null si no se menciona
+- proveedorNombre: null si no se menciona (solo para egresos)
+
+IMPORTANTE: Respondé SOLO con JSON válido, sin texto adicional, sin markdown.
+Si no podés extraer tipo ni monto, devolvé: {"error":"no_entendido"}`;
+
+function normalizarEntidadesMovimiento(raw) {
+  if (!raw || raw.error) return null;
+
+  const tipo = (() => {
+    const t = String(raw.tipo || '').trim().toLowerCase();
+    if (['egreso', 'gasto'].includes(t)) return 'gasto';
+    if (['ingreso', 'servicio', 'consulta'].includes(t)) return t === 'ingreso' ? 'ingreso' : t;
+    return null;
+  })();
+
+  const monto = (() => {
+    const v = parseFloat(String(raw.monto || '').replace(',', '.'));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  })();
+
+  if (!tipo || !monto) {
+    console.error(`NLP-mov: resultado incompleto descartado — tipo:${raw.tipo} monto:${raw.monto}`);
+    return null;
+  }
+
+  return {
+    intent: 'registrar_movimiento',
+    entities: {
+      tipo,
+      estado: raw.estado === 'Pendiente' ? 'Pendiente' : 'Cobrado',
+      monto,
+      moneda: normalizarMoneda(raw.moneda),
+      metodo_pago: normalizarMetodoPago(raw.metodo_pago),
+      categoria: normalizarCategoria(raw.categoria),
+      pacienteNombre: normalizarEntidadNombre(raw.pacienteNombre),
+      profesionalNombre: normalizarEntidadNombre(raw.profesionalNombre),
+      tratamientoNombre: normalizarEntidadNombre(raw.tratamientoNombre),
+      proveedorNombre: normalizarEntidadNombre(raw.proveedorNombre),
+    },
+  };
+}
+
+async function parseMovimientoEntidades(userId, text) {
+  if (!canAttemptRemoteNlp()) return null;
+
+  const cacheKey = `mov:${userId}:${text.toLowerCase().trim()}`;
+  const cached = nlpCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
+
+  const ai = getGenAI();
+  if (!ai) return null;
+
+  const modelName = activeModelName || getPreferredModelName();
+  let responseText = null;
+
+  try {
+    const model = ai.getGenerativeModel({
+      model: modelName,
+      systemInstruction: MOVIMIENTO_PROMPT,
+      generationConfig: { maxOutputTokens: 256, temperature: 0.1, responseMimeType: 'application/json' },
+    });
+    const result = await generateWithModel(model, `Mensaje: "${text}"`);
+    responseText = result.response.text().trim();
+  } catch (err) {
+    if (isRateLimitError(err)) lastRateLimitError = Date.now();
+    return null;
+  }
+
+  if (!responseText) return null;
+
+  let parsed;
+  try {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    const jsonStr = jsonMatch ? jsonMatch[0] : responseText;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      const repaired = repairJSON(jsonStr);
+      if (repaired) {
+        parsed = JSON.parse(repaired);
+      } else {
+        console.error(`NLP-mov [${userId}]: JSON invalido. Texto: "${text.substring(0, 80)}"`);
+        console.error(`NLP-mov [${userId}]: Respuesta cruda:`, responseText.substring(0, 200));
+        return null;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  if (parsed.error) return null;
+
+  const normalized = normalizarEntidadesMovimiento(parsed);
+  if (normalized) {
+    nlpCache.set(cacheKey, { result: normalized, timestamp: Date.now() });
+    console.log(`NLP-mov [${userId}]: "${text}" -> tipo:${normalized.entities.tipo} monto:${normalized.entities.monto} moneda:${normalized.entities.moneda}`);
+  }
+  return normalized;
+}
+
+module.exports = { parseMessage, parseMovimientoEntidades, initModel, canAttemptRemoteNlp };
