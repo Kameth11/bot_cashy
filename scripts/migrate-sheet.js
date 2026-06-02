@@ -14,6 +14,7 @@
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+const { legacyDateToIso, getTipoMovimientoFromLegacy, normalizeMetodoPago } = require('../src/utils/movimiento-v2');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
@@ -92,14 +93,16 @@ async function migrateMovimientos() {
 
         const rows = batch.map(d => ({
           user_id: parseInt(userId),
-          fecha: d.fecha || '',
+          fecha: legacyDateToIso(d.fecha) || d.fecha || new Date().toISOString().slice(0, 10),
           hora: d.hora || '',
           descripcion: d.descripcion || '',
           monto: parseFloat(d.monto) || 0,
           estado: d.estado || 'Cobrado',
-          tipo: d.tipo || 'Ingreso',
+          tipo: getTipoMovimientoFromLegacy(d.tipo || 'Ingreso'),
+          categoria: d.categoria || null,
           moneda: d.moneda || 'Pesos',
           metodo_pago: d.metodoPago || '',
+          medio_pago: normalizeMetodoPago(d.metodoPago || '') || null,
           id_unico: d.idUnico || '',
           monto_pesos: parseFloat(d.montoPesos) || parseFloat(d.monto) || 0,
           id_origen: '',

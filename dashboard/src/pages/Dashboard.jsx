@@ -6,7 +6,7 @@ import MetricCard from '../components/MetricCard'
 import PlusButton from '../components/PlusButton'
 
 function Dashboard() {
-  const [filtro, setFiltro] = useState('hoy')
+  const [filtro, setFiltro] = useState('mes')
   const [movimientos, setMovimientos] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -33,12 +33,14 @@ function Dashboard() {
       setLoading(true)
       setError(null)
       try {
-        const { data } = await api.get('/api/movimientos', { params: { desde: range.desde, hasta: range.hasta } })
+        const { data } = await api.get('/api/movimientos', {
+          params: { desde: range.desde, hasta: range.hasta }
+        })
         if (!active) return
         setMovimientos(Array.isArray(data?.movimientos) ? data.movimientos : [])
       } catch (err) {
         if (!active) return
-        console.error('Dashboard API error', err)
+        console.error('Dashboard error', err)
         setError('No se pudieron cargar los movimientos')
       } finally {
         if (active) setLoading(false)
@@ -49,16 +51,15 @@ function Dashboard() {
   }, [range])
 
   const metricas = useMemo(() => {
-    // Los egresos se guardan con monto negativo en la DB; usamos Math.abs para mostrarlos positivos.
     const ingresos = movimientos
-      .filter(m => m.tipo === 'Ingreso' && m.estado === 'Cobrado')
-      .reduce((acc, m) => acc + Number(m.monto || 0), 0)
-
-    const egresos = movimientos
-      .filter(m => m.tipo === 'Egreso')
+      .filter(m => m.tipo?.toLowerCase() === 'ingreso' && m.estado?.toLowerCase() === 'cobrado')
       .reduce((acc, m) => acc + Math.abs(Number(m.monto || 0)), 0)
 
-    const pendientes = movimientos.filter(m => m.estado === 'Pendiente').length
+    const egresos = movimientos
+      .filter(m => m.tipo?.toLowerCase() === 'egreso')
+      .reduce((acc, m) => acc + Math.abs(Number(m.monto || 0)), 0)
+
+    const pendientes = movimientos.filter(m => m.estado?.toLowerCase() === 'pendiente').length
 
     return { ingresos, egresos, pendientes, neto: ingresos - egresos }
   }, [movimientos])
@@ -194,9 +195,9 @@ function Dashboard() {
                         ...tdStyle,
                         textAlign: 'right',
                         fontWeight: 700,
-                        color: mov.tipo === 'Ingreso' ? '#10b981' : '#ef4444'
+                        color: mov.tipo?.toLowerCase() === 'ingreso' ? '#10b981' : '#ef4444'
                       }}>
-                        {mov.tipo === 'Egreso' ? '-' : ''}${Math.abs(Number(mov.monto || 0)).toLocaleString('es-AR')}
+                        {mov.tipo?.toLowerCase() === 'egreso' ? '-' : ''}${Math.abs(Number(mov.monto || 0)).toLocaleString('es-AR')}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <EstadoBadge estado={mov.estado} />
@@ -214,8 +215,9 @@ function Dashboard() {
 }
 
 function EstadoBadge({ estado }) {
-  const color = estado === 'Cobrado' ? '#166534' : '#b45309'
-  const bg   = estado === 'Cobrado' ? '#dcfce7' : '#fef3c7'
+  const cobrado = estado?.toLowerCase() === 'cobrado'
+  const color = cobrado ? '#166534' : '#b45309'
+  const bg   = cobrado ? '#dcfce7' : '#fef3c7'
   return (
     <span style={{
       display: 'inline-block',

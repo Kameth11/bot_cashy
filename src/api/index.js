@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { config } = require('../config');
+const config = require('../config');
 const { getSupabase, isAvailable } = require('../lib/supabase');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { obtenerDatosSheet } = require('../services/sheet.service');
@@ -80,20 +80,21 @@ app.post('/api/auth/request-code', async (req, res) => {
   // Store in Supabase if available
   if (isAvailable() && getSupabase()) {
     const supabase = getSupabase();
-    await supabase
-      .from('auth_codes')
-      .upsert(
-        {
-          telegram_user_id: telegramId,
-          code,
-          expires_at: expiresAt.toISOString(),
-          used: false,
-        },
-        { onConflict: 'telegram_user_id' }
-      )
-      .catch(() => {
-        // Table might not exist; fallback to memory
-      });
+    try {
+      await supabase
+        .from('auth_codes')
+        .upsert(
+          {
+            telegram_user_id: telegramId,
+            code,
+            expires_at: expiresAt.toISOString(),
+            used: false,
+          },
+          { onConflict: 'telegram_user_id' }
+        );
+    } catch {
+      // Table might not exist; fallback to memory
+    }
   }
 
   // Always store in memory as fallback
@@ -170,11 +171,14 @@ app.post('/api/auth/verify', async (req, res) => {
     global._authCodes.set(telegramId, codeData);
   }
   if (isAvailable() && getSupabase()) {
-    await getSupabase()
-      .from('auth_codes')
-      .update({ used: true })
-      .eq('telegram_user_id', telegramId)
-      .catch(() => {});
+    try {
+      await getSupabase()
+        .from('auth_codes')
+        .update({ used: true })
+        .eq('telegram_user_id', telegramId);
+    } catch {
+      // ignore
+    }
   }
 
   // Issue JWT

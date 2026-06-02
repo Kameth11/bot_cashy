@@ -45,12 +45,14 @@ function construirRowData({
   estado = 'Cobrado',
   categoria = '',
   paciente = '',
+  pagador = '',
   profesional = '',
   tratamiento = '',
   proveedor = '',
   fechaPrestacion = '',
   fechaVencimiento = '',
   saldoPendiente = 0,
+  referenciaId = '',
 }) {
   return {
     'Fecha': fechaStr,
@@ -66,12 +68,14 @@ function construirRowData({
     'ID_Origen': idOrigen,
     'Categoria': categoria || '',
     'Paciente': paciente || '',
+    'Pagador': pagador || '',
     'Profesional': profesional || '',
     'Tratamiento': tratamiento || '',
     'Proveedor': proveedor || '',
     'FechaPrestacion': fechaPrestacion || '',
     'FechaVencimiento': fechaVencimiento || '',
     'SaldoPendiente': saldoPendiente,
+    'ReferenciaId': referenciaId || '',
   };
 }
 
@@ -112,6 +116,7 @@ async function guardarMovimiento(userId, {
   categoria = null,
   subcategoria = null,
   pacienteNombre = null,
+  pagadorNombre = null,
   profesionalNombre = null,
   proveedorNombre = null,
   tratamientoNombre = null,
@@ -142,12 +147,14 @@ async function guardarMovimiento(userId, {
     estado,
     categoria,
     paciente: pacienteNombre,
+    pagador: pagadorNombre,
     profesional: profesionalNombre,
     tratamiento: tratamientoNombre,
-    proveedor: proveedorNombre,
-    fechaPrestacion: fechaPrestacion || fechaStr,
-    fechaVencimiento,
-    saldoPendiente: estado === 'Pendiente' ? Math.abs(monto) : 0,
+      proveedor: proveedorNombre,
+      fechaPrestacion: fechaPrestacion || fechaStr,
+      fechaVencimiento,
+      saldoPendiente: estado === 'Pendiente' ? Math.abs(monto) : 0,
+      referenciaId,
   });
 
   const savedRow = await db.addRow(userId, rowData, {
@@ -155,6 +162,7 @@ async function guardarMovimiento(userId, {
       categoria,
       subcategoria,
       pacienteNombre,
+      pagadorNombre,
       profesionalNombre,
       proveedorNombre,
       tratamientoNombre,

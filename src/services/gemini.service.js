@@ -4,7 +4,7 @@ const SYSTEM_PROMPT = `Eres un parser de mensajes de cashflow de Argentina. Tu U
 
 Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, desconocido
 
-registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), categoria(string|null), pacienteNombre(string|null), profesionalNombre(string|null), tratamientoNombre(string|null), proveedorNombre(string|null)
+registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), categoria(string|null), pacienteNombre(string|null), pagadorNombre(string|null), profesionalNombre(string|null), tratamientoNombre(string|null), proveedorNombre(string|null)
 cobrar/editar/eliminar_movimiento: nombre(string|null)
 Todos los demas intents: entities vacio {}
 
@@ -18,31 +18,44 @@ Interpretacion:
 - Si puedes inferir categoria, usa una de estas: consulta, tratamiento, anticipo, sena, cuota, saldo_final, cobro_pendiente, sueldos, honorarios, insumos, alquiler, expensas, servicios, impuestos, mantenimiento, software, otro_ingreso, otro_egreso.
 - Si puedes separar entidades, usa estos campos:
   - pacienteNombre: para pacientes
+  - pagadorNombre: para quien efectivamente pagó en ingresos cuando se pueda inferir
   - profesionalNombre: para doctores o profesionales
   - tratamientoNombre: para implante, ortodoncia, limpieza, etc
   - proveedorNombre: para proveedores en egresos
+- Si el mensaje dice "le pagaron a/alguien" o "le transfirieron a/alguien" en el contexto de un paciente pagando al consultorio, interpretalo como ingreso.
+- Si el mensaje dice "le pagamos a [proveedor/servicio]" o "pagamos al [gasista/plomero/electricista/etc]", interpretalo como gasto (egreso). Palabras clave de gasto: gasista, plomero, electricista, albañil, proveedor, taller, técnico, empresa de servicios.
+- Si el mensaje sigue la forma "X le pagó a Y ... por una consulta/servicio/tratamiento", toma a X como paciente y pagador, y a Y como profesional o receptor del cobro.
+- Si la categoria es "consulta" y no hay un tratamiento más específico, usa tratamientoNombre "Consulta".
+- Si aparece una frase como "Diego vino por consulta" o "Vino Diego por limpieza", toma a Diego como pacienteNombre.
+- No uses profesionalNombre para un nombre comun salvo que aparezca un titulo explicito como Dr, Dra, doctor o doctora.
 - Si el usuario dice que alguien "ya pagó", "me pagó", "me transfirió", "entró lo de" o "cobré lo de", normalmente es cobrar_movimiento cuando se refiere a una deuda pendiente existente.
 - Si la frase describe plata que entra o sale como un hecho nuevo para registrar, usar registrar_movimiento.
 - Para cobrar_movimiento, extrae el nombre/persona/concepto en nombre.
 
 Ejemplos:
-"cobre 15000 de Juan en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"tratamiento","pacienteNombre":"Juan","profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"gaste 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null,"categoria":"alquiler","pacienteNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"servicio endodoncia U$50 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dolares","metodo_pago":"transferencia","categoria":"tratamiento","pacienteNombre":null,"profesionalNombre":null,"tratamientoNombre":"Endodoncia","proveedorNombre":null}}
-"anticipo Juan Perez implante Dra Lopez 50k transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan Perez","monto":50000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"anticipo","pacienteNombre":"Juan Perez","profesionalNombre":"Dra Lopez","tratamientoNombre":"Implante","proveedorNombre":null}}
-"pague a Dental Sur 80k por guantes" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Guantes","monto":80000,"moneda":"Pesos","metodo_pago":null,"categoria":"insumos","pacienteNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":"Dental Sur"}}
+"cobre 15000 de Juan en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"tratamiento","pacienteNombre":"Juan","pagadorNombre":"Juan","profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
+"gaste 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null,"categoria":"alquiler","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
+"servicio endodoncia U$50 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dolares","metodo_pago":"transferencia","categoria":"tratamiento","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Endodoncia","proveedorNombre":null}}
+"anticipo Juan Perez implante Dra Lopez 50k transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan Perez","monto":50000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"anticipo","pacienteNombre":"Juan Perez","pagadorNombre":null,"profesionalNombre":"Dra Lopez","tratamientoNombre":"Implante","proveedorNombre":null}}
+"pague a Dental Sur 80k por guantes" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Guantes","monto":80000,"moneda":"Pesos","metodo_pago":null,"categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":"Dental Sur"}}
 "me pagó Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "ya entró lo de Marta" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Marta"}}
 "Juan me transfirió" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
+"le pagaron a Diego 400mil pesos en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Diego","monto":400000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"tratamiento","pacienteNombre":"Diego","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
+"le pagamos al gasista 400 dolares en transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Gasista","monto":400,"moneda":"Dolares","metodo_pago":"transferencia","categoria":"servicios","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":"Gasista"}}
+"le pagaron a Laura de DientesFacil 400mil pesos" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Laura","monto":400000,"moneda":"Pesos","metodo_pago":null,"categoria":"tratamiento","pacienteNombre":"Laura","pagadorNombre":"DientesFacil","profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
+"Laura Santillan le pagó a Diego 500000 pesos en efectivo por una consulta" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Laura Santillan","monto":500000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"consulta","pacienteNombre":"Laura Santillan","pagadorNombre":"Laura Santillan","profesionalNombre":"Diego","tratamientoNombre":"Consulta","proveedorNombre":null}}
+"Diego vino por consulta" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Diego","monto":null,"moneda":"Pesos","metodo_pago":null,"categoria":"consulta","pacienteNombre":"Diego","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Consulta","proveedorNombre":null}}
 "cuanto tengo" -> {"intent":"ver_balance","entities":{}}
 "ya me pago Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "borrar gasto insumos" -> {"intent":"eliminar_movimiento","entities":{"nombre":"insumos"}}
 "hola" -> {"intent":"desconocido","entities":{}}`;
 
 const FALLBACK_MODELS = [
-  'gemini-2.0-flash-001',
   'gemini-2.5-flash-lite',
   'gemini-2.5-flash',
+  'gemini-2.0-flash-001',
+  'gemini-2.0-flash-lite-001',
   'gemini-flash-lite-latest',
 ];
 
@@ -95,14 +108,80 @@ function createModel(ai, modelName) {
 
 function getPreferredModelName() {
   const raw = String(GEMINI_MODEL || '').trim();
-  if (!raw) return 'gemini-2.0-flash-001';
-  if (raw.includes('latest')) return 'gemini-2.0-flash-001';
+  if (!raw) return 'gemini-2.5-flash-lite';
   return raw;
+}
+
+function getModelCandidates(preferredModel = getPreferredModelName()) {
+  return [...new Set([
+    activeModelName,
+    preferredModel,
+    ...FALLBACK_MODELS,
+  ].filter(Boolean))];
+}
+
+function isRateLimitError(error) {
+  return Boolean(error && error.message && (
+    error.message.includes('429') ||
+    error.message.includes('Too Many Requests') ||
+    error.message.includes('quota')
+  ));
+}
+
+function isNotFoundError(error) {
+  return Boolean(error && error.message && error.message.includes('404'));
+}
+
+function isRetryableServiceError(error) {
+  return Boolean(error && error.message && (
+    error.message.includes('503') ||
+    error.message.includes('500') ||
+    error.message.includes('502') ||
+    error.message.includes('504') ||
+    error.message.includes('overloaded') ||
+    error.message.includes('high demand') ||
+    error.message.includes('Service Unavailable')
+  ));
+}
+
+async function generateWithModel(model, prompt) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    return await model.generateContent(prompt, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function tryModel(modelName, prompt) {
+  const ai = getGenAI();
+  if (!ai) return { ok: false, error: new Error('gemini_unavailable') };
+
+  try {
+    const model = createModel(ai, modelName);
+    const result = await generateWithModel(model, prompt);
+    const text = result.response.text();
+    if (!text) {
+      return { ok: false, error: new Error(`empty_response:${modelName}`) };
+    }
+
+    activeModel = model;
+    activeModelName = modelName;
+    modelReady = true;
+    return { ok: true, result, modelName };
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return { ok: false, error: new Error(`timeout:${modelName}`) };
+    }
+    return { ok: false, error };
+  }
 }
 
 async function findWorkingModel() {
   const preferredModel = getPreferredModelName();
-  const modelsToTry = [preferredModel, ...FALLBACK_MODELS.filter(m => m !== preferredModel)];
+  const modelsToTry = getModelCandidates(preferredModel);
   const ai = getGenAI();
   if (!ai) {
     modelReady = true;
@@ -110,28 +189,13 @@ async function findWorkingModel() {
   }
 
   for (const modelName of modelsToTry) {
-    try {
-      const model = createModel(ai, modelName);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-      try {
-        const result = await model.generateContent('Responde: ok', { signal: controller.signal });
-        clearTimeout(timeout);
-        const text = result.response.text();
-        if (text) {
-          console.log(`NLP: Modelo activo: ${modelName}`);
-          activeModel = model;
-          activeModelName = modelName;
-          modelReady = true;
-          return activeModel;
-        }
-      } catch (e) {
-        clearTimeout(timeout);
-        throw e;
-      }
-    } catch (error) {
-      console.log(`NLP: Modelo ${modelName} no disponible: ${error.message.substring(0, 80)}`);
+    const attempt = await tryModel(modelName, 'Responde solo: ok');
+    if (attempt.ok) {
+      console.log(`NLP: Modelo activo: ${modelName}`);
+      return activeModel;
     }
+
+    console.log(`NLP: Modelo ${modelName} no disponible: ${attempt.error.message.substring(0, 80)}`);
   }
 
   modelReady = true;
@@ -337,9 +401,14 @@ function normalizarNlpResult(parsed) {
     normalized.entities.metodo_pago = normalizarMetodoPago(normalized.entities.metodo_pago);
     normalized.entities.categoria = normalizarCategoria(normalized.entities.categoria);
     normalized.entities.pacienteNombre = normalizarEntidadNombre(normalized.entities.pacienteNombre);
+    normalized.entities.pagadorNombre = normalizarEntidadNombre(normalized.entities.pagadorNombre);
     normalized.entities.profesionalNombre = normalizarEntidadNombre(normalized.entities.profesionalNombre);
     normalized.entities.tratamientoNombre = normalizarEntidadNombre(normalized.entities.tratamientoNombre);
     normalized.entities.proveedorNombre = normalizarEntidadNombre(normalized.entities.proveedorNombre);
+
+    if ((normalized.entities.categoria === 'consulta' || normalized.entities.tipo === 'consulta') && !normalized.entities.tratamientoNombre) {
+      normalized.entities.tratamientoNombre = 'Consulta';
+    }
 
     if (normalized.entities.monto !== null && normalized.entities.monto !== undefined) {
       const monto = parseFloat(String(normalized.entities.monto).replace(',', '.'));
@@ -376,33 +445,51 @@ async function parseMessage(userId, text) {
     return cached;
   }
 
-  if (!activeModel) {
-    const model = await findWorkingModel();
-    if (!model) return null;
+  const prompt = `Mensaje del usuario: "${text}"`;
+  const modelCandidates = getModelCandidates();
+  let responseText = null;
+  let response = null;
+  let lastError = null;
+  let sawRateLimit = false;
+  let sawRetryableServiceError = false;
+
+  for (const modelName of modelCandidates) {
+    const attempt = await tryModel(modelName, prompt);
+    if (!attempt.ok) {
+      lastError = attempt.error;
+      sawRateLimit = sawRateLimit || isRateLimitError(attempt.error);
+      sawRetryableServiceError = sawRetryableServiceError || isRetryableServiceError(attempt.error) || String(attempt.error.message || '').startsWith('timeout:');
+      console.log(`NLP: fallo runtime con ${modelName}: ${attempt.error.message.substring(0, 120)}`);
+      continue;
+    }
+
+    response = attempt.result.response;
+    responseText = response.text().trim();
+    modelReady = true;
+    break;
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-    let result;
-    try {
-      result = await activeModel.generateContent(`Mensaje del usuario: "${text}"`, { signal: controller.signal });
-      clearTimeout(timeout);
-    } catch (e) {
-      clearTimeout(timeout);
-      if (e.name === 'AbortError') {
-        console.error('NLP: Timeout en llamada a Gemini');
-        return null;
+    if (!responseText) {
+      if (sawRateLimit) {
+        lastRateLimitError = Date.now();
+        console.log(`NLP: Rate limit (429), cooldown ${RATE_LIMIT_COOLDOWN_MS / 1000}s`);
+      } else if (sawRetryableServiceError) {
+        lastServiceError = Date.now();
+        console.log(`NLP: Servicios Gemini inestables, cooldown ${SERVICE_ERROR_COOLDOWN_MS / 1000}s`);
       }
-      throw e;
+
+      if (lastError) {
+        console.error(`NLP: sin respuesta usable de Gemini: ${String(lastError.message || '').substring(0, 120)}`);
+      }
+      return null;
     }
 
-    modelReady = true;
+    if (!activeModelName) {
+      console.log('NLP: Gemini respondió sin fijar modelo activo');
+    }
 
-    const responseText = result.response.text().trim();
-
-    const finishReason = result.response.candidates?.[0]?.finishReason;
+    const finishReason = response?.candidates?.[0]?.finishReason;
     if (finishReason && finishReason !== 'STOP') {
       console.warn(`NLP: finishReason=${finishReason}`);
     }
@@ -461,25 +548,19 @@ async function parseMessage(userId, text) {
     return normalized;
 
   } catch (error) {
-    const is429 = error.message && (
-      error.message.includes('429') ||
-      error.message.includes('Too Many Requests') ||
-      error.message.includes('quota')
-    );
-
-    const is404 = error.message && error.message.includes('404');
-
-    if (is429) {
+    if (isRateLimitError(error)) {
       lastRateLimitError = Date.now();
       modelReady = false;
       activeModel = null;
+      activeModelName = null;
       console.log(`NLP: Rate limit (429), cooldown ${RATE_LIMIT_COOLDOWN_MS / 1000}s`);
       return null;
     }
 
-    if (is404) {
+    if (isNotFoundError(error)) {
       modelReady = false;
       activeModel = null;
+      activeModelName = null;
       console.log('NLP: Modelo no encontrado (404), buscando otro...');
       const model = await findWorkingModel();
       if (model) {
@@ -488,7 +569,9 @@ async function parseMessage(userId, text) {
       return null;
     }
 
-    lastServiceError = Date.now();
+    if (isRetryableServiceError(error) || error.name === 'AbortError') {
+      lastServiceError = Date.now();
+    }
     console.error(`NLP: Error: ${error.message.substring(0, 120)}`);
     return null;
   }

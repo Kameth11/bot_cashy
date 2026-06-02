@@ -9,6 +9,9 @@ const {
   buildMovimientoV2UpdatePayload,
   buildMovimientoV2CreationEvent,
   buildMovimientoV2TransitionEvent,
+  getTipoMovimientoFromLegacy,
+  legacyDateToIso,
+  normalizeMetodoPago,
 } = require('../utils/movimiento-v2');
 
 const v2CapabilityCache = {
@@ -17,8 +20,53 @@ const v2CapabilityCache = {
   movimientoEventosV2: false,
 };
 
+const legacyCapabilityCache = {
+  checked: false,
+  extendedMovimientos: false,
+};
+
 let v2CapabilityPromise = null;
+let legacyCapabilityPromise = null;
 let missingV2TablesLogged = false;
+
+function normalizeDbValue(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function extractPagadorFromNotas(notas) {
+  const match = String(notas || '').match(/(?:^|\n)Pagador:\s*(.+?)(?:\n|$)/i);
+  return match && match[1] ? match[1].trim() : '';
+}
+
+function mapDbTipoToLegacyDisplay(tipo) {
+  const normalized = normalizeDbValue(tipo);
+  if (normalized === 'egreso') return 'Egreso';
+  if (normalized === 'ingreso') return 'Ingreso';
+  return tipo || 'Ingreso';
+}
+
+function mapDbStateToLegacyDisplay(estado) {
+  const normalized = normalizeDbValue(estado).replace(/\s+/g, '_');
+  if (normalized === 'pendiente') return 'Pendiente';
+  if (normalized === 'parcial') return 'Pendiente';
+  if (['cobrado', 'pagado'].includes(normalized)) return 'Cobrado';
+  return estado || '';
+}
+
+function getDbPaymentMethod(row) {
+  return row?.medio_pago || row?.metodo_pago || '';
+}
+
+function toDbDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return legacyDateToIso(raw);
+}
 
 function getSheetService() {
   return require('./sheet.service');
@@ -130,17 +178,57 @@ async function resolveV2Capabilities(supabase) {
   return v2CapabilityPromise;
 }
 
+function isMissingColumnError(error) {
+  return Boolean(error && /column .* does not exist|could not find the .*column|schema cache/i.test(error.message || ''));
+}
+
+async function resolveLegacyCapabilities(supabase) {
+  if (!USE_SUPABASE || !supabase) {
+    return { extendedMovimientos: false };
+  }
+
+  if (legacyCapabilityCache.checked) {
+    return { extendedMovimientos: legacyCapabilityCache.extendedMovimientos };
+  }
+
+  if (legacyCapabilityPromise) {
+    return legacyCapabilityPromise;
+  }
+
+  legacyCapabilityPromise = (async () => {
+    let extendedMovimientos = false;
+
+    const check = await supabase
+      .from('movimientos')
+      .select('categoria,medio_pago,referencia_id')
+      .limit(1);
+
+    if (!check.error) {
+      extendedMovimientos = true;
+    } else if (!isMissingColumnError(check.error)) {
+      console.error('Supabase movimientos extended schema check error:', check.error.message);
+    }
+
+    legacyCapabilityCache.checked = true;
+    legacyCapabilityCache.extendedMovimientos = extendedMovimientos;
+    legacyCapabilityPromise = null;
+    return { extendedMovimientos };
+  })();
+
+  return legacyCapabilityPromise;
+}
+
 function buildLegacySnapshotFromRow(row) {
   return {
     id: row.id,
-    fecha: row.fecha,
-    hora: row.hora,
+    fecha: formatLegacyDate(row.fecha),
+    hora: formatLegacyHour(row.hora),
     descripcion: row.descripcion,
     monto: row.monto,
-    estado: row.estado,
-    tipo: row.tipo,
+    estado: mapDbStateToLegacyDisplay(row.estado),
+    tipo: mapDbTipoToLegacyDisplay(row.tipo),
     moneda: row.moneda,
-    metodo_pago: row.metodo_pago,
+    metodo_pago: getDbPaymentMethod(row),
     monto_pesos: row.monto_pesos,
     id_unico: row.id_unico,
   };
@@ -148,16 +236,17 @@ function buildLegacySnapshotFromRow(row) {
 
 function buildLegacyRowDataFromSnapshot(snapshot) {
   return {
-    Fecha: snapshot.fecha || '',
-    Hora: snapshot.hora || '',
+    Fecha: formatLegacyDate(snapshot.fecha) || '',
+    Hora: formatLegacyHour(snapshot.hora) || '',
     Descripcion: snapshot.descripcion || '',
     Monto: snapshot.monto,
-    Estado: snapshot.estado || '',
-    Tipo: snapshot.tipo || '',
+    Estado: mapDbStateToLegacyDisplay(snapshot.estado) || '',
+    Tipo: mapDbTipoToLegacyDisplay(snapshot.tipo) || '',
     Moneda: snapshot.moneda || 'Pesos',
     MetodoPago: snapshot.metodo_pago || '',
     ID_Unico: snapshot.id_unico || '',
     MontoPesos: snapshot.monto_pesos,
+    Pagador: snapshot.pagador || '',
   };
 }
 
@@ -360,22 +449,24 @@ function mapV2RowToLegacySnapshot(row) {
     monto_pesos: montoPesos,
     id_unico: legacyId,
     id_origen: '',
+    pagador: extractPagadorFromNotas(row?.notas),
     created_at: row?.fecha_carga || row?.created_at || null,
   };
 }
 
 function mapLegacyDbRowToPlainData(row) {
   return {
-    fecha: row.fecha || '',
-    hora: row.hora || '',
+    fecha: formatLegacyDate(row.fecha) || '',
+    hora: formatLegacyHour(row.hora) || '',
     descripcion: row.descripcion || '',
     monto: parseFloat(row.monto) || 0,
     montoPesos: parseFloat(row.monto_pesos) || parseFloat(row.monto) || 0,
-    estado: row.estado || '',
-    tipo: row.tipo || '',
+    estado: mapDbStateToLegacyDisplay(row.estado),
+    tipo: mapDbTipoToLegacyDisplay(row.tipo),
     moneda: row.moneda || 'Pesos',
-    metodoPago: row.metodo_pago || '',
+    metodoPago: getDbPaymentMethod(row),
     idUnico: row.id_unico || '',
+    pagador: '',
     _sortKey: row.created_at || null,
   };
 }
@@ -393,6 +484,7 @@ function mapV2RowToPlainData(row) {
     moneda: legacy.moneda,
     metodoPago: legacy.metodo_pago,
     idUnico: legacy.id_unico,
+    pagador: legacy.pagador || '',
     _sortKey: row.fecha_carga || row.created_at || null,
   };
 }
@@ -453,23 +545,28 @@ function buildLegacySupabaseRowWrapper(userId, row) {
     _supabase: true,
     id: row.id,
     get(field) {
+      const legacyFecha = formatLegacyDate(row.fecha);
+      const legacyHora = formatLegacyHour(row.hora);
+      const legacyEstado = mapDbStateToLegacyDisplay(row.estado);
+      const legacyTipo = mapDbTipoToLegacyDisplay(row.tipo);
+      const legacyMetodoPago = getDbPaymentMethod(row);
       const map = {
-        'Fecha': row.fecha,
-        'fecha': row.fecha,
-        'Hora': row.hora,
-        'hora': row.hora,
+        'Fecha': legacyFecha,
+        'fecha': legacyFecha,
+        'Hora': legacyHora,
+        'hora': legacyHora,
         'Descripcion': row.descripcion,
         'descripcion': row.descripcion,
         'Monto': row.monto,
         'monto': row.monto,
-        'Estado': row.estado,
-        'estado': row.estado,
-        'Tipo': row.tipo,
-        'tipo': row.tipo,
+        'Estado': legacyEstado,
+        'estado': legacyEstado,
+        'Tipo': legacyTipo,
+        'tipo': legacyTipo,
         'Moneda': row.moneda,
         'moneda': row.moneda,
-        'MetodoPago': row.metodo_pago,
-        'metodopago': row.metodo_pago,
+        'MetodoPago': legacyMetodoPago,
+        'metodopago': legacyMetodoPago,
         'ID_Unico': row.id_unico,
         'ID_unico': row.id_unico,
         'ID_uNico': row.id_unico,
@@ -505,6 +602,14 @@ function buildLegacySupabaseRowWrapper(userId, row) {
         const supabase2 = getSupabase();
         const legacySnapshot = buildLegacySnapshotFromRow(row);
         const updates = { ...this._updates };
+        const legacyCapabilities = await resolveLegacyCapabilities(supabase2);
+        if (updates.metodo_pago !== undefined) {
+          updates.medio_pago = normalizeMetodoPago(updates.metodo_pago) || null;
+        }
+        if (!legacyCapabilities.extendedMovimientos) {
+          delete updates.medio_pago;
+          delete updates.referencia_id;
+        }
         await supabase2
           .from('movimientos')
           .update(updates)
@@ -575,6 +680,8 @@ function buildV2SupabaseRowWrapper(userId, row) {
         'idunico': legacy.id_unico,
         'MontoPesos': legacy.monto_pesos,
         'montopesos': legacy.monto_pesos,
+        'Pagador': legacy.pagador || '',
+        'pagador': legacy.pagador || '',
       };
       return map[field];
     },
@@ -711,9 +818,11 @@ async function syncRowUpdateToSheet(userId, rowIdUnico, updates = {}) {
     estado: 'Estado',
     moneda: 'Moneda',
     metodo_pago: 'MetodoPago',
+    medio_pago: 'MetodoPago',
     monto_pesos: 'MontoPesos',
     id_unico: 'ID_Unico',
     id_origen: 'ID_Origen',
+    referencia_id: 'ReferenciaId',
   };
 
   for (const [key, value] of Object.entries(updates)) {
@@ -773,20 +882,30 @@ async function addRow(userId, rowData, options = {}) {
     return row;
   }
 
+  const legacyCapabilities = await resolveLegacyCapabilities(supabase);
   const supabaseRow = {
     user_id: userId,
-    fecha: rowData.Fecha || '',
+    fecha: toDbDate(rowData.Fecha) || new Date().toISOString().slice(0, 10),
     hora: rowData.Hora || '',
     descripcion: rowData.Descripcion || '',
     monto: parseFloat(rowData.Monto) || 0,
     estado: rowData.Estado || 'Cobrado',
-    tipo: rowData.Tipo || '',
+    tipo: getTipoMovimientoFromLegacy(rowData.Tipo),
+    categoria: rowData.Categoria || null,
     moneda: rowData.Moneda || 'Pesos',
     metodo_pago: rowData.MetodoPago || '',
+    medio_pago: normalizeMetodoPago(rowData.MetodoPago || rowData.MedioPago || '') || null,
     id_unico: rowData.ID_Unico || '',
     monto_pesos: parseFloat(rowData.MontoPesos) || parseFloat(rowData.Monto) || 0,
     id_origen: rowData.ID_Origen || '',
+    referencia_id: options.movimientoV2Data?.referenciaId || rowData.ReferenciaId || null,
   };
+
+  if (!legacyCapabilities.extendedMovimientos) {
+    delete supabaseRow.categoria;
+    delete supabaseRow.medio_pago;
+    delete supabaseRow.referencia_id;
+  }
 
   await ensureProfile(userId);
 

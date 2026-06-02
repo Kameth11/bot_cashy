@@ -19,12 +19,14 @@ const REQUIRED_SHEET_HEADERS = [
   'ID_Origen',
   'Categoria',
   'Paciente',
+  'Pagador',
   'Profesional',
   'Tratamiento',
   'Proveedor',
   'FechaPrestacion',
   'FechaVencimiento',
   'SaldoPendiente',
+  'ReferenciaId',
 ];
 
 function normalizarHeader(header) {

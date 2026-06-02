@@ -23,6 +23,71 @@ function getField(source, keys, fallback = '') {
   return fallback;
 }
 
+function normalizeValue(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function formatDateValue(value, fallback = '') {
+  if (value === undefined || value === null || value === '') return fallback;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${String(value.getDate()).padStart(2, '0')}/${String(value.getMonth() + 1).padStart(2, '0')}/${value.getFullYear()}`;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return fallback;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+  if (isoMatch) {
+    return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  }
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw || fallback;
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function formatHourValue(value, fallback = 'N/A') {
+  if (value === undefined || value === null || value === '') return fallback;
+
+  const raw = String(value).trim();
+  if (!raw) return fallback;
+  if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+
+  const isoMatch = raw.match(/(?:T|\s)(\d{2}):(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}:${isoMatch[2]}`;
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw || fallback;
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function normalizeEstadoValue(value, fallback = '') {
+  if (value === undefined || value === null || value === '') return fallback;
+
+  const normalized = normalizeValue(value).replace(/\s+/g, '_');
+  if (normalized === 'pendiente') return 'Pendiente';
+  if (['cobrado', 'pagado'].includes(normalized)) return 'Cobrado';
+  if (normalized === 'parcial') return 'Pendiente';
+  if (normalized === 'rechazado') return 'Rechazado';
+  if (normalized === 'presentado_os') return 'Presentado OS';
+  return String(value).trim() || fallback;
+}
+
+function normalizeTipoValue(value, fallback = '') {
+  if (value === undefined || value === null || value === '') return fallback;
+
+  const normalized = normalizeValue(value);
+  if (normalized === 'egreso') return 'Egreso';
+  if (normalized === 'ingreso') return 'Ingreso';
+  return String(value).trim() || fallback;
+}
+
 function getRowDescripcion(row, fallback = 'Sin descripción') {
   return getField(row, ['Descripcion', 'descripcion', 'Paciente', 'paciente', 'Nombre', 'nombre'], fallback);
 }
@@ -32,11 +97,13 @@ function getRowIdUnico(row, fallback = 'sin-id') {
 }
 
 function getRowFecha(row, fallback = 'N/A') {
-  return getField(row, ['Fecha', 'fecha'], fallback);
+  const value = getField(row, ['Fecha', 'fecha'], fallback);
+  return formatDateValue(value, fallback);
 }
 
 function getRowHora(row, fallback = 'N/A') {
-  return getField(row, ['Hora', 'hora'], fallback);
+  const value = getField(row, ['Hora', 'hora'], fallback);
+  return formatHourValue(value, fallback);
 }
 
 function getRowMonto(row, fallback = 0) {
@@ -56,11 +123,13 @@ function getRowMontoPesos(row, fallback) {
 }
 
 function getRowEstado(row, fallback = '') {
-  return getField(row, ['Estado', 'estado'], fallback);
+  const value = getField(row, ['Estado', 'estado'], fallback);
+  return normalizeEstadoValue(value, fallback);
 }
 
 function getRowTipo(row, fallback = '') {
-  return getField(row, ['Tipo', 'tipo'], fallback);
+  const value = getField(row, ['Tipo', 'tipo'], fallback);
+  return normalizeTipoValue(value, fallback);
 }
 
 function getRowMoneda(row, fallback = 'Pesos') {
@@ -68,7 +137,7 @@ function getRowMoneda(row, fallback = 'Pesos') {
 }
 
 function getRowMetodoPago(row, fallback = '') {
-  return getField(row, ['MetodoPago', 'metodopago'], fallback);
+  return getField(row, ['MetodoPago', 'metodopago', 'MedioPago', 'medioPago', 'medio_pago', 'metodo_pago'], fallback);
 }
 
 function getRowCategoria(row, fallback = '') {
@@ -77,6 +146,10 @@ function getRowCategoria(row, fallback = '') {
 
 function getRowPaciente(row, fallback = '') {
   return getField(row, ['Paciente', 'paciente'], fallback);
+}
+
+function getRowPagador(row, fallback = '') {
+  return getField(row, ['Pagador', 'pagador'], fallback);
 }
 
 function getRowProfesional(row, fallback = '') {
@@ -92,11 +165,13 @@ function getRowProveedor(row, fallback = '') {
 }
 
 function getRowFechaPrestacion(row, fallback = '') {
-  return getField(row, ['FechaPrestacion', 'fechaprestacion'], fallback);
+  const value = getField(row, ['FechaPrestacion', 'fechaprestacion'], fallback);
+  return formatDateValue(value, fallback);
 }
 
 function getRowFechaVencimiento(row, fallback = '') {
-  return getField(row, ['FechaVencimiento', 'fechavencimiento'], fallback);
+  const value = getField(row, ['FechaVencimiento', 'fechavencimiento'], fallback);
+  return formatDateValue(value, fallback);
 }
 
 function getRowSaldoPendiente(row, fallback = 0) {
@@ -119,6 +194,7 @@ function toMovimiento(row) {
     idUnico: getRowIdUnico(row, ''),
     categoria: getRowCategoria(row, ''),
     paciente: getRowPaciente(row, ''),
+    pagador: getRowPagador(row, ''),
     profesional: getRowProfesional(row, ''),
     tratamiento: getRowTratamiento(row, ''),
     proveedor: getRowProveedor(row, ''),
@@ -152,6 +228,7 @@ module.exports = {
   getRowMetodoPago,
   getRowCategoria,
   getRowPaciente,
+  getRowPagador,
   getRowProfesional,
   getRowTratamiento,
   getRowProveedor,
