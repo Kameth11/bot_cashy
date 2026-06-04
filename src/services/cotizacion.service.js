@@ -25,7 +25,7 @@ async function obtenerCotizacionDolar() {
   try {
     const euro = await fetchCotizacionEuro();
     state.cotizacionEuro = euro;
-    console.log(`Cotizacion euro blue: $${euro}`);
+    console.log(`Cotizacion euro (BNA): $${euro}`);
   } catch (err) {
     console.error('Error al obtener cotizacion euro:', err.message);
   }
