@@ -18,7 +18,7 @@ async function crearTabTurnosSiNoExiste(userId) {
   if (!doc) return null;
   try {
     if (!doc.sheetsByTitle['Turnos']) {
-      const sheet = await doc.addSheet({ title: 'Turnos', rowCount: 500, columnCount: TURNOS_COLS.length });
+      const sheet = await doc.addSheet({ title: 'Turnos' });
       await sheet.setHeaderRow(TURNOS_COLS);
     }
     return doc.sheetsByTitle['Turnos'];
