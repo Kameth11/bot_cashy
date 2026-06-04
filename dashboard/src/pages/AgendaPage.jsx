@@ -108,7 +108,7 @@ export default function AgendaPage() {
       {/* Header */}
       <header style={{
         background: '#fff', borderBottom: '1px solid #e5e7eb',
-        padding: '16px 24px', position: 'sticky', top: 0, zIndex: 10,
+        padding: '10px 20px', position: 'sticky', top: 0, zIndex: 10,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <div>
@@ -118,12 +118,12 @@ export default function AgendaPage() {
         <button onClick={cargar} style={btnSecundario}>Actualizar</button>
       </header>
 
-      <main style={{ padding: '20px 24px', maxWidth: '860px', margin: '0 auto' }}>
+      <main style={{ padding: '10px 16px', maxWidth: '860px', margin: '0 auto' }}>
         {error && <div style={errorStyle}>{error}</div>}
 
         {/* Resumen */}
         {!loading && turnos.length > 0 && (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
             <Chip label="Pendientes" value={pendientes} color="#b45309" bg="#fef3c7" />
             <Chip label="Llegaron" value={llegaron} color="#1d4ed8" bg="#dbeafe" />
             <Chip label="Cobrados" value={cobrados} color="#166534" bg="#dcfce7" />
@@ -148,16 +148,16 @@ export default function AgendaPage() {
                   key={slot}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '64px 1fr',
+                    gridTemplateColumns: '56px 1fr',
                     borderBottom: i < SLOTS.length - 1 ? '1px solid #f1f5f9' : 'none',
-                    minHeight: '44px',
+                    minHeight: '32px',
                     background: turno ? '#fff' : (esMediaHora ? '#fafafa' : '#fff'),
                   }}
                 >
                   {/* Hora */}
                   <div style={{
-                    padding: '10px 12px',
-                    fontSize: esMediaHora ? '11px' : '13px',
+                    padding: '4px 8px',
+                    fontSize: esMediaHora ? '10px' : '11px',
                     fontWeight: esMediaHora ? 400 : 700,
                     color: esMediaHora ? '#cbd5e1' : '#64748b',
                     borderRight: '1px solid #f1f5f9',
@@ -169,29 +169,29 @@ export default function AgendaPage() {
                   </div>
 
                   {/* Contenido */}
-                  <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '3px 10px', gap: '8px' }}>
                     {turno ? (
                       <>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: '14px', color: '#1f2937' }}>
+                          <div style={{ fontWeight: 700, fontSize: '13px', color: '#1f2937' }}>
                             {turno.cliente || 'Sin nombre'}
+                            {(turno.servicio || turno.profesional) && (
+                              <span style={{ fontWeight: 400, color: '#64748b', marginLeft: '6px', fontSize: '11px' }}>
+                                {[turno.servicio, turno.profesional].filter(Boolean).join(' · ')}
+                              </span>
+                            )}
                           </div>
-                          {(turno.servicio || turno.profesional) && (
-                            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '1px' }}>
-                              {[turno.servicio, turno.profesional].filter(Boolean).join(' · ')}
-                            </div>
-                          )}
                         </div>
 
                         <EstadoBadge estado={turno.estado} />
 
                         {turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado' && (
-                          <div style={{ display: 'flex', gap: '6px' }}>
+                          <div style={{ display: 'flex', gap: '4px' }}>
                             {turno.estado !== 'Llegó' && (
                               <button
                                 onClick={() => handleLlego(turno)}
                                 disabled={accionando === turno.idTurno}
-                                style={{ ...btnSlot, background: '#eff6ff', color: '#2563eb' }}
+                                style={{ ...btnSlot, background: '#eff6ff', color: '#2563eb', padding: '3px 8px', fontSize: '11px' }}
                               >
                                 {accionando === turno.idTurno ? '...' : 'Llegó'}
                               </button>
@@ -199,7 +199,7 @@ export default function AgendaPage() {
                             <button
                               onClick={() => { setModalTurno(turno); setMonto(''); setMetodoPago('efectivo') }}
                               disabled={accionando === turno.idTurno}
-                              style={{ ...btnSlot, background: '#f0fdf4', color: '#16a34a' }}
+                              style={{ ...btnSlot, background: '#f0fdf4', color: '#16a34a', padding: '3px 8px', fontSize: '11px' }}
                             >
                               Cobrar
                             </button>
