@@ -17,11 +17,15 @@ async function crearTabTurnosSiNoExiste(userId) {
   const doc = await getDocCliente(userId, true);
   if (!doc) return null;
   try {
-    if (!doc.sheetsByTitle['Turnos']) {
-      const sheet = await doc.addSheet({ title: 'Turnos' });
-      await sheet.setHeaderRow(TURNOS_COLS);
+    if (doc.sheetsByTitle['Turnos']) {
+      return doc.sheetsByTitle['Turnos'];
     }
-    return doc.sheetsByTitle['Turnos'];
+    console.log('Creando tab Turnos...');
+    const sheet = await doc.addSheet({ title: 'Turnos' });
+    await sheet.setHeaderRow(TURNOS_COLS);
+    await sheet.loadHeaderRow();
+    console.log('Tab Turnos creada OK');
+    return sheet;
   } catch (err) {
     console.error('Error al crear tab Turnos:', err.message);
     return null;
@@ -34,6 +38,7 @@ async function guardarTurnosFlat(userId, turnos) {
 
   const fecha = fechaHoyStr();
   const ids = [];
+  console.log(`Guardando ${turnos.length} turnos en tab Turnos (${fecha})...`);
 
   for (const turno of turnos) {
     const idTurno = generarIDTurno();
