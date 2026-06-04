@@ -4,6 +4,7 @@ import { es } from 'date-fns/locale'
 import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import PlusButton from '../components/PlusButton'
+import CotizacionWidget from '../components/CotizacionWidget'
 
 function Dashboard() {
   const [filtro, setFiltro] = useState('mes')
@@ -123,6 +124,8 @@ function Dashboard() {
             {error}
           </div>
         )}
+
+        <CotizacionWidget />
 
         {/* Métricas */}
         <div style={{

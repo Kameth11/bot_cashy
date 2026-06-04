@@ -221,6 +221,67 @@ Cada usuario:
 - Verificar que `BOT_TOKEN` sea correcto
 - Obtener nuevo token de @BotFather si es necesario
 
+## Dashboard web
+
+El proyecto incluye un dashboard React en `/dashboard` para ver métricas y movimientos desde el browser.
+
+### Correr en desarrollo
+
+```bash
+# Terminal 1 — bot + API (puerto 3001)
+npm start
+
+# Terminal 2 — frontend (puerto 5173)
+npm run dashboard
+```
+
+### Login del dashboard
+
+1. El usuario debe haber iniciado el bot en Telegram con `/start` al menos una vez
+2. Ingresar el Telegram ID (se puede obtener enviando `/start` a `@userinfobot`)
+3. El bot envía un código de 6 dígitos por Telegram
+4. Ingresar el código → sesión válida por 7 días
+
+**Para desarrollo sin Telegram:** agregar `DASHBOARD_DEV_TOKEN=1234` al `.env`. Al loguearse, usar cualquier Telegram ID y `1234` como código.
+
+### Variables de entorno adicionales para el dashboard
+
+```env
+JWT_SECRET=cambiar-en-produccion          # Secret para tokens JWT del dashboard
+DASHBOARD_API_PORT=3001                    # Puerto de la API (default: 3001)
+DASHBOARD_ORIGINS=http://localhost:5173    # Orígenes CORS permitidos
+DASHBOARD_DEV_TOKEN=                       # Token bypass para dev (dejar vacío en producción)
+```
+
+### Deploy en Railway (un solo servicio)
+
+El build del dashboard se incluye en el deploy y Express sirve los archivos estáticos.
+
+```bash
+# Build local (verificar antes de subir)
+npm run build
+```
+
+**Variables adicionales en Railway:**
+```env
+DASHBOARD_ORIGINS=https://tu-app.railway.app
+VITE_API_URL=https://tu-app.railway.app
+```
+
+Railway usa el `Procfile` incluido que corre `npm run start:prod` (buildea el dashboard y arranca el servidor).
+
+---
+
+## Cotizaciones
+
+- **USD blue**: Bluelytics (`api.bluelytics.com.ar/v2/latest`)
+- **EUR**: dolarapi.com (`dolarapi.com/v1/cotizaciones`, cotización oficial BNA)
+- Se cargan al iniciar el bot y se **auto-refrescan cada 3 horas**
+- Endpoint público de la API: `GET /api/cotizacion` → `{dolar, euro, fecha}`
+- El dashboard muestra ambas cotizaciones con hora de última actualización
+
+---
+
 ## Notas
 
 - El bot usa la API de Bluelytics para obtener cotización del dólar blue

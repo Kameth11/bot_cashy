@@ -45,9 +45,12 @@ export function useAuth() {
           setUser(data.user);
           localStorage.setItem(USER_KEY, JSON.stringify(data.user));
         }
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(USER_KEY);
+      } catch (err) {
+        if (err.response?.status === 401) {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(USER_KEY);
+        }
+        // si el servidor está caído, mantener sesión local
       } finally {
         setLoading(false);
       }

@@ -46,15 +46,19 @@ require('./handlers/photo');
 require('./handlers/actions');
 require('./handlers/nlp-confirm');
 
-// Launch bot + API
+// Start API immediately (does not depend on bot)
+startApi().catch(err => console.error('Error al iniciar API:', err));
+
+// Launch bot independently
 bot.launch().then(async () => {
   console.log('Bot iniciado correctamente');
   initModel();
   await obtenerCotizacionDolar();
   console.log(`Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
-  await startApi();
+  const timer = setInterval(() => obtenerCotizacionDolar(), 3 * 60 * 60 * 1000);
+  if (timer.unref) timer.unref();
 }).catch(err => {
-  console.error('Error al iniciar:', err);
+  console.error('Error al iniciar bot:', err);
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));

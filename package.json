@@ -9,7 +9,9 @@
     "test": "jest --runInBand",
     "gemini:check": "node scripts/check-gemini-models.js",
     "dashboard": "cd dashboard && npm run dev",
-    "dashboard:build": "cd dashboard && npm run build"
+    "dashboard:build": "cd dashboard && npm install && npm run build",
+    "build": "cd dashboard && npm install && npm run build",
+    "start:prod": "npm run build && node src/index.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
