@@ -18,7 +18,8 @@ async function crearTabTurnosSiNoExiste(userId) {
   if (!doc) return null;
   try {
     if (!doc.sheetsByTitle['Turnos']) {
-      await doc.addSheet({ title: 'Turnos', headerValues: TURNOS_COLS, rowCount: 500, columnCount: TURNOS_COLS.length });
+      const sheet = await doc.addSheet({ title: 'Turnos', rowCount: 500, columnCount: TURNOS_COLS.length });
+      await sheet.setHeaderRow(TURNOS_COLS);
     }
     return doc.sheetsByTitle['Turnos'];
   } catch (err) {
