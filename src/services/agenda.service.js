@@ -1,5 +1,85 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 
+// ── Tab "Turnos" — estructura plana, consultable por fecha ──
+
+const TURNOS_COLS = ['ID_Turno', 'Fecha', 'Hora', 'Cliente', 'Servicio', 'Profesional', 'Consultorio', 'Estado'];
+
+function generarIDTurno() {
+  return `turno_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+}
+
+function fechaHoyStr() {
+  const now = new Date();
+  return `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+}
+
+async function crearTabTurnosSiNoExiste(userId) {
+  const doc = await getDocCliente(userId, true);
+  if (!doc) return null;
+  try {
+    if (!doc.sheetsByTitle['Turnos']) {
+      await doc.addSheet({ title: 'Turnos', headerValues: TURNOS_COLS, rowCount: 500, columnCount: TURNOS_COLS.length });
+    }
+    return doc.sheetsByTitle['Turnos'];
+  } catch (err) {
+    console.error('Error al crear tab Turnos:', err.message);
+    return null;
+  }
+}
+
+async function guardarTurnosFlat(userId, turnos) {
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+
+  const fecha = fechaHoyStr();
+  const ids = [];
+
+  for (const turno of turnos) {
+    const idTurno = generarIDTurno();
+    ids.push(idTurno);
+    await sheet.addRow({
+      ID_Turno: idTurno,
+      Fecha: fecha,
+      Hora: turno.hora || '',
+      Cliente: turno.cliente || '',
+      Servicio: turno.servicio || '',
+      Profesional: turno.profesional || '',
+      Consultorio: turno.consultorio || '',
+      Estado: 'Pendiente',
+    });
+  }
+
+  return ids;
+}
+
+async function obtenerTurnosPorFecha(userId, fechaStr) {
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) return [];
+  const rows = await sheet.getRows();
+  return rows
+    .filter(r => r.get('Fecha') === fechaStr)
+    .map(r => ({
+      idTurno: r.get('ID_Turno'),
+      fecha: r.get('Fecha'),
+      hora: r.get('Hora'),
+      cliente: r.get('Cliente'),
+      servicio: r.get('Servicio'),
+      profesional: r.get('Profesional'),
+      consultorio: r.get('Consultorio'),
+      estado: r.get('Estado'),
+    }));
+}
+
+async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+  const rows = await sheet.getRows();
+  const row = rows.find(r => r.get('ID_Turno') === idTurno);
+  if (!row) throw new Error(`Turno ${idTurno} no encontrado`);
+  row.set('Estado', nuevoEstado);
+  await row.save();
+}
+
 const BLOCK_WIDTH = 5;
 const BLOCK_SPACING = 1;
 const BLOCK_HEADERS = ['Hora', 'Cliente', 'Servicio', 'Estado', 'Fecha'];
@@ -170,4 +250,8 @@ async function guardarTurnosAgenda(userId, turnos) {
 module.exports = {
   crearTabAgendaSiNoExiste,
   guardarTurnosAgenda,
+  guardarTurnosFlat,
+  obtenerTurnosPorFecha,
+  actualizarEstadoTurno,
+  fechaHoyStr,
 };

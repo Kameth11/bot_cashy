@@ -8,7 +8,7 @@ const { invalidateCache } = require('../services/sheet.service');
 const { formatMonto, escapeMarkdown } = require('../utils/formatter');
 const { convertirAPesos } = require('../services/movimiento.service');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
-const { guardarTurnosAgenda } = require('../services/agenda.service');
+const { guardarTurnosAgenda, guardarTurnosFlat } = require('../services/agenda.service');
 const { aplicarColorMontoEnFila } = require('../services/sheet-format.service');
 
 function confirmButtons(confirmAction, cancelAction) {
@@ -223,6 +223,9 @@ bot.action('confirm_agenda', async (ctx) => {
   try {
     await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
     const { guardados, errores, total, fechaStr, grupos = [] } = await guardarTurnosAgenda(userId, turnos);
+
+    // Guardar en tab plana Turnos (consultable por fecha)
+    try { await guardarTurnosFlat(userId, turnos); } catch (e) { console.error('guardarTurnosFlat:', e.message); }
     const huboErrores = errores > 0;
 
     await ctx.editMessageText(

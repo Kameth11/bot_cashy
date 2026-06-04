@@ -13,6 +13,11 @@ const {
   guardarMovimiento,
   calcularMontoPesos,
 } = require('../services/movimiento.service');
+const {
+  obtenerTurnosPorFecha,
+  actualizarEstadoTurno,
+  fechaHoyStr,
+} = require('../services/agenda.service');
 
 const app = express();
 
@@ -340,6 +345,82 @@ app.get('/api/metrics', authMiddleware, async (req, res) => {
     res.json({ texto });
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener métricas' });
+  }
+});
+
+// ── Agenda ──
+app.get('/api/agenda', authMiddleware, async (req, res) => {
+  try {
+    const fecha = req.query.fecha || fechaHoyStr();
+    const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
+    res.json({ turnos });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
+  try {
+    const { idTurno } = req.params;
+    const fecha = fechaHoyStr();
+    const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
+    const turno = turnos.find(t => t.idTurno === idTurno);
+
+    await actualizarEstadoTurno(req.user.userId, idTurno, 'Llegó');
+
+    try {
+      const { bot } = require('../lib/telegraf');
+      const lineas = [
+        `🔔 *Llegó el paciente*`,
+        `👤 ${turno?.cliente || 'Sin nombre'}`,
+        turno?.hora ? `⏰ ${turno.hora}` : null,
+        turno?.profesional ? `👨‍⚕️ ${turno.profesional}` : null,
+        turno?.servicio ? `🦷 ${turno.servicio}` : null,
+      ].filter(Boolean).join('\n');
+      await bot.telegram.sendMessage(config.AUTHORIZED_USER_ID, lineas, { parse_mode: 'Markdown' });
+    } catch (tgErr) {
+      console.error('Error Telegram llego:', tgErr.message);
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
+  try {
+    const { idTurno } = req.params;
+    const { monto, metodoPago, moneda = 'Pesos' } = req.body;
+
+    if (!monto || Number(monto) <= 0) {
+      return res.status(400).json({ error: 'monto requerido' });
+    }
+
+    const fecha = fechaHoyStr();
+    const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
+    const turno = turnos.find(t => t.idTurno === idTurno);
+    if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
+
+    await actualizarEstadoTurno(req.user.userId, idTurno, 'Cobrado');
+
+    await guardarMovimiento(req.user.userId, {
+      descripcion: `${turno.servicio || 'Turno'} - ${turno.cliente || 'Paciente'}`,
+      monto: Number(monto),
+      tipo: 'Ingreso',
+      moneda,
+      metodoPago: metodoPago || '',
+      estado: 'Cobrado',
+      pacienteNombre: turno.cliente || null,
+      profesionalNombre: turno.profesional || null,
+      tratamientoNombre: turno.servicio || null,
+      referenciaId: idTurno,
+      origenCarga: 'dashboard',
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
