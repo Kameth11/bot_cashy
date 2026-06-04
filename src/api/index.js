@@ -438,7 +438,7 @@ app.get('/api/cotizacion', (req, res) => {
 const DIST = path.join(__dirname, '../../dashboard/dist');
 if (fs.existsSync(DIST)) {
   app.use(express.static(DIST));
-  app.get('*', (req, res) => {
+  app.get('/{*path}', (req, res) => {
     if (!req.path.startsWith('/api/')) {
       res.sendFile(path.join(DIST, 'index.html'));
     }
