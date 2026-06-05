@@ -75,6 +75,9 @@ const docsCache = new TTLMap(2 * 60 * 60 * 1000);
 // Rate limits — ventana de 1 minuto
 const userRateLimits = new Map();
 
+// Usuarios con una llamada NLP en vuelo — previene doble procesamiento
+const processingNlp = new Set();
+
 module.exports = {
   get cotizacionDolar() { return cotizacionDolar; },
   set cotizacionDolar(val) { cotizacionDolar = val; },
@@ -101,4 +104,5 @@ module.exports = {
   pendingIngresoPacientes,
   docsCache,
   userRateLimits,
+  processingNlp,
 };

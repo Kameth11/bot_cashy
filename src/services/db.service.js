@@ -766,10 +766,13 @@ function buildV2SupabaseRowWrapper(userId, row) {
     },
     async delete() {
       const supabase2 = getSupabase();
-      await supabase2
+      const { error: deleteError } = await supabase2
         .from('movimientos_v2')
         .delete()
         .eq('id', this.id);
+      if (deleteError) {
+        throw new Error(`Supabase movimientos_v2 delete failed: ${deleteError.message}`);
+      }
     },
     _sortKey: row.fecha_carga || row.created_at || null,
   };

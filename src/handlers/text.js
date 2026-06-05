@@ -704,55 +704,61 @@ bot.on('text', async (ctx) => {
 
   const match = text.match(regexMsg);
   if (!match) {
-    const quickResult = quickParse(text);
-    if (shouldHandleWithQuickParseFirst(quickResult)) {
-      try {
-        const handled = await handleNLPIntent(ctx, quickResult);
-        if (handled) return;
-      } catch (e) {
-        console.error('Error quick NLP:', e.message);
-      }
+    if (state.processingNlp.has(userId)) {
+      return ctx.reply('⏳ Espera, todavía estoy procesando tu mensaje anterior...');
     }
-
-    if (geminiService.canAttemptRemoteNlp()) {
-      await ctx.reply('🧠 Procesando...').catch(() => {});
-
-      try {
-        // Try targeted movement extractor first (cheaper, handles Euros)
-        const movResult = await geminiService.parseMovimientoEntidades(userId, text);
-        if (movResult && movResult.entities && movResult.entities.monto) {
-          const handled = await handleNLPIntent(ctx, movResult);
+    state.processingNlp.add(userId);
+    try {
+      const quickResult = quickParse(text);
+      if (shouldHandleWithQuickParseFirst(quickResult)) {
+        try {
+          const handled = await handleNLPIntent(ctx, quickResult);
           if (handled) return;
+        } catch (e) {
+          console.error('Error quick NLP:', e.message);
         }
+      }
 
-        // Fall back to full intent+entity NLP for other intents
-        const nlpResult = await geminiService.parseMessage(userId, text);
-        if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
-          const handled = await handleNLPIntent(ctx, nlpResult);
+      if (geminiService.canAttemptRemoteNlp()) {
+        await ctx.reply('🧠 Procesando...').catch(() => {});
+
+        try {
+          const movResult = await geminiService.parseMovimientoEntidades(userId, text);
+          if (movResult && movResult.entities && movResult.entities.monto) {
+            const handled = await handleNLPIntent(ctx, movResult);
+            if (handled) return;
+          }
+
+          const nlpResult = await geminiService.parseMessage(userId, text);
+          if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
+            const handled = await handleNLPIntent(ctx, nlpResult);
+            if (handled) return;
+          }
+        } catch (nlpError) {
+          console.error('Error NLP fallback:', nlpError.message);
+        }
+      }
+
+      if (quickResult) {
+        try {
+          const handled = await handleNLPIntent(ctx, quickResult);
           if (handled) return;
+        } catch (e) {
+          console.error('Error quick NLP:', e.message);
         }
-      } catch (nlpError) {
-        console.error('Error NLP fallback:', nlpError.message);
       }
-    }
 
-    if (quickResult) {
-      try {
-        const handled = await handleNLPIntent(ctx, quickResult);
-        if (handled) return;
-      } catch (e) {
-        console.error('Error quick NLP:', e.message);
-      }
+      return ctx.reply(
+        'No entendí bien ese mensaje 🤔\n\n' +
+        'Podés intentar con un formato más claro, por ejemplo:\n' +
+        '  • consulta Juan $15000 efectivo\n' +
+        '  • gasto insumos $500 transferencia\n' +
+        '  • me deben €200 de García\n\n' +
+        'O usá /registrar para cargarlo paso a paso.'
+      );
+    } finally {
+      state.processingNlp.delete(userId);
     }
-
-    return ctx.reply(
-      'No entendí bien ese mensaje 🤔\n\n' +
-      'Podés intentar con un formato más claro, por ejemplo:\n' +
-      '  • consulta Juan $15000 efectivo\n' +
-      '  • gasto insumos $500 transferencia\n' +
-      '  • me deben €200 de García\n\n' +
-      'O usá /registrar para cargarlo paso a paso.'
-    );
   }
 
   const comando = match[1].toLowerCase();

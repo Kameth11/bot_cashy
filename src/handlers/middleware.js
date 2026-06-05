@@ -38,7 +38,11 @@ bot.use((ctx, next) => {
     return;
   }
 
-  state.userRateLimits.set(userId, { timestamps, notifiedAt: 0 });
+  if (timestamps.length === 0) {
+    state.userRateLimits.delete(userId);
+  } else {
+    state.userRateLimits.set(userId, { timestamps, notifiedAt: 0 });
+  }
 
   const text = ctx.message && typeof ctx.message.text === 'string' ? ctx.message.text : null;
   if (text && text.length > MAX_TEXT_LENGTH) {
