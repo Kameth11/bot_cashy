@@ -234,10 +234,12 @@ function initModel() {
 function getCachedResult(userId, text) {
   const key = `${userId}:${text.toLowerCase().trim()}`;
   const cached = nlpCache.get(key);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.result;
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp >= CACHE_TTL_MS) {
+    nlpCache.delete(key);
+    return null;
   }
-  return null;
+  return cached.result;
 }
 
 function setCachedResult(userId, text, result) {
@@ -651,7 +653,10 @@ async function parseMovimientoEntidades(userId, text) {
 
   const cacheKey = `mov:${userId}:${text.toLowerCase().trim()}`;
   const cached = nlpCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
+  if (cached) {
+    if (Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
+    nlpCache.delete(cacheKey);
+  }
 
   const ai = getGenAI();
   if (!ai) return null;
