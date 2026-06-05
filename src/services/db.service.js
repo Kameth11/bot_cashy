@@ -610,10 +610,13 @@ function buildLegacySupabaseRowWrapper(userId, row) {
           delete updates.medio_pago;
           delete updates.referencia_id;
         }
-        await supabase2
+        const { error: updateError } = await supabase2
           .from('movimientos')
           .update(updates)
           .eq('id', this.id);
+        if (updateError) {
+          throw new Error(`Supabase movimientos update failed: ${updateError.message}`);
+        }
         try {
           await syncRowUpdateToSheet(userId, row.id_unico, updates);
         } catch (sheetError) {
@@ -917,7 +920,6 @@ async function addRow(userId, rowData, options = {}) {
 
   if (error) {
     console.error('Supabase addRow error:', error.message);
-    // fallback to sheet
     try {
       const sheet = await getSheetService().getSheetCliente(userId);
       if (sheet) {
@@ -928,7 +930,7 @@ async function addRow(userId, rowData, options = {}) {
     } catch (e) {
       console.error('Sheet fallback error:', e.message);
     }
-    return rowData;
+    return null;
   }
 
   try {
