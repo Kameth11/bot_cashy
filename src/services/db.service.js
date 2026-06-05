@@ -321,7 +321,12 @@ async function syncLegacyUpdateToV2(supabase, userId, legacyRow, updates = {}) {
     currentV2 = await insertMovimientoV2FromLegacy(supabase, userId, rowData, legacyRow.id, {
       origenCarga: 'migracion',
     });
-    if (!currentV2) return;
+    if (!currentV2) {
+      // Insert may have failed due to a concurrent insert for the same legacy_row_id.
+      // Retry the lookup once before giving up so the update still applies.
+      currentV2 = await getMovimientoV2ByLegacyRowId(supabase, legacyRow.id);
+      if (!currentV2) return;
+    }
   }
 
   const nextPayload = buildMovimientoV2UpdatePayload({
@@ -634,10 +639,13 @@ function buildLegacySupabaseRowWrapper(userId, row) {
     async delete() {
       const supabase2 = getSupabase();
       const legacyRowId = row.id;
-      await supabase2
+      const { error: deleteError } = await supabase2
         .from('movimientos')
         .delete()
         .eq('id', this.id);
+      if (deleteError) {
+        throw new Error(`Supabase movimientos delete failed: ${deleteError.message}`);
+      }
       try {
         await syncRowDeleteToSheet(userId, row.id_unico);
       } catch (sheetError) {
