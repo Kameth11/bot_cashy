@@ -429,7 +429,7 @@ function normalizarNlpResult(parsed) {
   return normalized;
 }
 
-async function parseMessage(userId, text) {
+async function parseMessage(userId, text, _retryDepth = 0) {
   if (!GEMINI_API_KEY) {
     return null;
   }
@@ -567,9 +567,13 @@ async function parseMessage(userId, text) {
       activeModel = null;
       activeModelName = null;
       console.log('NLP: Modelo no encontrado (404), buscando otro...');
+      if (_retryDepth >= 1) {
+        console.error('NLP: 404 reiterado tras reintentar modelo, abortando.');
+        return null;
+      }
       const model = await findWorkingModel();
       if (model) {
-        return parseMessage(userId, text);
+        return parseMessage(userId, text, _retryDepth + 1);
       }
       return null;
     }
