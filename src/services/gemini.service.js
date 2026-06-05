@@ -631,19 +631,29 @@ function normalizarEntidadesMovimiento(raw) {
     return null;
   }
 
+  const pacienteNombre = normalizarEntidadNombre(raw.pacienteNombre);
+  const proveedorNombre = normalizarEntidadNombre(raw.proveedorNombre);
+  const tratamientoNombre = normalizarEntidadNombre(raw.tratamientoNombre);
+
+  // MOVIMIENTO_PROMPT no devuelve descripcion — derivarla de las entidades
+  // para evitar que el movimiento quede con descripción vacía y sea filtrado
+  // por obtenerDatosSheet.
+  const descripcion = pacienteNombre || proveedorNombre || tratamientoNombre || null;
+
   return {
     intent: 'registrar_movimiento',
     entities: {
       tipo,
+      descripcion,
       estado: raw.estado === 'Pendiente' ? 'Pendiente' : 'Cobrado',
       monto,
       moneda: normalizarMoneda(raw.moneda),
       metodo_pago: normalizarMetodoPago(raw.metodo_pago),
       categoria: normalizarCategoria(raw.categoria),
-      pacienteNombre: normalizarEntidadNombre(raw.pacienteNombre),
+      pacienteNombre,
       profesionalNombre: normalizarEntidadNombre(raw.profesionalNombre),
-      tratamientoNombre: normalizarEntidadNombre(raw.tratamientoNombre),
-      proveedorNombre: normalizarEntidadNombre(raw.proveedorNombre),
+      tratamientoNombre,
+      proveedorNombre,
     },
   };
 }

@@ -247,6 +247,7 @@ bot.on('text', async (ctx) => {
     if (result) {
       return ctx.reply(result.message, result.parse_mode ? { parse_mode: result.parse_mode } : undefined);
     }
+    return;
   }
 
   if (state.pendingIngresoPacientes.has(userId)) {
@@ -459,6 +460,7 @@ bot.on('text', async (ctx) => {
     } catch (error) {
       console.error('Error en pendingDescripcion:', error.message);
       ctx.reply('❌ Error al registrar movimiento. Intentá de nuevo o usa /ayuda.').catch(() => {});
+      return;
     }
   }
 
