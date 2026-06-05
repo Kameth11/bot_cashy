@@ -422,6 +422,11 @@ function normalizarNlpResult(parsed) {
     } else {
       normalized.entities.monto = null;
     }
+
+    if (!normalized.entities.monto && !normalized.entities.descripcion) {
+      console.error(`NLP: registrar_movimiento descartado — monto y descripcion son null`);
+      return null;
+    }
   }
 
   if (['cobrar_movimiento', 'editar_movimiento', 'eliminar_movimiento'].includes(normalized.intent)) {

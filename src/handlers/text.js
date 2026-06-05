@@ -748,11 +748,10 @@ bot.on('text', async (ctx) => {
     return ctx.reply(
       'No entendí bien ese mensaje 🤔\n\n' +
       'Podés intentar con un formato más claro, por ejemplo:\n' +
-      '  • `consulta Juan $15000 efectivo`\n' +
-      '  • `gasto insumos $500 transferencia`\n' +
-      '  • `me deben €200 de García`\n\n' +
-      'O usá /registrar para cargarlo paso a paso.',
-      { parse_mode: 'Markdown' }
+      '  • consulta Juan $15000 efectivo\n' +
+      '  • gasto insumos $500 transferencia\n' +
+      '  • me deben €200 de García\n\n' +
+      'O usá /registrar para cargarlo paso a paso.'
     );
   }
 
