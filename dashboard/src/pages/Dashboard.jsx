@@ -52,17 +52,47 @@ function Dashboard() {
   }, [range])
 
   const metricas = useMemo(() => {
-    const ingresos = movimientos
-      .filter(m => m.tipo?.toLowerCase() === 'ingreso' && m.estado?.toLowerCase() === 'cobrado')
-      .reduce((acc, m) => acc + Math.abs(Number(m.monto || 0)), 0)
-
-    const egresos = movimientos
-      .filter(m => m.tipo?.toLowerCase() === 'egreso')
-      .reduce((acc, m) => acc + Math.abs(Number(m.monto || 0)), 0)
-
+    const cobrados = movimientos.filter(m =>
+      m.tipo?.toLowerCase() === 'ingreso' && m.estado?.toLowerCase() === 'cobrado'
+    )
+    const egresosArr = movimientos.filter(m => m.tipo?.toLowerCase() === 'egreso')
     const pendientes = movimientos.filter(m => m.estado?.toLowerCase() === 'pendiente').length
 
-    return { ingresos, egresos, pendientes, neto: ingresos - egresos }
+    const sumPesos = (arr) =>
+      arr.reduce((acc, m) => acc + Math.abs(Number(m.montoPesos || m.monto || 0)), 0)
+
+    const buildBreakdown = (arr, sign = 1) => {
+      const result = {}
+      for (const m of arr) {
+        const moneda = m.moneda || 'Pesos'
+        if (!result[moneda]) result[moneda] = { monto: 0, montoPesos: 0 }
+        result[moneda].monto     += sign * Math.abs(Number(m.monto || 0))
+        result[moneda].montoPesos += sign * Math.abs(Number(m.montoPesos || m.monto || 0))
+      }
+      return result
+    }
+
+    const bIng = buildBreakdown(cobrados, 1)
+    const bEgr = buildBreakdown(egresosArr, -1)
+    const bNeto = { ...bIng }
+    for (const [moneda, vals] of Object.entries(bEgr)) {
+      if (!bNeto[moneda]) bNeto[moneda] = { monto: 0, montoPesos: 0 }
+      bNeto[moneda].monto      += vals.monto
+      bNeto[moneda].montoPesos += vals.montoPesos
+    }
+
+    const ingresos = sumPesos(cobrados)
+    const egresos  = sumPesos(egresosArr)
+
+    return {
+      ingresos,
+      egresos,
+      pendientes,
+      neto: ingresos - egresos,
+      bIngresos: bIng,
+      bEgresos: buildBreakdown(egresosArr, 1),
+      bNeto,
+    }
   }, [movimientos])
 
   return (
@@ -138,11 +168,13 @@ function Dashboard() {
             label="Ingresos"
             value={`$${metricas.ingresos.toLocaleString('es-AR')}`}
             variant="ingresos"
+            breakdown={metricas.bIngresos}
           />
           <MetricCard
             label="Egresos"
             value={`$${metricas.egresos.toLocaleString('es-AR')}`}
             variant="egresos"
+            breakdown={metricas.bEgresos}
           />
           <MetricCard
             label="Pendientes"
@@ -153,6 +185,7 @@ function Dashboard() {
             label="Neto"
             value={`${metricas.neto < 0 ? '-' : ''}$${Math.abs(metricas.neto).toLocaleString('es-AR')}`}
             variant="neto"
+            breakdown={metricas.bNeto}
           />
         </div>
 
@@ -194,13 +227,8 @@ function Dashboard() {
                       <td style={tdStyle}>{formatFecha(mov.fecha)}</td>
                       <td style={tdStyle}>{mov.descripcion}</td>
                       <td style={{ ...tdStyle, color: '#64748b' }}>{mov.profesional || '-'}</td>
-                      <td style={{
-                        ...tdStyle,
-                        textAlign: 'right',
-                        fontWeight: 700,
-                        color: mov.tipo?.toLowerCase() === 'ingreso' ? '#10b981' : '#ef4444'
-                      }}>
-                        {mov.tipo?.toLowerCase() === 'egreso' ? '-' : ''}${Math.abs(Number(mov.monto || 0)).toLocaleString('es-AR')}
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <MontoCell mov={mov} />
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <EstadoBadge estado={mov.estado} />
@@ -213,6 +241,53 @@ function Dashboard() {
           )}
         </div>
       </main>
+    </div>
+  )
+}
+
+const MONEDA_CONFIG = {
+  'Dólares': { simbolo: 'U$S', badge: 'USD', badgeBg: '#dbeafe', badgeColor: '#1d4ed8' },
+  'Euros':   { simbolo: '€',   badge: 'EUR', badgeBg: '#fef9c3', badgeColor: '#92400e' },
+}
+
+function MontoCell({ mov }) {
+  const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
+  const colorMonto = esEgreso ? '#ef4444' : '#10b981'
+  const moneda = mov.moneda || 'Pesos'
+  const cfg = MONEDA_CONFIG[moneda]
+  const abs = Math.abs(Number(mov.monto || 0))
+  const absPesos = Math.abs(Number(mov.montoPesos || 0))
+
+  const montoStr = cfg
+    ? `${cfg.simbolo} ${abs.toLocaleString('es-AR')}`
+    : `$${abs.toLocaleString('es-AR')}`
+
+  return (
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        {cfg && (
+          <span style={{
+            display: 'inline-block',
+            padding: '2px 6px',
+            borderRadius: '6px',
+            fontSize: '10px',
+            fontWeight: 700,
+            background: cfg.badgeBg,
+            color: cfg.badgeColor,
+            letterSpacing: '0.03em',
+          }}>
+            {cfg.badge}
+          </span>
+        )}
+        <span style={{ fontWeight: 700, color: colorMonto }}>
+          {esEgreso ? '-' : ''}{montoStr}
+        </span>
+      </div>
+      {cfg && absPesos > 0 && (
+        <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+          ≈ ${absPesos.toLocaleString('es-AR')} pesos
+        </span>
+      )}
     </div>
   )
 }
