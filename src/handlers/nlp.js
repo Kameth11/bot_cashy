@@ -156,7 +156,65 @@ const INTENT_HANDLERS = {
       referenciaId: entities.referenciaId || null,
       notas: entities.notas || null,
     });
-  }
+  },
+
+  // Cobro parcial con deuda residual
+  // Registra dos movimientos en un solo mensaje:
+  //   1. Ingreso Cobrado  por montoCobrado
+  //   2. Ingreso Pendiente por montoDeuda
+  cobro_parcial_con_deuda: async (ctx, entities) => {
+    const userId = ctx.from.id;
+    const {
+      descripcion,
+      montoCobrado, monedaCobrada,
+      montoDeuda, monedaDeuda,
+      pacienteNombre, profesionalNombre, tratamientoNombre,
+      metodo_pago,
+    } = entities;
+
+    if (!montoCobrado || !montoDeuda) {
+      return ctx.reply('⚠️ No pude determinar los dos montos. Intentá: `cobré 30000 y debe 30000`', { parse_mode: 'Markdown' });
+    }
+
+    // 1. Guardar la parte cobrada
+    const resCobrado = await cmd.guardarMovimiento(userId, {
+      descripcion: descripcion || 'Cobro parcial',
+      monto: montoCobrado,
+      tipo: 'Ingreso',
+      moneda: monedaCobrada || 'Pesos',
+      metodo_pago: metodo_pago || null,
+      estado: 'Cobrado',
+      categoria: 'cobro_pendiente',
+      pacienteNombre: pacienteNombre || null,
+      profesionalNombre: profesionalNombre || null,
+      tratamientoNombre: tratamientoNombre || null,
+    });
+
+    // 2. Guardar la deuda restante como Pendiente
+    const resPendiente = await cmd.guardarMovimiento(userId, {
+      descripcion: descripcion || 'Cobro parcial',
+      monto: montoDeuda,
+      tipo: 'Ingreso',
+      moneda: monedaDeuda || 'Pesos',
+      metodo_pago: null,
+      estado: 'Pendiente',
+      categoria: 'cobro_pendiente',
+      pacienteNombre: pacienteNombre || null,
+      profesionalNombre: profesionalNombre || null,
+      tratamientoNombre: tratamientoNombre || null,
+    });
+
+    const { formatMonto } = require('../utils/formatter');
+    const nombreTexto = pacienteNombre ? ` — ${pacienteNombre}` : '';
+
+    return ctx.reply(
+      `✅ *Cobro parcial registrado*${nombreTexto}\n\n` +
+      `💰 Cobrado: ${formatMonto(montoCobrado, monedaCobrada || 'Pesos')}${metodo_pago ? ` (${metodo_pago})` : ''}\n` +
+      `⏳ Pendiente: ${formatMonto(montoDeuda, monedaDeuda || 'Pesos')}\n\n` +
+      `_Cuando lo cobres usá:_ \`/cobrar${pacienteNombre ? ` ${pacienteNombre}` : ' ultimo'}\``,
+      { parse_mode: 'Markdown' }
+    );
+  },
 };
 
 async function handleNLPIntent(ctx, nlpResult) {

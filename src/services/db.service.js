@@ -1042,6 +1042,49 @@ async function upsertProfile(userId, profileData) {
   return true;
 }
 
+// Encuentra una fila por ID único entre los wrappers ya cargados o haciendo una carga fresca
+async function findRowByIdUnico(userId, idUnico) {
+  const rows = await getRows(userId);
+  return rows.find(row => {
+    const id = typeof row.get === 'function'
+      ? row.get('ID_Unico') || row.get('ID_unico') || row.get('idunico')
+      : row.idUnico;
+    return id === idUnico;
+  }) || null;
+}
+
+// Actualiza un movimiento por ID único.
+async function updateMovimiento(userId, idUnico, updates) {
+  const row = await findRowByIdUnico(userId, idUnico);
+  if (!row) throw new Error('movimiento_no_encontrado');
+
+  const fieldMap = {
+    descripcion: 'Descripcion',
+    monto:       'Monto',
+    estado:      'Estado',
+    moneda:      'Moneda',
+    metodoPago:  'MetodoPago',
+    metodo_pago: 'MetodoPago',
+    montoPesos:  'MontoPesos',
+  };
+
+  for (const [key, value] of Object.entries(updates)) {
+    const col = fieldMap[key];
+    if (col !== undefined) row.set(col, value);
+  }
+
+  await row.save();
+  invalidateCache(userId);
+}
+
+// Elimina un movimiento por ID único.
+async function deleteMovimiento(userId, idUnico) {
+  const row = await findRowByIdUnico(userId, idUnico);
+  if (!row) throw new Error('movimiento_no_encontrado');
+  await row.delete();
+  invalidateCache(userId);
+}
+
 module.exports = {
   getSheetId,
   invalidateCache,
@@ -1050,6 +1093,9 @@ module.exports = {
   obtenerDatosSheet,
   addRow,
   getRows,
+  findRowByIdUnico,
+  updateMovimiento,
+  deleteMovimiento,
   getProfile,
   upsertProfile,
 };

@@ -187,6 +187,26 @@ dashboard/src/
 
 ---
 
+## Feature: Cobro parcial con deuda residual
+
+Intent: `cobro_parcial_con_deuda` en `nlp.js`
+Parser: `matchCobroParcialConDeuda` en `quick_nlp.service.js` (regex, va primero en quickParse)
+
+Frases que entiende:
+- `pagaron 30000 y debe 30000`
+- `Juan pagó 20000 y queda debiendo 15000`
+- `cobré 15000 y le quedan 10000`
+- `me pagaron 50k pero me siguen debiendo 20k`
+- `María pagó 30 lucas y le faltan 20 lucas`
+
+Genera dos movimientos en un solo mensaje:
+1. Ingreso `Cobrado` por `montoCobrado`
+2. Ingreso `Pendiente` por `montoDeuda` (misma descripción/paciente)
+
+Para cobrar el pendiente después: `/cobrar [nombre]` o `ya me pagó [nombre]`
+
+---
+
 ## Comandos existentes del bot
 
 `/balance` `/hoy` `/semana` `/mes` `/ingresos` `/egresos` `/pendientes`

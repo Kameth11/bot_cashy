@@ -14,6 +14,10 @@ const {
   calcularMontoPesos,
 } = require('../services/movimiento.service');
 const {
+  updateMovimiento,
+  deleteMovimiento,
+} = require('../services/db.service');
+const {
   obtenerTurnosPorFecha,
   actualizarEstadoTurno,
   fechaHoyStr,
@@ -320,6 +324,52 @@ app.post('/api/movimientos', authMiddleware, async (req, res) => {
   }
 });
 
+// ── Movimientos: update ──
+app.put('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
+  try {
+    const { idUnico } = req.params;
+    const body = req.body || {};
+
+    const updates = {};
+    if (body.descripcion !== undefined) updates.descripcion = String(body.descripcion).trim();
+    if (body.monto       !== undefined) updates.monto       = parseFloat(body.monto);
+    if (body.estado      !== undefined) updates.estado      = ['Cobrado', 'Pendiente'].includes(body.estado) ? body.estado : undefined;
+    if (body.metodoPago  !== undefined) updates.metodoPago  = body.metodoPago || '';
+    if (body.moneda      !== undefined) updates.moneda      = ['Pesos', 'Dólares', 'Euros'].includes(body.moneda) ? body.moneda : undefined;
+
+    // Limpiar undefined
+    Object.keys(updates).forEach(k => updates[k] === undefined && delete updates[k]);
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No hay campos válidos para actualizar' });
+    }
+
+    await updateMovimiento(req.user.userId, idUnico, updates);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.message === 'movimiento_no_encontrado') {
+      return res.status(404).json({ error: 'Movimiento no encontrado' });
+    }
+    console.error('Error PUT /api/movimientos:', err);
+    res.status(500).json({ error: 'Error al actualizar movimiento' });
+  }
+});
+
+// ── Movimientos: delete ──
+app.delete('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
+  try {
+    const { idUnico } = req.params;
+    await deleteMovimiento(req.user.userId, idUnico);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.message === 'movimiento_no_encontrado') {
+      return res.status(404).json({ error: 'Movimiento no encontrado' });
+    }
+    console.error('Error DELETE /api/movimientos:', err);
+    res.status(500).json({ error: 'Error al eliminar movimiento' });
+  }
+});
+
 // ── Profesionales ──
 app.get('/api/profesionales', authMiddleware, async (req, res) => {
   try {
@@ -360,35 +410,6 @@ app.get('/api/agenda', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
-  try {
-    const { idTurno } = req.params;
-    const fecha = fechaHoyStr();
-    const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
-    const turno = turnos.find(t => t.idTurno === idTurno);
-
-    await actualizarEstadoTurno(req.user.userId, idTurno, 'Llegó');
-
-    try {
-      const { bot } = require('../lib/telegraf');
-      const lineas = [
-        `🔔 *Llegó el paciente*`,
-        `👤 ${turno?.cliente || 'Sin nombre'}`,
-        turno?.hora ? `⏰ ${turno.hora}` : null,
-        turno?.profesional ? `👨‍⚕️ ${turno.profesional}` : null,
-        turno?.servicio ? `🦷 ${turno.servicio}` : null,
-      ].filter(Boolean).join('\n');
-      await bot.telegram.sendMessage(config.AUTHORIZED_USER_ID, lineas, { parse_mode: 'Markdown' });
-    } catch (tgErr) {
-      console.error('Error Telegram llego:', tgErr.message);
-    }
-
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
   try {
     const { idTurno } = req.params;
     const { monto, metodoPago, moneda = 'Pesos' } = req.body;

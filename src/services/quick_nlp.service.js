@@ -681,11 +681,67 @@ function matchEntityIntent(text) {
   return null;
 }
 
+// ── Cobro parcial con deuda residual ─────────────────────────────────────────
+// Cubre: "pagaron 30000 y debe 30000", "cobré 20k y le quedan 15000",
+//        "Juan pagó 10000 pero me sigue debiendo 20000", etc.
+// Retorna intent especial `cobro_parcial_con_deuda` con dos montos y el nombre.
+function matchCobroParcialConDeuda(rawText, text) {
+  // El patrón busca: [nombre?] [verbo_cobro] [monto_A] [conector] [verbo_deuda] [monto_B]
+  const patron = /^(.*?)\s*(?:me\s+)?(?:pag[oó]|pagaron|abon[oó]|abonaron|deposit[oó]|depositaron|transfirio|transfiri[oó]|transfirieron|cobr[eé]|cobramos|entregaron?|dio|dieron?)\s+(.+?)\s+(?:y|pero|aunque)\s+(?:todav[ií]a\s+)?(?:me\s+)?(?:debe[n]?|queda[n]?\s*(?:debiendo)?|queda\s+debiendo|siguen?\s+debiendo|resta[n]?|le\s+queda[n]?|le\s+falta[n]?|falta[n]?|adeuda[n]?)\s+(.+)$/i;
+
+  const match = rawText.trim().match(patron);
+  if (!match) return null;
+
+  const nombreRaw = match[1].trim();
+  const partePagada = match[2].trim();
+  const parteDeuda  = match[3].trim();
+
+  const montoPagado = extraerMonto(partePagada);
+  const montoDeuda  = extraerMonto(parteDeuda);
+
+  // Necesitamos los dos montos para que tenga sentido el patrón
+  if (!montoPagado || !montoDeuda) return null;
+
+  // Si los montos vienen del mismo texto sin prefijo de nombre, intentar extraer el nombre del rawText completo
+  const nombre = limpiarEntidad(nombreRaw) || extraerPaciente(rawText, 'cobro_pendiente', null, null);
+  const metodo_pago = extraerMetodo(text);
+  const profesionalNombre = extraerProfesional(rawText);
+  const tratamientoNombre = extraerTratamiento(rawText, 'tratamiento');
+
+  // La descripción base: si hay nombre la usamos, sino la parte pagada limpia
+  const descripcionBase = nombre
+    ? nombre
+    : capitalizarFrase(limpiarTextoPendienteBase(rawText)) || 'Cobro';
+
+  return {
+    intent: 'cobro_parcial_con_deuda',
+    entities: {
+      // Porción cobrada
+      montoCobrado: montoPagado.monto,
+      monedaCobrada: montoPagado.moneda,
+      // Porción que queda debiendo
+      montoDeuda: montoDeuda.monto,
+      monedaDeuda: montoDeuda.moneda,
+      // Datos compartidos
+      descripcion: descripcionBase,
+      pacienteNombre: nombre || null,
+      profesionalNombre,
+      tratamientoNombre,
+      metodo_pago,
+    }
+  };
+}
+
 function quickParse(rawText) {
   const text = normalizar(rawText);
   if (!text || text.length < 2) return null;
 
   if (/^(?:si|no|s|n|yes|y|ok|dale|bueno|vale)$/i.test(text)) return null;
+
+  // Cobro parcial con deuda residual va primero porque contiene dos montos
+  // y los matchers generales lo partirían mal
+  const cobroParcial = matchCobroParcialConDeuda(rawText, text);
+  if (cobroParcial) return cobroParcial;
 
   const pendienteResult = matchRegistrarPendiente(rawText, text);
   if (pendienteResult) return pendienteResult;
