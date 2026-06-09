@@ -10,7 +10,7 @@
     "gemini:check": "node scripts/check-gemini-models.js",
     "dashboard": "cd dashboard && npm run dev",
     "dashboard:build": "cd dashboard && npm install && npm run build",
-    "build": "cd dashboard && npm install && npm run build",
+    "build": "cd dashboard && npm install --include=dev && npm run build",
     "start:prod": "npm run build && node src/index.js"
   },
   "dependencies": {
