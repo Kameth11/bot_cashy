@@ -408,9 +408,12 @@ app.get('/api/cotizacion', (req, res) => {
 // ── Servir dashboard estatico (produccion) ──
 const DIST = path.join(__dirname, '../../dashboard/dist');
 if (fs.existsSync(DIST)) {
-  app.use(express.static(DIST));
+  app.use(express.static(DIST, { etag: true, maxAge: '7d' }));
   app.get('/{*path}', (req, res) => {
-    if (!req.path.startsWith('/api/')) res.sendFile(path.join(DIST, 'index.html'));
+    if (!req.path.startsWith('/api/')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.sendFile(path.join(DIST, 'index.html'));
+    }
   });
 }
 
