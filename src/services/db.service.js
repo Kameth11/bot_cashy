@@ -1042,14 +1042,32 @@ async function upsertProfile(userId, profileData) {
   return true;
 }
 
-// Encuentra una fila por ID único entre los wrappers ya cargados o haciendo una carga fresca
+// Encuentra una fila por ID único entre los wrappers ya cargados o haciendo una carga fresca.
+// Usa getRowIdUnico para manejar todas las variantes de nombre de columna.
 async function findRowByIdUnico(userId, idUnico) {
+  if (!idUnico) return null;
   const rows = await getRows(userId);
   return rows.find(row => {
-    const id = typeof row.get === 'function'
-      ? row.get('ID_Unico') || row.get('ID_unico') || row.get('idunico')
-      : row.idUnico;
-    return id === idUnico;
+    // Wrappers de Supabase y filas de Sheets — ambos implementan .get()
+    if (typeof row.get === 'function') {
+      return getRowIdUnico(row, '') === idUnico;
+    }
+    return row.idUnico === idUnico;
+  }) || null;
+}
+
+// Fallback: encuentra una fila por descripción + monto cuando no tiene ID_Unico.
+// Se usa para limpiar filas viejas desde el dashboard.
+async function findRowByCompositeKey(userId, { descripcion, monto, fecha }) {
+  const rows = await getRows(userId);
+  const montoNum = parseFloat(monto);
+  return rows.find(row => {
+    const desc = typeof row.get === 'function' ? (row.get('Descripcion') || row.get('descripcion') || '') : (row.descripcion || '');
+    const mont = typeof row.get === 'function' ? parseFloat(row.get('Monto') || row.get('monto') || 0) : parseFloat(row.monto || 0);
+    const fec  = typeof row.get === 'function' ? (row.get('Fecha') || row.get('fecha') || '') : (row.fecha || '');
+    return desc.trim().toLowerCase() === String(descripcion || '').trim().toLowerCase()
+      && Math.abs(mont - montoNum) < 0.01
+      && (!fecha || fec.includes(String(fecha).substring(0, 5))); // compara dd/mm al menos
   }) || null;
 }
 
@@ -1085,6 +1103,14 @@ async function deleteMovimiento(userId, idUnico) {
   invalidateCache(userId);
 }
 
+// Elimina un movimiento por clave compuesta (para filas sin ID_Unico).
+async function deleteMovimientoByKey(userId, compositeKey) {
+  const row = await findRowByCompositeKey(userId, compositeKey);
+  if (!row) throw new Error('movimiento_no_encontrado');
+  await row.delete();
+  invalidateCache(userId);
+}
+
 module.exports = {
   getSheetId,
   invalidateCache,
@@ -1094,8 +1120,10 @@ module.exports = {
   addRow,
   getRows,
   findRowByIdUnico,
+  findRowByCompositeKey,
   updateMovimiento,
   deleteMovimiento,
+  deleteMovimientoByKey,
   getProfile,
   upsertProfile,
 };

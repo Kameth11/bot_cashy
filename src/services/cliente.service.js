@@ -96,6 +96,29 @@ async function guardarClientes(clientesObj) {
   }
 }
 
+async function eliminarCliente(userId) {
+  const key = String(userId);
+  const existia = Boolean(clientes[key]);
+  delete clientes[key];
+
+  try {
+    fs.writeFileSync(CLIENTES_FILE, JSON.stringify(clientes, null, 2));
+  } catch (e) {
+    console.error('Error guardando clientes tras eliminar:', e.message);
+  }
+
+  if (USE_SUPABASE && isAvailable()) {
+    try {
+      const supabase = getSupabase();
+      await supabase.from('profiles').delete().eq('id', parseInt(key, 10));
+    } catch (e) {
+      console.error('Supabase eliminarCliente error:', e.message);
+    }
+  }
+
+  return existia;
+}
+
 async function getCliente(userId) {
   if (USE_SUPABASE && isAvailable()) {
     const supabase = getSupabase();
@@ -137,4 +160,5 @@ module.exports = {
   cargarClientes,
   guardarClientes,
   getCliente,
+  eliminarCliente,
 };

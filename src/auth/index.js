@@ -5,7 +5,8 @@ const state = require('../state');
 const CODIGO_EXPIRACION_MS = CODIGO_EXPIRACION_HORAS * 60 * 60 * 1000;
 
 function esAdminOriginal(userId) {
-  return AUTHORIZED_USER_ID && userId === AUTHORIZED_USER_ID;
+  // Coerce a número: el JWT guarda string, el config tiene int
+  return AUTHORIZED_USER_ID && Number(userId) === AUTHORIZED_USER_ID;
 }
 
 function esEmailAutorizado(email) {
@@ -15,9 +16,11 @@ function esEmailAutorizado(email) {
 
 function obtenerClientePorUserId(userId) {
   const clientes = clienteService.clientes;
+  const numId = Number(userId);
+  const strId = String(userId);
   for (const [ownerId, cliente] of Object.entries(clientes)) {
-    if (parseInt(ownerId) === userId) return { userId: ownerId, ownerId: ownerId, isOwner: true, ...cliente };
-    if (cliente.usuarios && cliente.usuarios.includes(userId)) {
+    if (parseInt(ownerId) === numId) return { userId: ownerId, ownerId: ownerId, isOwner: true, ...cliente };
+    if (cliente.usuarios && (cliente.usuarios.includes(strId) || cliente.usuarios.includes(numId))) {
       return { userId: ownerId, ownerId: ownerId, isOwner: false, ...cliente };
     }
   }

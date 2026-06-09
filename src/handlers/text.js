@@ -224,6 +224,12 @@ bot.on('text', async (ctx) => {
 
   if (text.startsWith('/')) return;
 
+  // Confirmación de /salir
+  const { procesarConfirmacionSalir } = require('./commands/salir');
+  if (state.pendingReinicios.has(`salir_${userId}`)) {
+    return procesarConfirmacionSalir(ctx);
+  }
+
   if (state.pendingReinicios.has(userId)) {
     return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
   }

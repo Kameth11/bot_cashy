@@ -168,6 +168,7 @@ const INTENT_HANDLERS = {
       descripcion,
       montoCobrado, monedaCobrada,
       montoDeuda, monedaDeuda,
+      montoTotal,
       pacienteNombre, profesionalNombre, tratamientoNombre,
       metodo_pago,
     } = entities;
@@ -176,8 +177,10 @@ const INTENT_HANDLERS = {
       return ctx.reply('⚠️ No pude determinar los dos montos. Intentá: `cobré 30000 y debe 30000`', { parse_mode: 'Markdown' });
     }
 
+    const { formatMonto } = require('../utils/formatter');
+
     // 1. Guardar la parte cobrada
-    const resCobrado = await cmd.guardarMovimiento(userId, {
+    await cmd.guardarMovimiento(userId, {
       descripcion: descripcion || 'Cobro parcial',
       monto: montoCobrado,
       tipo: 'Ingreso',
@@ -191,7 +194,7 @@ const INTENT_HANDLERS = {
     });
 
     // 2. Guardar la deuda restante como Pendiente
-    const resPendiente = await cmd.guardarMovimiento(userId, {
+    await cmd.guardarMovimiento(userId, {
       descripcion: descripcion || 'Cobro parcial',
       monto: montoDeuda,
       tipo: 'Ingreso',
@@ -204,13 +207,16 @@ const INTENT_HANDLERS = {
       tratamientoNombre: tratamientoNombre || null,
     });
 
-    const { formatMonto } = require('../utils/formatter');
     const nombreTexto = pacienteNombre ? ` — ${pacienteNombre}` : '';
+    const totalTexto = montoTotal
+      ? `\n📋 Total: ${formatMonto(montoTotal, monedaDeuda || 'Pesos')}`
+      : '';
 
     return ctx.reply(
       `✅ *Cobro parcial registrado*${nombreTexto}\n\n` +
       `💰 Cobrado: ${formatMonto(montoCobrado, monedaCobrada || 'Pesos')}${metodo_pago ? ` (${metodo_pago})` : ''}\n` +
-      `⏳ Pendiente: ${formatMonto(montoDeuda, monedaDeuda || 'Pesos')}\n\n` +
+      `⏳ Pendiente: ${formatMonto(montoDeuda, monedaDeuda || 'Pesos')}` +
+      `${totalTexto}\n\n` +
       `_Cuando lo cobres usá:_ \`/cobrar${pacienteNombre ? ` ${pacienteNombre}` : ' ultimo'}\``,
       { parse_mode: 'Markdown' }
     );

@@ -7,11 +7,16 @@ import PlusButton from '../components/PlusButton'
 import CotizacionWidget from '../components/CotizacionWidget'
 
 function Dashboard() {
-  const [filtro, setFiltro] = useState('mes')
+  const [filtro, setFiltro]       = useState('mes')
   const [movimientos, setMovimientos] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [reload, setReload] = useState(0)
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState(null)
+  const [reload, setReload]       = useState(0)
+
+  // Filtros locales (client-side sobre los datos ya cargados)
+  const [filtroTipo, setFiltroTipo]     = useState('')   // '' | 'Ingreso' | 'Egreso'
+  const [filtroEstado, setFiltroEstado] = useState('')   // '' | 'Cobrado' | 'Pendiente'
+  const [buscar, setBuscar]             = useState('')   // texto libre
 
   // Modal de edición
   const [editando, setEditando] = useState(null)       // mov object | null
@@ -102,29 +107,65 @@ function Dashboard() {
     }
   }, [movimientos])
 
+  // Movimientos visibles después de aplicar los filtros locales
+  const movimientosFiltrados = useMemo(() => {
+    let result = movimientos
+    if (filtroTipo)   result = result.filter(m => m.tipo?.toLowerCase() === filtroTipo.toLowerCase())
+    if (filtroEstado) result = result.filter(m => m.estado?.toLowerCase() === filtroEstado.toLowerCase())
+    if (buscar.trim()) {
+      const q = buscar.trim().toLowerCase()
+      result = result.filter(m =>
+        (m.descripcion || '').toLowerCase().includes(q) ||
+        (m.paciente    || '').toLowerCase().includes(q) ||
+        (m.profesional || '').toLowerCase().includes(q) ||
+        (m.categoria   || '').toLowerCase().includes(q)
+      )
+    }
+    return result
+  }, [movimientos, filtroTipo, filtroEstado, buscar])
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
+  const [modalError, setModalError] = useState(null)
+
   const handleGuardarEdicion = useCallback(async (idUnico, updates) => {
+    setModalError(null)
+    if (!idUnico) {
+      setModalError('Este movimiento no tiene ID único — editalo directamente en el Google Sheet.')
+      return
+    }
     setGuardando(true)
     try {
       await api.put(`/api/movimientos/${idUnico}`, updates)
       setEditando(null)
+      setModalError(null)
       setReload(r => r + 1)
     } catch (err) {
-      alert(err?.response?.data?.error || 'Error al guardar cambios')
+      const msg = err?.response?.data?.error || err?.message || 'Error al guardar cambios'
+      setModalError(msg)
     } finally {
       setGuardando(false)
     }
   }, [])
 
-  const handleConfirmarBorrado = useCallback(async (idUnico) => {
+  const handleConfirmarBorrado = useCallback(async (idUnico, mov) => {
+    setModalError(null)
     setBorrando(true)
     try {
-      await api.delete(`/api/movimientos/${idUnico}`)
+      if (idUnico) {
+        await api.delete(`/api/movimientos/${idUnico}`)
+      } else {
+        // Fallback para filas sin ID_Unico: busca por descripción + monto
+        await api.delete('/api/movimientos-by-key', {
+          data: { descripcion: mov.descripcion, monto: mov.monto, fecha: mov.fecha }
+        })
+      }
       setConfirmDelete(null)
+      setModalError(null)
       setReload(r => r + 1)
     } catch (err) {
-      alert(err?.response?.data?.error || 'Error al eliminar')
+      const msg = err?.response?.data?.error || err?.message || 'Error al eliminar'
+      setModalError(msg)
     } finally {
       setBorrando(false)
     }
@@ -137,16 +178,18 @@ function Dashboard() {
         <EditModal
           mov={editando}
           guardando={guardando}
+          error={modalError}
           onGuardar={handleGuardarEdicion}
-          onCerrar={() => setEditando(null)}
+          onCerrar={() => { setEditando(null); setModalError(null) }}
         />
       )}
       {confirmDelete && (
         <ConfirmDeleteModal
           mov={confirmDelete}
           borrando={borrando}
-          onConfirmar={() => handleConfirmarBorrado(confirmDelete.idUnico)}
-          onCancelar={() => setConfirmDelete(null)}
+          error={modalError}
+          onConfirmar={() => handleConfirmarBorrado(confirmDelete.idUnico, confirmDelete)}
+          onCancelar={() => { setConfirmDelete(null); setModalError(null) }}
         />
       )}
 
@@ -171,26 +214,78 @@ function Dashboard() {
       </header>
 
       <main style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto' }}>
-        {/* Filtros */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        {/* Filtros de período */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
           {['hoy', 'semana', 'mes'].map((p) => (
             <button
               key={p}
               onClick={() => setFiltro(p)}
               style={{
-                padding: '8px 18px',
-                borderRadius: '10px',
+                padding: '8px 18px', borderRadius: '10px',
                 border: '1px solid #e5e7eb',
                 background: filtro === p ? 'linear-gradient(135deg, #0ea5e9, #6366f1)' : '#fff',
                 color: filtro === p ? '#fff' : '#374151',
-                fontWeight: 600,
-                fontSize: '14px',
-                transition: 'background 0.15s',
+                fontWeight: 600, fontSize: '14px',
               }}
             >
               {p === 'hoy' ? 'Hoy' : p === 'semana' ? 'Semana' : 'Mes'}
             </button>
           ))}
+        </div>
+
+        {/* Filtros de tabla */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Buscador */}
+          <input
+            type="text"
+            placeholder="Buscar descripción, paciente..."
+            value={buscar}
+            onChange={e => setBuscar(e.target.value)}
+            style={{
+              padding: '8px 12px', borderRadius: '10px',
+              border: '1px solid #e5e7eb', fontSize: '14px',
+              flex: '1 1 200px', maxWidth: '320px', outline: 'none',
+            }}
+          />
+          {/* Tipo */}
+          <select
+            value={filtroTipo}
+            onChange={e => setFiltroTipo(e.target.value)}
+            style={selectFiltroStyle}
+          >
+            <option value="">Todos los tipos</option>
+            <option value="Ingreso">Ingresos</option>
+            <option value="Egreso">Egresos</option>
+          </select>
+          {/* Estado */}
+          <select
+            value={filtroEstado}
+            onChange={e => setFiltroEstado(e.target.value)}
+            style={selectFiltroStyle}
+          >
+            <option value="">Todos los estados</option>
+            <option value="Cobrado">Cobrado</option>
+            <option value="Pendiente">Pendiente</option>
+          </select>
+          {/* Limpiar filtros */}
+          {(filtroTipo || filtroEstado || buscar) && (
+            <button
+              onClick={() => { setFiltroTipo(''); setFiltroEstado(''); setBuscar('') }}
+              style={{
+                padding: '8px 14px', borderRadius: '10px',
+                border: '1px solid #fecaca', background: '#fef2f2',
+                color: '#dc2626', fontSize: '13px', fontWeight: 600,
+              }}
+            >
+              ✕ Limpiar
+            </button>
+          )}
+          {/* Contador */}
+          {movimientosFiltrados.length !== movimientos.length && (
+            <span style={{ fontSize: '13px', color: '#64748b' }}>
+              {movimientosFiltrados.length} de {movimientos.length}
+            </span>
+          )}
         </div>
 
         {error && (
@@ -231,13 +326,13 @@ function Dashboard() {
             </h2>
           </div>
 
-          {!movimientos.length && !loading && (
+          {!movimientosFiltrados.length && !loading && (
             <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-              Sin movimientos en este periodo
+              {movimientos.length > 0 ? 'Ningún movimiento coincide con los filtros' : 'Sin movimientos en este periodo'}
             </div>
           )}
 
-          {movimientos.length > 0 && (
+          {movimientosFiltrados.length > 0 && (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -251,7 +346,7 @@ function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {movimientos.map((mov, index) => (
+                  {movimientosFiltrados.map((mov, index) => (
                     <tr
                       key={mov.idUnico ?? mov.id ?? index}
                       style={{ borderBottom: '1px solid #f3f4f6' }}
@@ -321,7 +416,7 @@ function ActionBtn({ children, onClick, title, color }) {
   )
 }
 
-function EditModal({ mov, guardando, onGuardar, onCerrar }) {
+function EditModal({ mov, guardando, error, onGuardar, onCerrar }) {
   const [descripcion, setDescripcion] = useState(mov.descripcion || '')
   const [monto, setMonto]             = useState(String(Math.abs(Number(mov.monto || 0))))
   const [estado, setEstado]           = useState(mov.estado || 'Cobrado')
@@ -371,6 +466,11 @@ function EditModal({ mov, guardando, onGuardar, onCerrar }) {
               <option value="tarjeta">Tarjeta</option>
             </select>
           </label>
+          {error && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 12px', borderRadius: '8px', fontSize: '13px' }}>
+              {error}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
             <button type="button" onClick={onCerrar} style={btnSecStyle}>Cancelar</button>
             <button type="submit" disabled={guardando} style={btnPrimStyle}>
@@ -383,15 +483,20 @@ function EditModal({ mov, guardando, onGuardar, onCerrar }) {
   )
 }
 
-function ConfirmDeleteModal({ mov, borrando, onConfirmar, onCancelar }) {
+function ConfirmDeleteModal({ mov, borrando, error, onConfirmar, onCancelar }) {
   return (
     <div style={overlayStyle} onClick={onCancelar}>
       <div style={{ ...modalStyle, maxWidth: '380px' }} onClick={e => e.stopPropagation()}>
         <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '12px' }}>¿Eliminar movimiento?</h3>
         <p style={{ color: '#374151', fontSize: '14px', marginBottom: '6px' }}>{mov.descripcion}</p>
-        <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>
+        <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '16px' }}>
           {formatFecha(mov.fecha)} · {mov.estado}
         </p>
+        {error && (
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
+            {error}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
           <button onClick={onCancelar} style={btnSecStyle}>Cancelar</button>
           <button onClick={onConfirmar} disabled={borrando} style={{ ...btnPrimStyle, background: '#ef4444' }}>
@@ -509,6 +614,12 @@ const btnPrimStyle = {
   padding: '9px 18px', borderRadius: '8px', border: 'none',
   background: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
   color: '#fff', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+}
+
+const selectFiltroStyle = {
+  padding: '8px 12px', borderRadius: '10px',
+  border: '1px solid #e5e7eb', fontSize: '14px',
+  background: '#fff', color: '#374151', cursor: 'pointer', outline: 'none',
 }
 
 export default Dashboard

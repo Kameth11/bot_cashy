@@ -20,6 +20,112 @@ function confirmButtons(confirmAction, cancelAction) {
   ]);
 }
 
+// ── Helper: construye el teclado de lista para /eliminar ──────────────────────
+function buildDeleteListKeyboard(items, query) {
+  const titulo = query
+    ? `🗑️ *Resultados para "${escapeMarkdown(query)}"*\n\nElegí el movimiento:`
+    : `🗑️ *Últimos movimientos*\n\nElegí el que querés eliminar:`;
+
+  const filas = items.map((item, i) => {
+    const desc = item.desc.length > 24 ? item.desc.substring(0, 24) + '…' : item.desc;
+    const fechaCorta = item.fecha ? item.fecha.substring(0, 5) : '';
+    const label = `${fechaCorta ? fechaCorta + ' · ' : ''}${desc} · ${formatMonto(item.monto, item.moneda)}`;
+    return [Markup.button.callback(label, `del_pick_${i}`)];
+  });
+  filas.push([Markup.button.callback('❌ Cancelar', 'del_cancel')]);
+
+  return { titulo, keyboard: Markup.inlineKeyboard(filas) };
+}
+
+// ── Selección de ítem de la lista de eliminar ─────────────────────────────────
+bot.action(/^del_pick_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const index = parseInt(ctx.match[1]);
+
+  const pending = state.pendingDeletes.get(userId);
+  if (!pending || pending.type !== 'list') {
+    return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /eliminar de nuevo.');
+  }
+
+  const item = pending.items[index];
+  if (!item) return ctx.editMessageText('❌ Elemento no encontrado.');
+
+  pending.step = 'confirm';
+  pending.selectedIndex = index;
+  state.pendingDeletes.set(userId, pending);
+
+  const tipo = item.monto < 0 ? '📤 Egreso' : '📥 Ingreso';
+  const msg =
+    `⚠️ *¿Eliminar este movimiento?*\n\n` +
+    `${tipo}\n` +
+    `📝 ${escapeMarkdown(item.desc)}\n` +
+    `💰 ${formatMonto(Math.abs(item.monto), item.moneda)}\n` +
+    `📅 ${item.fecha || 'Sin fecha'}\n\n` +
+    `_Esta acción no se puede deshacer_`;
+
+  await ctx.editMessageText(msg, {
+    parse_mode: 'Markdown',
+    reply_markup: Markup.inlineKeyboard([
+      [
+        Markup.button.callback('✅ Sí, eliminar', 'del_conf'),
+        Markup.button.callback('↩️ Volver', 'del_back'),
+      ]
+    ]).reply_markup,
+  });
+});
+
+// ── Confirmar eliminación ─────────────────────────────────────────────────────
+bot.action('del_conf', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingDeletes.get(userId);
+
+  if (!pending || pending.type !== 'list' || pending.step !== 'confirm') {
+    return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /eliminar de nuevo.');
+  }
+
+  const item = pending.items[pending.selectedIndex];
+  state.pendingDeletes.delete(userId);
+
+  try {
+    await item.fila.delete();
+    invalidateCache(userId);
+    await ctx.editMessageText(
+      `✅ *Eliminado*\n\n📝 ${escapeMarkdown(item.desc)}\n💰 ${formatMonto(Math.abs(item.monto), item.moneda)}`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err) {
+    console.error('Error al eliminar desde lista:', err.message);
+    await ctx.editMessageText('❌ Error al eliminar. Verificá los logs.');
+  }
+});
+
+// ── Volver a la lista ─────────────────────────────────────────────────────────
+bot.action('del_back', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingDeletes.get(userId);
+
+  if (!pending || pending.type !== 'list') {
+    return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /eliminar de nuevo.');
+  }
+
+  pending.step = 'select';
+  pending.selectedIndex = null;
+  state.pendingDeletes.set(userId, pending);
+
+  const { titulo, keyboard } = buildDeleteListKeyboard(pending.items, pending.query);
+  await ctx.editMessageText(titulo, { parse_mode: 'Markdown', ...keyboard });
+});
+
+// ── Cancelar lista de eliminar ────────────────────────────────────────────────
+bot.action('del_cancel', async (ctx) => {
+  await ctx.answerCbQuery();
+  state.pendingDeletes.delete(ctx.from.id);
+  await ctx.editMessageText('❌ Cancelado.');
+});
+
 bot.action('confirm_delete', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
@@ -28,7 +134,13 @@ bot.action('confirm_delete', async (ctx) => {
     return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
   }
 
-  const { fila, index, desc } = state.pendingDeletes.get(userId);
+  const pending = state.pendingDeletes.get(userId);
+  // Si el estado es del nuevo formato (lista), ignorar — lo maneja del_conf
+  if (pending.type === 'list') {
+    return ctx.editMessageText('⚠️ Usá los botones del mensaje anterior.');
+  }
+
+  const { fila, index, desc } = pending;
   state.pendingDeletes.delete(userId);
 
   try {
@@ -249,4 +361,4 @@ bot.action('cancel_agenda', async (ctx) => {
   await ctx.editMessageText('❌ Turnos descartados.');
 });
 
-module.exports = { confirmButtons };
+module.exports = { confirmButtons, buildDeleteListKeyboard };

@@ -37,6 +37,8 @@ require('./handlers/commands/reiniciar');
 require('./handlers/commands/regenerar_ids');
 require('./handlers/commands/palabras');
 require('./handlers/commands/sheet');
+require('./handlers/commands/salir');
+require('./handlers/commands/nlptest');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');

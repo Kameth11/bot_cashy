@@ -65,6 +65,7 @@ function extraerMonto(rawText) {
   const usdPatterns = [
     /u\$s?\s*(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/i,
     /usd\s*(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/i,
+    /(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es?)?)?\s+d[oó]lares?\b/i,
   ];
   for (const p of usdPatterns) {
     const m = rawText.match(p);
@@ -78,14 +79,14 @@ function extraerMonto(rawText) {
   const pesoPatterns = [
     /\$\s*(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)?/i,
     /(\d+(?:[.,]\d{1,2})?)\s*(lucas?|luca|mil|k|palos?|palo|millon(?:es)?)\b/i,
-    /(\d+(?:[.,]\d{1,2})?)\s*(?:pesos|mangos|guita|plata|dolares?|usd)/i,
+    /(\d+(?:[.,]\d{1,2})?)\s*(?:pesos|mangos|guita|plata|d[oó]lares?|usd)/i,
   ];
   for (const p of pesoPatterns) {
     const m = rawText.match(p);
     if (m && m[1]) {
       const val = normalizarNumero(`${m[1]}${m[2] ? ` ${m[2]}` : ''}`);
       if (val && val > 0) {
-        const isUsd = /u\$s?|usd|dolar/i.test(rawText.substring(Math.max(0, m.index - 5), m.index + m[0].length + 5));
+        const isUsd = /u\$s?|usd|d[oó]lar/i.test(rawText.substring(Math.max(0, m.index - 5), m.index + m[0].length + 5));
         return { monto: val, moneda: isUsd ? 'Dólares' : 'Pesos' };
       }
     }
@@ -95,7 +96,7 @@ function extraerMonto(rawText) {
   if (simple && simple[1]) {
     const val = normalizarNumero(`${simple[1]}${simple[2] ? ` ${simple[2]}` : ''}`);
     if (val && val > 0) {
-      const isUsd = /u\$s?|usd|dolar/i.test(rawText);
+      const isUsd = /u\$s?|usd|d[oó]lar/i.test(rawText);
       return { monto: val, moneda: isUsd ? 'Dólares' : 'Pesos' };
     }
   }
@@ -133,32 +134,85 @@ function capitalizarFrase(text) {
 }
 
 const TRATAMIENTO_KEYWORDS = [
+  // Cirugía e implantes
   'implante',
+  'implantologia',
+  'implantología',
+  'cirugia',
+  'cirugía',
+  // Ortodoncia
   'ortodoncia',
+  'brackets',
+  'retenedor',
+  'contencion',
+  'contención',
+  'alineador',
+  'invisalign',
+  // Endodoncia
   'endodoncia',
-  'limpieza',
-  'blanqueamiento',
-  'extraccion',
-  'extracción',
-  'carilla',
+  'conducto',
+  'tratamiento de conducto',
+  'perno',
+  // Prótesis y coronas
   'corona',
   'protesis',
   'prótesis',
-  'brackets',
-  'perno',
-  'conducto',
+  'carilla',
+  'incrustacion',
+  'incrustación',
+  'puente',
+  'retenedor',
+  'zirconia',
+  'porcelana',
+  // Periodoncia
+  'limpieza',
+  'raspado',
+  'periodoncia',
+  'encias',
+  'encías',
+  'tratamiento periodontal',
+  // Blanqueamiento
+  'blanqueamiento',
+  'blanqueo',
+  // Operatoria
+  'caries',
+  'obturacion',
+  'obturación',
+  'composite',
+  'amalgama',
+  'sellante',
+  // Extracciones
+  'extraccion',
+  'extracción',
+  'muela del juicio',
+  'cordal',
+  // Consulta
+  'consulta',
+  'revision',
+  'revisión',
+  'rx',
+  'radiografia',
+  'radiografía',
+  // Odontopediatría
+  'pediatrica',
+  'pediátrica',
+  'sellador',
+  'corona de acero',
+  'fluor',
+  'flúor',
 ];
 
 const EGRESO_CATEGORY_PATTERNS = [
-  { categoria: 'sueldos', pattern: /sueld/i },
-  { categoria: 'honorarios', pattern: /honorario/i },
-  { categoria: 'insumos', pattern: /insumo|guante|bracket|anestesia|material/i },
+  { categoria: 'sueldos', pattern: /sueld|sueldo|emplead|asistente|recepcionista|secretaria/i },
+  { categoria: 'honorarios', pattern: /honorario|honorarios/i },
+  { categoria: 'insumos', pattern: /insumo|guante|bracket|anestesia|material|cartucho|aguja|jeringa|algod[oó]n|hilo|sutura|composite|amalgama|cemento|yeso|alginato|silicona|fresas?|turbina|pieza\s+de\s+mano/i },
   { categoria: 'alquiler', pattern: /alquiler/i },
   { categoria: 'expensas', pattern: /expensa/i },
-  { categoria: 'servicios', pattern: /luz|agua|internet|telefono|servicio/i },
-  { categoria: 'impuestos', pattern: /impuesto|iva|ingresos\s+brutos|ganancia|monotributo/i },
-  { categoria: 'mantenimiento', pattern: /mantenimiento|autoclave|rayos\s*x|sillon|equipo|reparacion/i },
-  { categoria: 'software', pattern: /software|sistema|licencia|suscripcion/i },
+  { categoria: 'servicios', pattern: /luz|agua|internet|telefono|tel[eé]fono|gas|servicio|celular|fibra/i },
+  { categoria: 'impuestos', pattern: /impuesto|iva|ingresos\s+brutos|ganancia|monotributo|afip|arba|agip|tributo/i },
+  { categoria: 'mantenimiento', pattern: /mantenimiento|autoclave|esterilizaci[oó]n|rayos\s*x|sillon|equipo|reparaci[oó]n|plomero|gasista|electricista|técnico|tecnico|limpiezas?/i },
+  { categoria: 'software', pattern: /software|sistema|licencia|suscripcion|suscripción|turno|odontograma|crm|gestion|gestión/i },
+  { categoria: 'otro_egreso', pattern: /farmacia|medicamento|medicaci[oó]n/i },
 ];
 
 function limpiarEntidad(text) {
@@ -683,32 +737,58 @@ function matchEntityIntent(text) {
 
 // ── Cobro parcial con deuda residual ─────────────────────────────────────────
 // Cubre: "pagaron 30000 y debe 30000", "cobré 20k y le quedan 15000",
-//        "Juan pagó 10000 pero me sigue debiendo 20000", etc.
-// Retorna intent especial `cobro_parcial_con_deuda` con dos montos y el nombre.
+//        "Juan pagó 10000 pero me sigue debiendo 20000",
+//        "pagaron 300 euros y faltan 200 restantes",
+//        "pagaron 300 euros y faltan 200 más", etc.
+// Retorna intent `cobro_parcial_con_deuda` con dos montos y el nombre.
 function matchCobroParcialConDeuda(rawText, text) {
-  // El patrón busca: [nombre?] [verbo_cobro] [monto_A] [conector] [verbo_deuda] [monto_B]
-  const patron = /^(.*?)\s*(?:me\s+)?(?:pag[oó]|pagaron|abon[oó]|abonaron|deposit[oó]|depositaron|transfirio|transfiri[oó]|transfirieron|cobr[eé]|cobramos|entregaron?|dio|dieron?)\s+(.+?)\s+(?:y|pero|aunque)\s+(?:todav[ií]a\s+)?(?:me\s+)?(?:debe[n]?|queda[n]?\s*(?:debiendo)?|queda\s+debiendo|siguen?\s+debiendo|resta[n]?|le\s+queda[n]?|le\s+falta[n]?|falta[n]?|adeuda[n]?)\s+(.+)$/i;
+  // Verbos de cobro que inician el patrón
+  const VERBOS_COBRO = 'pag[oó]|pagaron|abon[oó]|abonaron|deposit[oó]|depositaron|transfirio|transfiri[oó]|transfirieron|cobr[eé]|cobramos|entregaron?|dio|dieron?';
 
-  const match = rawText.trim().match(patron);
+  // Verbos/frases que introducen la deuda restante
+  const VERBOS_DEUDA = 'debe[n]?|queda[n]?\\s*(?:debiendo)?|queda\\s+debiendo|siguen?\\s+debiendo|resta[n]?|le\\s+queda[n]?|le\\s+falta[n]?|falta[n]?(?:\\s+(?:abonar|cobrar|pagar))?|adeuda[n]?|est[aá]n?\\s+pendiente[s]?|hay\\s+pendiente[s]?|por\\s+cobrar|por\\s+pagar';
+
+  // Patrón 1: con conector explícito (y/pero/aunque)
+  // "pagaron 300 y faltan 200", "cobré 50 pero deben 150"
+  const patron1 = new RegExp(
+    `^(.*?)\\s*(?:me\\s+)?(?:${VERBOS_COBRO})\\s+(.+?)\\s+(?:y|pero|aunque)\\s+(?:todav[ií]a\\s+)?(?:me\\s+)?(?:${VERBOS_DEUDA})\\s+(.+)$`,
+    'i'
+  );
+
+  // Patrón 2: sin conector — el VERBO_DEUDA aparece directamente después del primer monto
+  // "pagaron 500k de ortodoncia mariana en efectivo faltan 1 millon"
+  // "cobré 300 euros transferencia falta 200"
+  const patron2 = new RegExp(
+    `^(.*?)\\s*(?:me\\s+)?(?:${VERBOS_COBRO})\\s+(.+?)\\s+(?:${VERBOS_DEUDA})\\s+(.+)$`,
+    'i'
+  );
+
+  const match = rawText.trim().match(patron1) || rawText.trim().match(patron2);
   if (!match) return null;
 
   const nombreRaw = match[1].trim();
   const partePagada = match[2].trim();
-  const parteDeuda  = match[3].trim();
+  // Limpiar calificadores que van DESPUÉS del número de deuda
+  const parteDeuda = match[3].trim()
+    .replace(/\s+(?:restantes?|más?|mas|pendientes?|aun|aún|por\s+cobrar|por\s+pagar)$/i, '')
+    .trim();
 
   const montoPagado = extraerMonto(partePagada);
   const montoDeuda  = extraerMonto(parteDeuda);
 
-  // Necesitamos los dos montos para que tenga sentido el patrón
   if (!montoPagado || !montoDeuda) return null;
 
-  // Si los montos vienen del mismo texto sin prefijo de nombre, intentar extraer el nombre del rawText completo
+  // Inferir moneda de la deuda si no tiene marcador explícito pero el cobro sí
+  const tieneMonedaExplicitaDeuda = /€|euros?|u\$s?|usd|dolares?|\$/.test(parteDeuda);
+  if (!tieneMonedaExplicitaDeuda && montoPagado.moneda !== 'Pesos') {
+    montoDeuda.moneda = montoPagado.moneda;
+  }
+
   const nombre = limpiarEntidad(nombreRaw) || extraerPaciente(rawText, 'cobro_pendiente', null, null);
   const metodo_pago = extraerMetodo(text);
   const profesionalNombre = extraerProfesional(rawText);
   const tratamientoNombre = extraerTratamiento(rawText, 'tratamiento');
 
-  // La descripción base: si hay nombre la usamos, sino la parte pagada limpia
   const descripcionBase = nombre
     ? nombre
     : capitalizarFrase(limpiarTextoPendienteBase(rawText)) || 'Cobro';
@@ -716,13 +796,75 @@ function matchCobroParcialConDeuda(rawText, text) {
   return {
     intent: 'cobro_parcial_con_deuda',
     entities: {
-      // Porción cobrada
       montoCobrado: montoPagado.monto,
       monedaCobrada: montoPagado.moneda,
-      // Porción que queda debiendo
       montoDeuda: montoDeuda.monto,
       monedaDeuda: montoDeuda.moneda,
-      // Datos compartidos
+      descripcion: descripcionBase,
+      pacienteNombre: nombre || null,
+      profesionalNombre,
+      tratamientoNombre,
+      metodo_pago,
+    }
+  };
+}
+
+// ── Pago sobre un total conocido ──────────────────────────────────────────────
+// Cubre: "cobré 300 de 500 euros para ortodoncia de Juan"
+//        "pagaron 200 de un total de 1000 para implante"
+//        "Juan pagó 400 de 600 dólares"
+// Calcula automáticamente la deuda = total - cobrado.
+function matchPagoConTotal(rawText, text) {
+  const VERBOS_COBRO = 'pag[oó]|pagaron|abon[oó]|abonaron|deposit[oó]|depositaron|transfiri[oó]|transfirieron|cobr[eé]|cobramos|entregaron?|dio|dieron?';
+
+  const patron = new RegExp(
+    `^(.*?)\\s*(?:me\\s+)?(?:${VERBOS_COBRO})\\s+(.+?)\\s+de\\s+(?:un\\s+total\\s+de\\s+|total\\s+de\\s+)?(.+)$`,
+    'i'
+  );
+
+  const match = rawText.trim().match(patron);
+  if (!match) return null;
+
+  const nombreRaw  = match[1].trim();
+  const parteCobrada = match[2].trim();
+  const parteTotal   = match[3].trim();
+
+  // Si la parte "total" contiene indicadores de deuda restante (falta/quedan/restan/etc.),
+  // no es un patrón "de X total" — es "falta X" y lo debe manejar matchCobroParcialConDeuda.
+  const DEUDA_EN_TOTAL = /\b(?:falta[n]?|resta[n]?|queda[n]?(?:\s+debiendo)?|debe[n]?|adeuda[n]?|pendiente[s]?)\b/i;
+  if (DEUDA_EN_TOTAL.test(parteTotal)) return null;
+
+  const montoCobrado = extraerMonto(parteCobrada);
+  const montoTotal   = extraerMonto(parteTotal);
+
+  // Ambos deben ser montos válidos y el total tiene que ser mayor
+  if (!montoCobrado || !montoTotal) return null;
+  if (montoTotal.monto <= montoCobrado.monto) return null;
+
+  // La moneda del total tiene precedencia; si no la tiene, hereda del cobrado
+  const moneda = montoTotal.moneda !== 'Pesos' ? montoTotal.moneda : montoCobrado.moneda;
+  const montoDeuda = Math.round((montoTotal.monto - montoCobrado.monto) * 100) / 100;
+
+  // Para el nombre, sólo usamos lo que vino antes del verbo — no el rawText completo
+  // porque "de X total" sería extraído como nombre por extraerPaciente
+  const nombre = limpiarEntidad(nombreRaw) || null;
+  const metodo_pago = extraerMetodo(text);
+  const profesionalNombre = extraerProfesional(rawText);
+  const tratamientoNombre = extraerTratamiento(parteTotal, 'tratamiento')
+    || extraerTratamiento(rawText, 'tratamiento');
+
+  const descripcionBase = nombre
+    ? nombre
+    : capitalizarFrase(limpiarTextoPendienteBase(parteTotal)) || 'Cobro';
+
+  return {
+    intent: 'cobro_parcial_con_deuda',
+    entities: {
+      montoCobrado: montoCobrado.monto,
+      monedaCobrada: moneda,
+      montoDeuda,
+      monedaDeuda: moneda,
+      montoTotal: montoTotal.monto,
       descripcion: descripcionBase,
       pacienteNombre: nombre || null,
       profesionalNombre,
@@ -742,6 +884,10 @@ function quickParse(rawText) {
   // y los matchers generales lo partirían mal
   const cobroParcial = matchCobroParcialConDeuda(rawText, text);
   if (cobroParcial) return cobroParcial;
+
+  // "cobré 300 de 500 euros"
+  const pagoConTotal = matchPagoConTotal(rawText, text);
+  if (pagoConTotal) return pagoConTotal;
 
   const pendienteResult = matchRegistrarPendiente(rawText, text);
   if (pendienteResult) return pendienteResult;
