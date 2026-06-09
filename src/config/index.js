@@ -34,6 +34,9 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const USE_SUPABASE = process.env.USE_SUPABASE === 'true';
 
+const DASHBOARD_URL = process.env.DASHBOARD_URL ||
+  (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '');
+
 if (!BOT_TOKEN || !SPREADSHEET_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
   console.error('Faltan variables de entorno. Revisa tu archivo .env');
   process.exit(1);
@@ -68,4 +71,5 @@ module.exports = {
   SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY,
   USE_SUPABASE,
+  DASHBOARD_URL,
 };
