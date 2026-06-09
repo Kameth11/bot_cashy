@@ -4,41 +4,48 @@ const state = require('../state');
 const { handleSheetCommand } = require('./commands/sheet');
 const { confirmButtons } = require('./actions');
 const { mostrarConfirmacion } = require('./nlp-confirm');
+const { DASHBOARD_URL } = require('../config');
+
+function replyWithDashboard(ctx, msg) {
+  const extra = { parse_mode: 'Markdown' };
+  if (DASHBOARD_URL) extra.reply_markup = { inline_keyboard: [[{ text: '📊 Ver Dashboard', url: DASHBOARD_URL }]] };
+  return ctx.reply(msg, extra);
+}
 
 const INTENT_HANDLERS = {
   ver_balance: async (ctx, entities) => {
     const msg = await cmd.ejecutarBalance(ctx.from.id);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    return replyWithDashboard(ctx, msg);
   },
 
   ver_hoy: async (ctx, entities) => {
     const msg = await cmd.ejecutarHoy(ctx.from.id);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    return replyWithDashboard(ctx, msg);
   },
 
   ver_semana: async (ctx, entities) => {
     const msg = await cmd.ejecutarSemana(ctx.from.id);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    return replyWithDashboard(ctx, msg);
   },
 
   ver_mes: async (ctx, entities) => {
     const msg = await cmd.ejecutarMes(ctx.from.id);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    return replyWithDashboard(ctx, msg);
   },
 
   ver_ingresos: async (ctx, entities) => {
     const msg = await cmd.ejecutarIngresos(ctx.from.id);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    return replyWithDashboard(ctx, msg);
   },
 
   ver_egresos: async (ctx, entities) => {
     const msg = await cmd.ejecutarEgresos(ctx.from.id);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    return replyWithDashboard(ctx, msg);
   },
 
   ver_pendientes: async (ctx, entities) => {
     const msg = await cmd.ejecutarPendientes(ctx.from.id);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    return replyWithDashboard(ctx, msg);
   },
 
   ver_dolar: async (ctx, entities) => {
