@@ -27,9 +27,10 @@ const clienteService = require('../services/cliente.service');
 
 const app = express();
 
-const ALLOWED_ORIGINS = (process.env.DASHBOARD_ORIGINS || 'http://localhost:5173')
-  .split(',')
-  .map(o => o.trim());
+const ALLOWED_ORIGINS = [
+  ...(process.env.DASHBOARD_ORIGINS || 'http://localhost:5173').split(',').map(o => o.trim()),
+  ...(process.env.RAILWAY_PUBLIC_DOMAIN ? [`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`] : []),
+];
 
 app.use(cors({
   origin: (origin, cb) => {
