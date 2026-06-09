@@ -190,6 +190,11 @@ async function handlePendingRegistration(userId, text) {
     return handleSheetIdStep(userId, text, registro);
   }
 
+  if (registro.step === 'profesional_nombre') {
+    const { handleProfesionalNombreStep } = require('../handlers/commands/profesional');
+    return handleProfesionalNombreStep(userId, text);
+  }
+
   return { message: '❌ Estado de registro inválido. Usa /cancelar y vuelve a intentar.' };
 }
 

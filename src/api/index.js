@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const config = require('../config');
+const { notificarLlegadaPaciente } = require('../services/profesional.service');
 const { getSupabase, isAvailable } = require('../lib/supabase');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { obtenerDatosSheet } = require('../services/sheet.service');
@@ -362,6 +363,11 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
       referenciaId: idTurno, origenCarga: 'dashboard',
     });
     invalidarCacheMovimientos(req.user.userId);
+
+    if (turno.profesional) {
+      notificarLlegadaPaciente(turno.profesional, turno.cliente, turno.hora, turno.servicio).catch(() => {});
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
