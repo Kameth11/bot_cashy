@@ -22,13 +22,54 @@ Registra ingresos/egresos en lenguaje natural y los guarda en Google Sheets indi
 ```
 bot_cashy/
 ├── src/           # Código principal — entry point: src/index.js
+│   ├── handlers/  # Comandos (commands/), texto, fotos, callbacks NLP
+│   ├── services/  # Lógica de negocio (db, sheet, gemini, quick_nlp, etc.)
+│   ├── lib/       # Clientes externos (telegraf, google, supabase)
+│   ├── auth/      # Autenticación / autorización de usuarios
+│   ├── state/     # TTLMaps de estados conversacionales pendientes
+│   ├── utils/     # Helpers (formatter, validation, sheet-row, movimiento-v2)
+│   └── config/    # Variables de entorno centralizadas
 ├── scripts/       # Scripts auxiliares
-├── sql/           # Migraciones / queries SQL
+├── sql/           # Migraciones / queries SQL (schema v1 y v2)
 ├── tests/         # Tests Jest
 ├── index.js       # LEGACY — no usar
 ├── jest.config.js
 └── package.json
 ```
+
+---
+
+## Arquitectura general
+
+### Bootstrap (`src/index.js`)
+
+1. Se registra middleware (auth, rate limiting, logging).
+2. Se registran ~30 comandos (`/start`, `/balance`, `/cobrar`, etc. — ver tabla más abajo).
+3. Se registran handlers de texto libre, fotos, y callbacks de botones (confirmación NLP).
+4. Se levanta la API del dashboard (`startApi()`), independiente del bot.
+5. `bot.launch()` y luego `initModel()` (Gemini) + `obtenerCotizacionDolar()` (inicial + cada 3h).
+
+### Flujo de un mensaje de texto
+
+```
+Telegram → middleware (auth/rate-limit) → handlers/text.js
+  → regex rápido (comandos tipo "consulta ... $monto ...")
+  → si no matchea: quick_nlp.service (regex local, sin costo)
+  → si quick_nlp no resuelve con confianza: gemini.service (IA)
+  → confirmación al usuario (botones inline) → nlp-confirm.js
+  → movimiento.service.js → db.service.js (addRow)
+  → Google Sheets (+ Supabase si USE_SUPABASE=true)
+```
+
+Para el detalle completo del parsing NLP (regex, quickParse, Gemini, caching,
+fallback de modelos), ver el skill `bot-cashy-nlp`.
+
+Para el detalle completo de la capa de datos (columnas de Sheets, schema
+Supabase v1/v2, capability detection, dual-write, migración legacy→v2), ver
+el skill `bot-cashy-db`.
+
+Para el listado completo de handlers/comandos y el routing de callbacks, ver
+el skill `bot-cashy-arquitectura`.
 
 ---
 
@@ -59,14 +100,20 @@ COTIZACION_DEFAULT=               # Fallback si falla Bluelytics
 
 ## Modelo de datos (Google Sheets)
 
-Columnas del sheet por usuario:
-`Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_unico | MontoPesos | ID_Origen | Categoria | Paciente | Profesional | Tratamiento | Proveedor | FechaPrestacion | FechaVencimiento | SaldoPendiente`
+Columnas del sheet por usuario (`REQUIRED_SHEET_HEADERS` en `sheet.service.js`):
+`Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_Unico | MontoPesos | ID_Origen | Categoria | Paciente | Pagador | Profesional | Tratamiento | Proveedor | FechaPrestacion | FechaVencimiento | SaldoPendiente | ReferenciaId`
 
 - **Moneda**: `Pesos` o `Dólares`
 - **Estado**: `Cobrado` o `Pendiente`
 - **Tipo**: `Ingreso` o `Egreso`
 - **ID_Origen**: email del usuario (o Telegram ID si no tiene email)
 - Los montos en dólares se convierten a pesos usando cotización del día
+
+Esto es el modelo "legacy"/v1, fuente de verdad cuando `USE_SUPABASE=false`.
+Cuando Supabase está habilitado conviven este modelo y un modelo v2
+(`movimientos_v2` + `movimiento_eventos_v2`) más rico, con detección de
+capacidades y mapeo automático entre ambos. Ver skill `bot-cashy-db` para el
+detalle completo.
 
 ---
 
