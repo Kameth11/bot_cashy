@@ -39,18 +39,32 @@ app.use(cors({
     cb(new Error(`CORS bloqueado: ${origin}`));
   },
   credentials: true,
+  exposedHeaders: ['X-Refreshed-Token'],
 }));
 app.use(express.json());
 
 const PORT = process.env.DASHBOARD_API_PORT || process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'cashy-dashboard-secret-change-in-production';
 
+const SESSION_DURATION = '180d';
+const SESSION_REFRESH_THRESHOLD_SEC = 30 * 24 * 60 * 60; // renovar si quedan menos de 30 dias
+
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'No autorizado' });
   const token = header.split(' ')[1];
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+
+    // Sesion deslizante: si al usuario le queda poco tiempo de token, le mandamos
+    // uno nuevo en la respuesta para que el dashboard nunca le pida re-login
+    // mientras siga usandolo dentro de la ventana de SESSION_DURATION.
+    if (decoded.exp && decoded.exp - Date.now() / 1000 < SESSION_REFRESH_THRESHOLD_SEC) {
+      const refreshed = jwt.sign({ userId: decoded.userId, type: decoded.type }, JWT_SECRET, { expiresIn: SESSION_DURATION });
+      res.setHeader('X-Refreshed-Token', refreshed);
+    }
+
     next();
   } catch {
     res.status(401).json({ error: 'Token invalido o expirado' });
@@ -108,7 +122,7 @@ app.post('/api/auth/verify', async (req, res) => {
 
   const DEV_TOKEN = process.env.DASHBOARD_DEV_TOKEN;
   if (DEV_TOKEN && code === DEV_TOKEN) {
-    const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: SESSION_DURATION });
     const cliente = obtenerClientePorUserId(Number(telegramId));
     const esAdmin = esAdminOriginal(Number(telegramId));
     return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
@@ -133,7 +147,7 @@ app.post('/api/auth/verify', async (req, res) => {
     try { await getSupabase().from('auth_codes').update({ used: true }).eq('telegram_user_id', telegramId); } catch {}
   }
 
-  const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: SESSION_DURATION });
   const cliente = obtenerClientePorUserId(Number(telegramId));
   const esAdmin = esAdminOriginal(Number(telegramId));
   res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });

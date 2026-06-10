@@ -18,7 +18,11 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    const refreshed = res.headers?.['x-refreshed-token'];
+    if (refreshed) localStorage.setItem('cashy_token', refreshed);
+    return res;
+  },
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('cashy_token');
