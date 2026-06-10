@@ -4,7 +4,7 @@ const SYSTEM_PROMPT = `Eres un parser de mensajes de cashflow para un CONSULTORI
 
 Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, desconocido
 
-registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"/"Euros"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), categoria(string|null), pacienteNombre(string|null), pagadorNombre(string|null), profesionalNombre(string|null), tratamientoNombre(string|null), proveedorNombre(string|null)
+registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"/"Euros"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), estado("Cobrado"/"Pendiente"), categoria(string|null), pacienteNombre(string|null), pagadorNombre(string|null), profesionalNombre(string|null), tratamientoNombre(string|null), proveedorNombre(string|null)
 cobrar/editar/eliminar_movimiento: nombre(string|null)
 Todos los demas intents: entities vacio {}
 
@@ -43,41 +43,40 @@ INTERPRETACION:
 - Si la frase describe plata que entra o sale como un hecho nuevo para registrar, usar registrar_movimiento.
 - Para cobrar_movimiento, extrae el nombre/persona/concepto en nombre.
 - PAGOS PARCIALES: Si la frase menciona un pago parcial pero NO hay dos montos distintos (cobrado vs pendiente), usar registrar_movimiento normal con el monto cobrado. Los cobros parciales con dos montos los maneja otro sistema.
+- ESTADO: para registrar_movimiento, "estado" es "Pendiente" si la plata todavía NO se cobró/pagó (ej: "me deben", "queda pendiente", "a fin de mes paga", "le fío", "todavía no pagó"). En cualquier otro caso, "estado" es "Cobrado".
 
 Ejemplos:
-"cobre 15000 de Juan en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"tratamiento","pacienteNombre":"Juan","pagadorNombre":"Juan","profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"gaste 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null,"categoria":"alquiler","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"servicio endodoncia U$50 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dolares","metodo_pago":"transferencia","categoria":"tratamiento","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Endodoncia","proveedorNombre":null}}
-"anticipo Juan Perez implante Dra Lopez 50k transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan Perez","monto":50000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"anticipo","pacienteNombre":"Juan Perez","pagadorNombre":null,"profesionalNombre":"Dra Lopez","tratamientoNombre":"Implante","proveedorNombre":null}}
-"pague a Dental Sur 80k por guantes" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Guantes","monto":80000,"moneda":"Pesos","metodo_pago":null,"categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":"Dental Sur"}}
+"cobre 15000 de Juan en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan","monto":15000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"tratamiento","pacienteNombre":"Juan","pagadorNombre":"Juan","profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
+"gaste 5000 en alquiler" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Alquiler","monto":5000,"moneda":"Pesos","metodo_pago":null,"categoria":"alquiler","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
+"servicio endodoncia U$50 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"servicio","descripcion":"Endodoncia","monto":50,"moneda":"Dolares","metodo_pago":"transferencia","categoria":"tratamiento","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Endodoncia","proveedorNombre":null,"estado":"Cobrado"}}
+"anticipo Juan Perez implante Dra Lopez 50k transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Juan Perez","monto":50000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"anticipo","pacienteNombre":"Juan Perez","pagadorNombre":null,"profesionalNombre":"Dra Lopez","tratamientoNombre":"Implante","proveedorNombre":null,"estado":"Cobrado"}}
+"pague a Dental Sur 80k por guantes" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Guantes","monto":80000,"moneda":"Pesos","metodo_pago":null,"categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
 "me pagó Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "ya entró lo de Marta" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Marta"}}
 "Juan me transfirió" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
-"le pagaron a Diego 400mil pesos en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Diego","monto":400000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"tratamiento","pacienteNombre":"Diego","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"le pagamos al gasista 400 dolares en transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Gasista","monto":400,"moneda":"Dolares","metodo_pago":"transferencia","categoria":"servicios","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":"Gasista"}}
-"le pagaron a Laura de DientesFacil 400mil pesos" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Laura","monto":400000,"moneda":"Pesos","metodo_pago":null,"categoria":"tratamiento","pacienteNombre":"Laura","pagadorNombre":"DientesFacil","profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"Laura Santillan le pagó a Diego 500000 pesos en efectivo por una consulta" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Laura Santillan","monto":500000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"consulta","pacienteNombre":"Laura Santillan","pagadorNombre":"Laura Santillan","profesionalNombre":"Diego","tratamientoNombre":"Consulta","proveedorNombre":null}}
-"Diego vino por consulta" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Diego","monto":null,"moneda":"Pesos","metodo_pago":null,"categoria":"consulta","pacienteNombre":"Diego","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Consulta","proveedorNombre":null}}
+"le pagaron a Diego 400mil pesos en efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Diego","monto":400000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"tratamiento","pacienteNombre":"Diego","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
+"le pagamos al gasista 400 dolares en transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Gasista","monto":400,"moneda":"Dolares","metodo_pago":"transferencia","categoria":"servicios","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":"Gasista","estado":"Cobrado"}}
+"le pagaron a Laura de DientesFacil 400mil pesos" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Laura","monto":400000,"moneda":"Pesos","metodo_pago":null,"categoria":"tratamiento","pacienteNombre":"Laura","pagadorNombre":"DientesFacil","profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
+"Laura Santillan le pagó a Diego 500000 pesos en efectivo por una consulta" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Laura Santillan","monto":500000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"consulta","pacienteNombre":"Laura Santillan","pagadorNombre":"Laura Santillan","profesionalNombre":"Diego","tratamientoNombre":"Consulta","proveedorNombre":null,"estado":"Cobrado"}}
+"Diego vino por consulta" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Diego","monto":null,"moneda":"Pesos","metodo_pago":null,"categoria":"consulta","pacienteNombre":"Diego","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Consulta","proveedorNombre":null,"estado":"Cobrado"}}
 "cuanto tengo" -> {"intent":"ver_balance","entities":{}}
 "ya me pago Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "borrar gasto insumos" -> {"intent":"eliminar_movimiento","entities":{"nombre":"insumos"}}
-"honorarios €200 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Honorarios","monto":200,"moneda":"Euros","metodo_pago":"transferencia","categoria":"honorarios","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"insumos €50 efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Insumos","monto":50,"moneda":"Euros","metodo_pago":"efectivo","categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"seña Maria 30k ortodoncia mp" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Maria","monto":30000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"sena","pacienteNombre":"Maria","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Ortodoncia","proveedorNombre":null}}
-"3ra cuota Roberto brackets 25000" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Roberto","monto":25000,"moneda":"Pesos","metodo_pago":null,"categoria":"cuota","pacienteNombre":"Roberto","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Brackets","proveedorNombre":null}}
-"saldo final implante Gomez 80000 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Gomez","monto":80000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"saldo_final","pacienteNombre":"Gomez","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Implante","proveedorNombre":null}}
-"compre fresas y agujas en odontofar 15k" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Fresas y Agujas","monto":15000,"moneda":"Pesos","metodo_pago":null,"categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":"Odontofar"}}
-"monotributo enero 45000" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Monotributo","monto":45000,"moneda":"Pesos","metodo_pago":null,"categoria":"impuestos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"sueldo asistente 200k" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Sueldo Asistente","monto":200000,"moneda":"Pesos","metodo_pago":null,"categoria":"sueldos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null}}
-"vino carlos para revision $8000 efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Carlos","monto":8000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"consulta","pacienteNombre":"Carlos","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Consulta","proveedorNombre":null}}
+"honorarios €200 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Honorarios","monto":200,"moneda":"Euros","metodo_pago":"transferencia","categoria":"honorarios","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
+"insumos €50 efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Insumos","monto":50,"moneda":"Euros","metodo_pago":"efectivo","categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
+"seña Maria 30k ortodoncia mp" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Maria","monto":30000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"sena","pacienteNombre":"Maria","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Ortodoncia","proveedorNombre":null,"estado":"Cobrado"}}
+"3ra cuota Roberto brackets 25000" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Roberto","monto":25000,"moneda":"Pesos","metodo_pago":null,"categoria":"cuota","pacienteNombre":"Roberto","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Brackets","proveedorNombre":null,"estado":"Cobrado"}}
+"saldo final implante Gomez 80000 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Gomez","monto":80000,"moneda":"Pesos","metodo_pago":"transferencia","categoria":"saldo_final","pacienteNombre":"Gomez","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Implante","proveedorNombre":null,"estado":"Cobrado"}}
+"compre fresas y agujas en odontofar 15k" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Fresas y Agujas","monto":15000,"moneda":"Pesos","metodo_pago":null,"categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":"Odontofar","estado":"Cobrado"}}
+"monotributo enero 45000" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Monotributo","monto":45000,"moneda":"Pesos","metodo_pago":null,"categoria":"impuestos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
+"sueldo asistente 200k" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Sueldo Asistente","monto":200000,"moneda":"Pesos","metodo_pago":null,"categoria":"sueldos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
+"vino carlos para revision $8000 efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Carlos","monto":8000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"consulta","pacienteNombre":"Carlos","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Consulta","proveedorNombre":null,"estado":"Cobrado"}}
+"Pedro me debe 20000 por la limpieza" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Pedro","monto":20000,"moneda":"Pesos","metodo_pago":null,"categoria":"cobro_pendiente","pacienteNombre":"Pedro","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Limpieza","proveedorNombre":null,"estado":"Pendiente"}}
 "hola" -> {"intent":"desconocido","entities":{}}`;
 
 const FALLBACK_MODELS = [
   'gemini-2.5-flash-lite',
   'gemini-2.5-flash',
-  'gemini-2.0-flash-001',
-  'gemini-2.0-flash-lite-001',
-  'gemini-flash-lite-latest',
 ];
 
 const CACHE_TTL_MS = 60000;
@@ -429,6 +428,7 @@ function normalizarNlpResult(parsed) {
     normalized.entities.profesionalNombre = normalizarEntidadNombre(normalized.entities.profesionalNombre);
     normalized.entities.tratamientoNombre = normalizarEntidadNombre(normalized.entities.tratamientoNombre);
     normalized.entities.proveedorNombre = normalizarEntidadNombre(normalized.entities.proveedorNombre);
+    normalized.entities.estado = String(normalized.entities.estado || '').trim().toLowerCase() === 'pendiente' ? 'Pendiente' : 'Cobrado';
 
     if ((normalized.entities.categoria === 'consulta' || normalized.entities.tipo === 'consulta') && !normalized.entities.tratamientoNombre) {
       normalized.entities.tratamientoNombre = 'Consulta';
@@ -611,135 +611,4 @@ async function parseMessage(userId, text, _retryDepth = 0) {
   }
 }
 
-const MOVIMIENTO_PROMPT = `Sos el asistente de cashflow de un consultorio odontológico argentino.
-Extraé los datos del movimiento del texto del usuario.
-
-MONEDAS SOPORTADAS:
-- "Pesos" → símbolo $ o sin símbolo, o palabras "pesos"
-- "Dólares" → símbolo U$, USD, u$s, dólares, "dolar"
-- "Euros" → símbolo €, EUR, euros, "euro"
-
-ENTIDADES A EXTRAER:
-- tipo: "Ingreso" o "Egreso"
-- estado: "Cobrado" o "Pendiente"
-- monto: número positivo (el tipo define si es ingreso o egreso)
-- moneda: "Pesos", "Dólares" o "Euros"
-- metodo_pago: "efectivo", "transferencia", "tarjeta" o null
-- categoria: null si no está claro
-- pacienteNombre: null si no se menciona
-- profesionalNombre: null si no se menciona
-- tratamientoNombre: null si no se menciona
-- proveedorNombre: null si no se menciona (solo para egresos)
-
-IMPORTANTE: Respondé SOLO con JSON válido, sin texto adicional, sin markdown.
-Si no podés extraer tipo ni monto, devolvé: {"error":"no_entendido"}`;
-
-function normalizarEntidadesMovimiento(raw) {
-  if (!raw || raw.error) return null;
-
-  const tipo = (() => {
-    const t = String(raw.tipo || '').trim().toLowerCase();
-    if (['egreso', 'gasto'].includes(t)) return 'gasto';
-    if (['ingreso', 'servicio', 'consulta'].includes(t)) return t === 'ingreso' ? 'ingreso' : t;
-    return null;
-  })();
-
-  const monto = (() => {
-    const v = parseFloat(String(raw.monto || '').replace(',', '.'));
-    return Number.isFinite(v) && v > 0 ? v : null;
-  })();
-
-  if (!tipo || !monto) {
-    console.error(`NLP-mov: resultado incompleto descartado — tipo:${raw.tipo} monto:${raw.monto}`);
-    return null;
-  }
-
-  const pacienteNombre = normalizarEntidadNombre(raw.pacienteNombre);
-  const proveedorNombre = normalizarEntidadNombre(raw.proveedorNombre);
-  const tratamientoNombre = normalizarEntidadNombre(raw.tratamientoNombre);
-
-  // MOVIMIENTO_PROMPT no devuelve descripcion — derivarla de las entidades
-  // para evitar que el movimiento quede con descripción vacía y sea filtrado
-  // por obtenerDatosSheet.
-  const descripcion = pacienteNombre || proveedorNombre || tratamientoNombre || null;
-
-  return {
-    intent: 'registrar_movimiento',
-    entities: {
-      tipo,
-      descripcion,
-      estado: raw.estado === 'Pendiente' ? 'Pendiente' : 'Cobrado',
-      monto,
-      moneda: normalizarMoneda(raw.moneda),
-      metodo_pago: normalizarMetodoPago(raw.metodo_pago),
-      categoria: normalizarCategoria(raw.categoria),
-      pacienteNombre,
-      profesionalNombre: normalizarEntidadNombre(raw.profesionalNombre),
-      tratamientoNombre,
-      proveedorNombre,
-    },
-  };
-}
-
-async function parseMovimientoEntidades(userId, text) {
-  if (!canAttemptRemoteNlp()) return null;
-
-  const cacheKey = `mov:${userId}:${text.toLowerCase().trim()}`;
-  const cached = nlpCache.get(cacheKey);
-  if (cached) {
-    if (Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
-    nlpCache.delete(cacheKey);
-  }
-
-  const ai = getGenAI();
-  if (!ai) return null;
-
-  const modelName = activeModelName || getPreferredModelName();
-  let responseText = null;
-
-  try {
-    const model = ai.getGenerativeModel({
-      model: modelName,
-      systemInstruction: MOVIMIENTO_PROMPT,
-      generationConfig: { maxOutputTokens: 256, temperature: 0.1, responseMimeType: 'application/json' },
-    });
-    const result = await generateWithModel(model, `Mensaje: "${text}"`);
-    responseText = result.response.text().trim();
-  } catch (err) {
-    if (isRateLimitError(err)) lastRateLimitError = Date.now();
-    return null;
-  }
-
-  if (!responseText) return null;
-
-  let parsed;
-  try {
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    const jsonStr = jsonMatch ? jsonMatch[0] : responseText;
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      const repaired = repairJSON(jsonStr);
-      if (repaired) {
-        parsed = JSON.parse(repaired);
-      } else {
-        console.error(`NLP-mov [${userId}]: JSON invalido. Texto: "${text.substring(0, 80)}"`);
-        console.error(`NLP-mov [${userId}]: Respuesta cruda:`, responseText.substring(0, 200));
-        return null;
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  if (parsed.error) return null;
-
-  const normalized = normalizarEntidadesMovimiento(parsed);
-  if (normalized) {
-    nlpCache.set(cacheKey, { result: normalized, timestamp: Date.now() });
-    console.log(`NLP-mov [${userId}]: "${text}" -> tipo:${normalized.entities.tipo} monto:${normalized.entities.monto} moneda:${normalized.entities.moneda}`);
-  }
-  return normalized;
-}
-
-module.exports = { parseMessage, parseMovimientoEntidades, initModel, canAttemptRemoteNlp };
+module.exports = { parseMessage, initModel, canAttemptRemoteNlp };

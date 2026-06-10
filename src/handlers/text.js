@@ -729,12 +729,6 @@ bot.on('text', async (ctx) => {
         await ctx.reply('🧠 Procesando...').catch(() => {});
 
         try {
-          const movResult = await geminiService.parseMovimientoEntidades(userId, text);
-          if (movResult && movResult.entities && movResult.entities.monto) {
-            const handled = await handleNLPIntent(ctx, movResult);
-            if (handled) return;
-          }
-
           const nlpResult = await geminiService.parseMessage(userId, text);
           if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
             const handled = await handleNLPIntent(ctx, nlpResult);

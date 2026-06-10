@@ -47,16 +47,11 @@ etc.) gastando lo mínimo posible en llamadas a Gemini.
      `handleNLPIntent` (`handlers/nlp.js`) sin llamar a Gemini.
 
 4. **Si quickParse no alcanzó confianza suficiente** y
-   `geminiService.canAttemptRemoteNlp()` es true → llamada a Gemini:
-   - `parseMovimientoEntidades(userId, text)`: prompt especializado
-     (`MOVIMIENTO_PROMPT`) para extraer entidades de un movimiento. Si
-     devuelve `entities.monto`, se procesa con `handleNLPIntent`.
-   - Si eso no resuelve, `parseMessage(userId, text)`: prompt general
-     (`SYSTEM_PROMPT`) que devuelve `{ intent, entities }`.
-   - **Nota de costo/latencia**: hoy esto es **hasta 2 llamadas secuenciales
-     a Gemini** en el peor caso (entidades + mensaje general). Una
-     optimización pendiente (discutida pero no implementada) es unificar en
-     una sola llamada y acotar la cadena de fallback de modelos.
+   `geminiService.canAttemptRemoteNlp()` es true → una única llamada a
+   `parseMessage(userId, text)`: prompt general (`SYSTEM_PROMPT`) que
+   devuelve `{ intent, entities }`, incluyendo `entities.estado`
+   (`"Cobrado"`/`"Pendiente"`) para `registrar_movimiento`. Si el intent no
+   es `desconocido`, se procesa con `handleNLPIntent`.
 
 5. **Fallback final**: si Gemini no resolvió (`canAttemptRemoteNlp()` false,
    error, o intent `desconocido`), se reintenta `quickResult` si existe; si
@@ -72,8 +67,7 @@ procesando...".
   `bot.launch()`) prueba modelos en orden hasta encontrar uno que responda
   "ok": `[activeModelName, GEMINI_MODEL (env, default
   'gemini-2.5-flash-lite'), ...FALLBACK_MODELS]`, donde `FALLBACK_MODELS =
-  ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash-001',
-  'gemini-2.0-flash-lite-001', 'gemini-flash-lite-latest']`.
+  ['gemini-2.5-flash-lite', 'gemini-2.5-flash']`.
 - **Timeout por intento**: `API_TIMEOUT_MS = 8000` (AbortController).
 - **Caching**: `nlpCache` (Map en memoria, sin TTLMap) — clave
   `${userId}:${text.toLowerCase().trim()}`, `CACHE_TTL_MS = 60000` (1 min).
@@ -90,8 +84,7 @@ procesando...".
   cerrada que `ALL_CATEGORIES` en `src/utils/movimiento-v2.js` (debe
   mantenerse sincronizada si se agregan categorías).
 - **Generation config**: `temperature: 0.1`, `responseMimeType:
-  "application/json"`, con `SYSTEM_PROMPT` (general) o `MOVIMIENTO_PROMPT`
-  (entidades de movimiento) como `systemInstruction`.
+  "application/json"`, con `SYSTEM_PROMPT` como `systemInstruction`.
 
 ## Después de resolver el intent: confirmación
 
