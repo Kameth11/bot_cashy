@@ -4,6 +4,16 @@ const { getSupabase, isAvailable } = require('../lib/supabase');
 
 let clientes = {};
 
+// Serializa escrituras a clientes.json/Supabase para evitar que dos
+// registros concurrentes pisen el archivo con datos desactualizados.
+let writeQueue = Promise.resolve();
+
+function encolarEscritura(fn) {
+  const result = writeQueue.then(fn, fn);
+  writeQueue = result.catch(() => {});
+  return result;
+}
+
 function buildProfileRow(userId, clienteData = {}) {
   return {
     id: parseInt(userId, 10),
@@ -75,25 +85,27 @@ function cargarClientesLocal() {
 async function guardarClientes(clientesObj) {
   clientes = clientesObj;
 
-  // always save locally as backup
-  try {
-    fs.writeFileSync(CLIENTES_FILE, JSON.stringify(clientesObj, null, 2));
-  } catch (error) {
-    console.error('Error al guardar clientes local:', error.message);
-  }
-
-  if (USE_SUPABASE && isAvailable()) {
+  return encolarEscritura(async () => {
+    // always save locally as backup
     try {
-      const supabase = getSupabase();
-      for (const [userId, clienteData] of Object.entries(clientesObj)) {
-        await supabase
-          .from('profiles')
-          .upsert(buildProfileRow(userId, clienteData), { onConflict: 'id' });
-      }
-    } catch (err) {
-      console.error('Supabase guardarClientes catch (local backup OK):', err.message);
+      fs.writeFileSync(CLIENTES_FILE, JSON.stringify(clientesObj, null, 2));
+    } catch (error) {
+      console.error('Error al guardar clientes local:', error.message);
     }
-  }
+
+    if (USE_SUPABASE && isAvailable()) {
+      try {
+        const supabase = getSupabase();
+        for (const [userId, clienteData] of Object.entries(clientesObj)) {
+          await supabase
+            .from('profiles')
+            .upsert(buildProfileRow(userId, clienteData), { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.error('Supabase guardarClientes catch (local backup OK):', err.message);
+      }
+    }
+  });
 }
 
 async function eliminarCliente(userId) {
@@ -101,22 +113,24 @@ async function eliminarCliente(userId) {
   const existia = Boolean(clientes[key]);
   delete clientes[key];
 
-  try {
-    fs.writeFileSync(CLIENTES_FILE, JSON.stringify(clientes, null, 2));
-  } catch (e) {
-    console.error('Error guardando clientes tras eliminar:', e.message);
-  }
-
-  if (USE_SUPABASE && isAvailable()) {
+  return encolarEscritura(async () => {
     try {
-      const supabase = getSupabase();
-      await supabase.from('profiles').delete().eq('id', parseInt(key, 10));
+      fs.writeFileSync(CLIENTES_FILE, JSON.stringify(clientes, null, 2));
     } catch (e) {
-      console.error('Supabase eliminarCliente error:', e.message);
+      console.error('Error guardando clientes tras eliminar:', e.message);
     }
-  }
 
-  return existia;
+    if (USE_SUPABASE && isAvailable()) {
+      try {
+        const supabase = getSupabase();
+        await supabase.from('profiles').delete().eq('id', parseInt(key, 10));
+      } catch (e) {
+        console.error('Supabase eliminarCliente error:', e.message);
+      }
+    }
+
+    return existia;
+  });
 }
 
 async function getCliente(userId) {

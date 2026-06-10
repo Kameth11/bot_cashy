@@ -27,12 +27,20 @@ function formatMonto(monto, moneda) {
 
 function sanitizarInput(texto, maxLength = 200) {
   if (!texto || typeof texto !== 'string') return '';
-  return texto
+  const limpio = texto
     .slice(0, maxLength)
     .replace(/[<>"'&`]/g, '')
     .replace(/[\u0000-\u001F\u007F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Evita inyección de fórmulas en Google Sheets (=, +, -, @ al inicio
+  // se interpretan como fórmula con valueInputOption USER_ENTERED).
+  if (/^[=+\-@]/.test(limpio)) {
+    return `'${limpio}`;
+  }
+
+  return limpio;
 }
 
 function esMonedaValida(moneda) {

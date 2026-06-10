@@ -1,5 +1,11 @@
-const { CODIGO_EXPIRACION_HORAS, GOOGLE_SERVICE_ACCOUNT_EMAIL } = require('../config');
-const { obtenerClientePorUserId, codigoInvitacionExpirado } = require('../auth');
+const { CODIGO_EXPIRACION_HORAS, GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_CODIGO } = require('../config');
+const {
+  obtenerClientePorUserId,
+  codigoInvitacionExpirado,
+  getIntentosCodigo,
+  incrementIntentosCodigo,
+  resetIntentosCodigo,
+} = require('../auth');
 const clienteService = require('./cliente.service');
 const state = require('../state');
 
@@ -30,16 +36,23 @@ function createInviteCode(ownerId) {
   return codigo;
 }
 
-function resolveInviteCode(rawCode) {
+function resolveInviteCode(userId, rawCode) {
+  const intentos = getIntentosCodigo(userId);
+  if (intentos >= MAX_INTENTOS_CODIGO) {
+    return { ok: false, codigo: null, message: '❌ Demasiados intentos con códigos inválidos. Pedí uno nuevo al owner y probá de nuevo más tarde.' };
+  }
+
   const codigo = String(rawCode || '').trim().toUpperCase();
   const codigoData = state.pendingCodigos.get(codigo);
 
   if (!codigoData) {
+    incrementIntentosCodigo(userId);
     return { ok: false, codigo, message: '❌ Código inválido o expirado. Pide uno nuevo al owner.' };
   }
 
   if (codigoInvitacionExpirado(codigoData)) {
     state.pendingCodigos.delete(codigo);
+    incrementIntentosCodigo(userId);
     return { ok: false, codigo, message: '❌ Código expirado. Pide uno nuevo al owner.' };
   }
 
@@ -47,9 +60,11 @@ function resolveInviteCode(rawCode) {
   const clientes = clienteService.clientes;
   if (!clientes[ownerId]) {
     state.pendingCodigos.delete(codigo);
+    incrementIntentosCodigo(userId);
     return { ok: false, codigo, message: '❌ El owner ya no existe.' };
   }
 
+  resetIntentosCodigo(userId);
   return { ok: true, codigo, ownerId, clientes, codigoData };
 }
 
@@ -58,7 +73,7 @@ async function joinWithInviteCode(userId, rawCode) {
     return { message: '⚠️ Ya tienes una cuenta registrada. Habla con el owner si necesitas agregar otro usuario.' };
   }
 
-  const resolved = resolveInviteCode(rawCode);
+  const resolved = resolveInviteCode(userId, rawCode);
   if (!resolved.ok) {
     return { message: resolved.message };
   }
@@ -87,7 +102,7 @@ async function joinWithInviteCode(userId, rawCode) {
 }
 
 async function beginInviteRegistration(userId, rawCode) {
-  const resolved = resolveInviteCode(rawCode);
+  const resolved = resolveInviteCode(userId, rawCode);
   if (!resolved.ok) {
     return { message: resolved.message.replace('o expirado. ', '. ').replace('❌ El owner ya no existe.', '❌ El owner ya no existe. Pide un código nuevo.') };
   }

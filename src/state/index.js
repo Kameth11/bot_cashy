@@ -60,6 +60,7 @@ const pendingCodigos        = new TTLMap();
 const pendingNlpMovimientos = new TTLMap(5 * 60 * 1000);
 const pendingPayments       = new TTLMap();
 const pendingIntentosEmail  = new TTLMap();
+const pendingIntentosCodigo = new TTLMap();
 const pendingDeletes        = new TTLMap();
 const pendingEdits          = new TTLMap();
 const pendingCotizaciones   = new TTLMap();
@@ -94,6 +95,7 @@ module.exports = {
   pendingCodigos,
   pendingPayments,
   pendingIntentosEmail,
+  pendingIntentosCodigo,
   pendingDeletes,
   pendingEdits,
   pendingCotizaciones,

@@ -41,6 +41,20 @@ function resetIntentosEmail(userId) {
   state.pendingIntentosEmail.delete(userId);
 }
 
+function getIntentosCodigo(userId) {
+  return state.pendingIntentosCodigo.get(userId) || 0;
+}
+
+function incrementIntentosCodigo(userId) {
+  const actuales = getIntentosCodigo(userId);
+  state.pendingIntentosCodigo.set(userId, actuales + 1);
+  return actuales + 1;
+}
+
+function resetIntentosCodigo(userId) {
+  state.pendingIntentosCodigo.delete(userId);
+}
+
 function codigoInvitacionExpirado(codigoData) {
   if (!codigoData || !codigoData.createdAt) return false;
   return Date.now() - codigoData.createdAt > CODIGO_EXPIRACION_MS;
@@ -53,5 +67,8 @@ module.exports = {
   getIntentosEmail,
   incrementIntentosEmail,
   resetIntentosEmail,
+  getIntentosCodigo,
+  incrementIntentosCodigo,
+  resetIntentosCodigo,
   codigoInvitacionExpirado,
 };
