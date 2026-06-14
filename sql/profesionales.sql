@@ -9,5 +9,7 @@ CREATE TABLE IF NOT EXISTS profesionales (
 ALTER TABLE profesionales ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Service role full access" ON profesionales
+  FOR ALL
+  TO service_role
   USING (true)
   WITH CHECK (true);
