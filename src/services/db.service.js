@@ -225,6 +225,12 @@ async function resolveLegacyCapabilities(supabase) {
       console.error('Supabase movimientos campos extendidos check error:', camposCheck.error.message);
     }
 
+    console.log('[debug] resolveLegacyCapabilities:', {
+      extendedMovimientos,
+      extendedCampos,
+      camposCheckError: camposCheck.error ? camposCheck.error.message : null,
+    });
+
     legacyCapabilityCache.checked = true;
     legacyCapabilityCache.extendedMovimientos = extendedMovimientos;
     legacyCapabilityCache.extendedCampos = extendedCampos;
@@ -992,6 +998,8 @@ async function addRow(userId, rowData, options = {}) {
   }
 
   await ensureProfile(userId);
+
+  console.log('[debug] addRow supabaseRow:', supabaseRow);
 
   const { data, error } = await supabase
     .from('movimientos')
