@@ -874,6 +874,15 @@ function matchPagoConTotal(rawText, text) {
   };
 }
 
+// Ingreso sin pacienteNombre pero con texto remanente (descripcion) que
+// probablemente es el nombre que no se pudo extraer: forzar fallback a Gemini.
+function ingresoSinPacienteConNombre(result) {
+  if (!result || result.intent !== 'registrar_movimiento') return false;
+  const { tipo, pacienteNombre, descripcion } = result.entities || {};
+  if (tipo !== 'ingreso' || pacienteNombre) return false;
+  return Boolean(descripcion && descripcion.trim());
+}
+
 function quickParse(rawText) {
   const text = normalizar(rawText);
   if (!text || text.length < 2) return null;
@@ -896,7 +905,7 @@ function quickParse(rawText) {
   if (egresoExplicito) return egresoExplicito;
 
   const ingresoExplicito = matchRegistrarIngresoExplicito(rawText, text);
-  if (ingresoExplicito) return ingresoExplicito;
+  if (ingresoExplicito) return ingresoSinPacienteConNombre(ingresoExplicito) ? null : ingresoExplicito;
 
   const pagoEntreTerceros = matchPagoEntreTerceros(rawText, text);
   if (pagoEntreTerceros) return pagoEntreTerceros;
@@ -911,7 +920,7 @@ function quickParse(rawText) {
   }
 
   const regResult = matchRegistrarMovimiento(rawText, text);
-  if (regResult) return regResult;
+  if (regResult) return ingresoSinPacienteConNombre(regResult) ? null : regResult;
 
   const entityResult = matchEntityIntent(text);
   if (entityResult) return entityResult;

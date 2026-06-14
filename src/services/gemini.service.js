@@ -75,8 +75,8 @@ Ejemplos:
 "hola" -> {"intent":"desconocido","entities":{}}`;
 
 const FALLBACK_MODELS = [
-  'gemini-2.5-flash-lite',
   'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
 ];
 
 const CACHE_TTL_MS = 60000;
@@ -122,13 +122,14 @@ function createModel(ai, modelName) {
       maxOutputTokens: 512,
       temperature: 0.1,
       responseMimeType: "application/json",
+      thinkingConfig: { thinkingBudget: -1 },
     },
   });
 }
 
 function getPreferredModelName() {
   const raw = String(GEMINI_MODEL || '').trim();
-  if (!raw) return 'gemini-2.5-flash-lite';
+  if (!raw) return 'gemini-2.5-flash';
   return raw;
 }
 
