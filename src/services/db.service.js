@@ -23,6 +23,7 @@ const v2CapabilityCache = {
 const legacyCapabilityCache = {
   checked: false,
   extendedMovimientos: false,
+  extendedCampos: false,
 };
 
 let v2CapabilityPromise = null;
@@ -184,11 +185,14 @@ function isMissingColumnError(error) {
 
 async function resolveLegacyCapabilities(supabase) {
   if (!USE_SUPABASE || !supabase) {
-    return { extendedMovimientos: false };
+    return { extendedMovimientos: false, extendedCampos: false };
   }
 
   if (legacyCapabilityCache.checked) {
-    return { extendedMovimientos: legacyCapabilityCache.extendedMovimientos };
+    return {
+      extendedMovimientos: legacyCapabilityCache.extendedMovimientos,
+      extendedCampos: legacyCapabilityCache.extendedCampos,
+    };
   }
 
   if (legacyCapabilityPromise) {
@@ -197,6 +201,7 @@ async function resolveLegacyCapabilities(supabase) {
 
   legacyCapabilityPromise = (async () => {
     let extendedMovimientos = false;
+    let extendedCampos = false;
 
     const check = await supabase
       .from('movimientos')
@@ -209,10 +214,22 @@ async function resolveLegacyCapabilities(supabase) {
       console.error('Supabase movimientos extended schema check error:', check.error.message);
     }
 
+    const camposCheck = await supabase
+      .from('movimientos')
+      .select('paciente,profesional,tratamiento,proveedor,fecha_prestacion,fecha_vencimiento')
+      .limit(1);
+
+    if (!camposCheck.error) {
+      extendedCampos = true;
+    } else if (!isMissingColumnError(camposCheck.error)) {
+      console.error('Supabase movimientos campos extendidos check error:', camposCheck.error.message);
+    }
+
     legacyCapabilityCache.checked = true;
     legacyCapabilityCache.extendedMovimientos = extendedMovimientos;
+    legacyCapabilityCache.extendedCampos = extendedCampos;
     legacyCapabilityPromise = null;
-    return { extendedMovimientos };
+    return { extendedMovimientos, extendedCampos };
   })();
 
   return legacyCapabilityPromise;
@@ -479,6 +496,7 @@ function mapV2RowToExtendedFields(v2Row) {
 }
 
 function mapLegacyDbRowToPlainData(row, v2Row = null) {
+  const v2Fields = mapV2RowToExtendedFields(v2Row);
   return {
     fecha: formatLegacyDate(row.fecha) || '',
     hora: formatLegacyHour(row.hora) || '',
@@ -491,7 +509,15 @@ function mapLegacyDbRowToPlainData(row, v2Row = null) {
     metodoPago: getDbPaymentMethod(row),
     idUnico: row.id_unico || '',
     pagador: '',
-    ...mapV2RowToExtendedFields(v2Row),
+    ...v2Fields,
+    categoria: row.categoria || v2Fields.categoria,
+    paciente: row.paciente || v2Fields.paciente,
+    profesional: row.profesional || v2Fields.profesional,
+    tratamiento: row.tratamiento || v2Fields.tratamiento,
+    proveedor: row.proveedor || v2Fields.proveedor,
+    fechaPrestacion: formatDateValue(row.fecha_prestacion, '') || v2Fields.fechaPrestacion,
+    fechaVencimiento: formatDateValue(row.fecha_vencimiento, '') || v2Fields.fechaVencimiento,
+    referenciaId: row.referencia_id || v2Fields.referenciaId,
     _sortKey: row.created_at || null,
   };
 }
@@ -942,12 +968,27 @@ async function addRow(userId, rowData, options = {}) {
     monto_pesos: parseFloat(rowData.MontoPesos) || parseFloat(rowData.Monto) || 0,
     id_origen: rowData.ID_Origen || '',
     referencia_id: options.movimientoV2Data?.referenciaId || rowData.ReferenciaId || null,
+    paciente: rowData.Paciente || null,
+    profesional: rowData.Profesional || null,
+    tratamiento: rowData.Tratamiento || null,
+    proveedor: rowData.Proveedor || null,
+    fecha_prestacion: toDbDate(rowData.FechaPrestacion) || null,
+    fecha_vencimiento: toDbDate(rowData.FechaVencimiento) || null,
   };
 
   if (!legacyCapabilities.extendedMovimientos) {
     delete supabaseRow.categoria;
     delete supabaseRow.medio_pago;
     delete supabaseRow.referencia_id;
+  }
+
+  if (!legacyCapabilities.extendedCampos) {
+    delete supabaseRow.paciente;
+    delete supabaseRow.profesional;
+    delete supabaseRow.tratamiento;
+    delete supabaseRow.proveedor;
+    delete supabaseRow.fecha_prestacion;
+    delete supabaseRow.fecha_vencimiento;
   }
 
   await ensureProfile(userId);
