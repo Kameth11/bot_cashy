@@ -25,6 +25,8 @@ const {
   fechaHoyStr,
 } = require('../services/agenda.service');
 const clienteService = require('../services/cliente.service');
+const { sanitizarInput } = require('../utils/formatter');
+const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 
 const app = express();
 
@@ -74,6 +76,18 @@ function authMiddleware(req, res, next) {
 function adminOnly(req, res, next) {
   if (!esAdminOriginal(req.user?.userId)) return res.status(403).json({ error: 'Solo el administrador' });
   next();
+}
+
+const FECHA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+// Acepta solo fechas en formato YYYY-MM-DD (input type="date") o vacio/ausente.
+function validarFechaOpcional(valor) {
+  if (valor === undefined || valor === null || valor === '') return { ok: true, valor: '' };
+  const texto = String(valor).trim();
+  if (!FECHA_REGEX.test(texto) || Number.isNaN(new Date(texto).getTime())) {
+    return { ok: false };
+  }
+  return { ok: true, valor: texto };
 }
 
 // ── Auth: request code ──
@@ -211,24 +225,41 @@ app.get('/api/movimientos', authMiddleware, async (req, res) => {
 app.post('/api/movimientos', authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
-    const descripcion = String(body.descripcion || '').trim();
-    const monto = Math.abs(parseFloat(body.monto) || 0);
-    if (!descripcion || !monto) return res.status(400).json({ error: 'Descripcion y monto son requeridos' });
+
+    const descripcionValidada = normalizarDescripcion(body.descripcion);
+    if (!descripcionValidada.ok) return res.status(400).json({ error: 'La descripción es inválida' });
+
+    const montoValidado = validarMonto(body.monto);
+    if (!montoValidado.ok) return res.status(400).json({ error: 'El monto es inválido' });
+
+    const fechaPrestacionValidada = validarFechaOpcional(body.fechaPrestacion);
+    if (!fechaPrestacionValidada.ok) return res.status(400).json({ error: 'La fecha de prestación es inválida' });
+
+    const fechaVencimientoValidada = validarFechaOpcional(body.fechaVencimiento);
+    if (!fechaVencimientoValidada.ok) return res.status(400).json({ error: 'La fecha de vencimiento es inválida' });
+
+    const tipo = body.tipo === 'Egreso' ? 'Egreso' : 'Ingreso';
+    const moneda = ['Dolares', 'Dólares'].includes(body.moneda) ? 'Dólares' : body.moneda === 'Euros' ? 'Euros' : 'Pesos';
+    const estado = body.estado === 'Pendiente' ? 'Pendiente' : 'Cobrado';
+    const metodoPago = ['efectivo', 'transferencia', 'tarjeta'].includes(body.metodoPago) ? body.metodoPago : '';
+
+    const montoAbs = Math.abs(montoValidado.valor);
+    const monto = tipo === 'Egreso' ? -montoAbs : montoAbs;
 
     const resultado = await guardarMovimiento(req.user.userId, {
-      descripcion,
+      descripcion: descripcionValidada.valor,
       monto,
-      tipo:             body.tipo === 'Egreso' ? 'Egreso' : 'Ingreso',
-      moneda:           body.moneda === 'Dolares' || body.moneda === 'Dólares' ? 'Dólares' : body.moneda === 'Euros' ? 'Euros' : 'Pesos',
-      metodoPago:       body.metodoPago || '',
-      estado:           body.estado === 'Pendiente' ? 'Pendiente' : 'Cobrado',
-      categoria:        body.categoria || '',
-      pacienteNombre:   body.paciente || '',
-      profesionalNombre: body.profesional || '',
-      tratamientoNombre: body.tratamiento || '',
-      proveedorNombre:  body.proveedor || '',
-      fechaPrestacion:  body.fechaPrestacion || '',
-      fechaVencimiento: body.fechaVencimiento || '',
+      tipo,
+      moneda,
+      metodoPago,
+      estado,
+      categoria:         sanitizarInput(body.categoria, 40),
+      pacienteNombre:    sanitizarInput(body.paciente, 100),
+      profesionalNombre: sanitizarInput(body.profesional, 100),
+      tratamientoNombre: sanitizarInput(body.tratamiento, 100),
+      proveedorNombre:   sanitizarInput(body.proveedor, 100),
+      fechaPrestacion:   fechaPrestacionValidada.valor,
+      fechaVencimiento:  fechaVencimientoValidada.valor,
     });
 
     if (!resultado) return res.status(500).json({ error: 'No se pudo guardar el movimiento' });

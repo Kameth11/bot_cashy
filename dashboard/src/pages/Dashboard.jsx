@@ -5,6 +5,7 @@ import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import PlusButton from '../components/PlusButton'
 import CotizacionWidget from '../components/CotizacionWidget'
+import NuevoMovimientoModal from '../components/NuevoMovimientoModal'
 
 function Dashboard() {
   const [filtro, setFiltro]       = useState('mes')
@@ -25,6 +26,10 @@ function Dashboard() {
   // Confirmación de borrado
   const [confirmDelete, setConfirmDelete] = useState(null) // mov object | null
   const [borrando, setBorrando] = useState(false)
+
+  // Modal de nuevo movimiento
+  const [mostrarNuevo, setMostrarNuevo] = useState(false)
+  const [creando, setCreando] = useState(false)
 
   const range = useMemo(() => {
     const now = new Date()
@@ -148,6 +153,22 @@ function Dashboard() {
     }
   }, [])
 
+  const handleCrearMovimiento = useCallback(async (payload) => {
+    setModalError(null)
+    setCreando(true)
+    try {
+      await api.post('/api/movimientos', payload)
+      setMostrarNuevo(false)
+      setModalError(null)
+      setReload(r => r + 1)
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Error al guardar el movimiento'
+      setModalError(msg)
+    } finally {
+      setCreando(false)
+    }
+  }, [])
+
   const handleConfirmarBorrado = useCallback(async (idUnico, mov) => {
     setModalError(null)
     setBorrando(true)
@@ -192,6 +213,14 @@ function Dashboard() {
           onCancelar={() => { setConfirmDelete(null); setModalError(null) }}
         />
       )}
+      {mostrarNuevo && (
+        <NuevoMovimientoModal
+          guardando={creando}
+          error={modalError}
+          onGuardar={handleCrearMovimiento}
+          onCerrar={() => { setMostrarNuevo(false); setModalError(null) }}
+        />
+      )}
 
       <header style={{
         background: '#fff',
@@ -210,7 +239,20 @@ function Dashboard() {
             {filtro === 'hoy' ? 'Hoy' : filtro === 'semana' ? 'Esta semana' : 'Este mes'}
           </p>
         </div>
-        <PlusButton onClick={() => alert('Próximamente: nuevo movimiento desde el panel')} />
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            onClick={() => { setModalError(null); setMostrarNuevo(true) }}
+            style={{
+              padding: '10px 18px', borderRadius: '10px', border: 'none',
+              background: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
+              color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px',
+            }}
+          >
+            + Nuevo movimiento
+          </button>
+          <PlusButton onClick={() => alert('Próximamente: funciones PLUS')} />
+        </div>
       </header>
 
       <main style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto' }}>
