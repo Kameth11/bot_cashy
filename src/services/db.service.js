@@ -3,7 +3,7 @@ const { USE_SUPABASE, SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
-const { getRowIdUnico } = require('../utils/sheet-row');
+const { getRowIdUnico, formatDateValue } = require('../utils/sheet-row');
 const {
   buildMovimientoV2Payload,
   buildMovimientoV2UpdatePayload,
@@ -459,7 +459,26 @@ function mapV2RowToLegacySnapshot(row) {
   };
 }
 
-function mapLegacyDbRowToPlainData(row) {
+function mapV2RowToExtendedFields(v2Row) {
+  if (!v2Row) {
+    return {
+      categoria: '', paciente: '', profesional: '', tratamiento: '',
+      proveedor: '', fechaPrestacion: '', fechaVencimiento: '', referenciaId: '',
+    };
+  }
+  return {
+    categoria: v2Row.categoria || '',
+    paciente: v2Row.paciente_nombre || '',
+    profesional: v2Row.profesional_nombre || '',
+    tratamiento: v2Row.tratamiento_nombre || '',
+    proveedor: v2Row.proveedor_nombre || '',
+    fechaPrestacion: formatDateValue(v2Row.fecha_prestacion, ''),
+    fechaVencimiento: formatDateValue(v2Row.fecha_vencimiento, ''),
+    referenciaId: v2Row.referencia_id || '',
+  };
+}
+
+function mapLegacyDbRowToPlainData(row, v2Row = null) {
   return {
     fecha: formatLegacyDate(row.fecha) || '',
     hora: formatLegacyHour(row.hora) || '',
@@ -472,6 +491,7 @@ function mapLegacyDbRowToPlainData(row) {
     metodoPago: getDbPaymentMethod(row),
     idUnico: row.id_unico || '',
     pagador: '',
+    ...mapV2RowToExtendedFields(v2Row),
     _sortKey: row.created_at || null,
   };
 }
@@ -490,6 +510,7 @@ function mapV2RowToPlainData(row) {
     metodoPago: legacy.metodo_pago,
     idUnico: legacy.id_unico,
     pagador: legacy.pagador || '',
+    ...mapV2RowToExtendedFields(row),
     _sortKey: row.fecha_carga || row.created_at || null,
   };
 }
@@ -531,9 +552,17 @@ async function resolveReadModelRows(supabase, userId) {
   const legacyIds = new Set(legacyRows.map(row => String(row.id)));
   const v2OnlyRows = v2Rows.filter(row => !row.legacy_row_id || !legacyIds.has(String(row.legacy_row_id)));
 
+  const v2ByLegacyId = new Map();
+  for (const v2Row of v2Rows) {
+    if (v2Row.legacy_row_id && legacyIds.has(String(v2Row.legacy_row_id))) {
+      v2ByLegacyId.set(String(v2Row.legacy_row_id), v2Row);
+    }
+  }
+
   return {
     legacyRows,
     v2OnlyRows,
+    v2ByLegacyId,
   };
 }
 
@@ -789,9 +818,9 @@ async function obtenerDatosSheet(userId) {
   }
 
   try {
-    const { legacyRows, v2OnlyRows } = await resolveReadModelRows(supabase, userId);
+    const { legacyRows, v2OnlyRows, v2ByLegacyId } = await resolveReadModelRows(supabase, userId);
     const combined = [
-      ...legacyRows.map(mapLegacyDbRowToPlainData),
+      ...legacyRows.map(row => mapLegacyDbRowToPlainData(row, v2ByLegacyId.get(String(row.id)) || null)),
       ...v2OnlyRows.map(mapV2RowToPlainData),
     ];
 

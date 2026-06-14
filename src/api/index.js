@@ -27,6 +27,8 @@ const {
 const clienteService = require('../services/cliente.service');
 const { sanitizarInput } = require('../utils/formatter');
 const { normalizarDescripcion, validarMonto } = require('../utils/validation');
+const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
+const state = require('../state');
 
 const app = express();
 
@@ -246,6 +248,10 @@ app.post('/api/movimientos', authMiddleware, async (req, res) => {
     const montoAbs = Math.abs(montoValidado.valor);
     const monto = tipo === 'Egreso' ? -montoAbs : montoAbs;
 
+    if ((moneda === 'Dólares' && !state.cotizacionDolar) || (moneda === 'Euros' && !state.cotizacionEuro)) {
+      await obtenerCotizacionDolar();
+    }
+
     const resultado = await guardarMovimiento(req.user.userId, {
       descripcion: descripcionValidada.valor,
       monto,
@@ -446,7 +452,6 @@ app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
 
 // ── Cotizacion (publica) ──
 app.get('/api/cotizacion', (req, res) => {
-  const state = require('../state');
   res.json({ dolar: state.cotizacionDolar, euro: state.cotizacionEuro, fecha: state.cotizacionFecha });
 });
 

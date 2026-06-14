@@ -235,6 +235,7 @@ module.exports = {
   getRowFechaPrestacion,
   getRowFechaVencimiento,
   getRowSaldoPendiente,
+  formatDateValue,
   toMovimiento,
   isValidMovimientoRow,
 };
