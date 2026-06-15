@@ -222,7 +222,7 @@ function Dashboard() {
         />
       )}
 
-      <header style={{
+      <header className="dash-header" style={{
         background: '#fff',
         borderBottom: '1px solid #e5e7eb',
         padding: '16px 24px',
@@ -280,6 +280,7 @@ function Dashboard() {
           {/* Buscador */}
           <input
             type="text"
+            className="dash-search"
             placeholder="Buscar descripción, paciente..."
             value={buscar}
             onChange={e => setBuscar(e.target.value)}

@@ -139,6 +139,67 @@ input, select, textarea {
   border-color: #fecaca;
 }
 
+/* ── Responsive (mobile) ─────────────────────────────── */
+
+@media (max-width: 768px) {
+  .app-layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    min-height: auto;
+    flex-direction: row;
+    align-items: center;
+    padding: 10px 16px;
+    gap: 12px;
+  }
+
+  .sidebar-header {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    padding-right: 12px;
+    border-bottom: none;
+    border-right: 1px solid #f1f5f9;
+    white-space: nowrap;
+  }
+
+  .sidebar-header p {
+    display: none;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    flex: 1;
+    gap: 6px;
+    overflow-x: auto;
+  }
+
+  .nav-item span {
+    white-space: nowrap;
+  }
+
+  .logout-btn {
+    width: auto;
+    margin-top: 0;
+    padding: 8px 10px;
+  }
+
+  .logout-btn span {
+    display: none;
+  }
+
+  .dash-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .dash-search {
+    display: none;
+  }
+}
+
 /* ── Metric cards ────────────────────────────────────── */
 
 .metric-card {
