@@ -139,9 +139,67 @@ input, select, textarea {
   border-color: #fecaca;
 }
 
+/* ── Movimientos: tarjetas (mobile) ──────────────────── */
+
+.mov-cards {
+  display: none;
+}
+
+.mov-card {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mov-card:last-child {
+  border-bottom: none;
+}
+
+.mov-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mov-card-fecha {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mov-card-desc {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.mov-card-prof {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.mov-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+
 /* ── Responsive (mobile) ─────────────────────────────── */
 
 @media (max-width: 768px) {
+  .mov-table-wrap {
+    display: none;
+  }
+
+  .mov-cards {
+    display: block;
+  }
+
   .app-layout {
     flex-direction: column;
   }

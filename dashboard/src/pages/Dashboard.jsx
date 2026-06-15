@@ -376,57 +376,83 @@ function Dashboard() {
           )}
 
           {movimientosFiltrados.length > 0 && (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e5e7eb' }}>
-                    <th style={thStyle}>Fecha</th>
-                    <th style={thStyle}>Descripción</th>
-                    <th style={thStyle}>Profesional</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Monto</th>
-                    <th style={{ ...thStyle, textAlign: 'center' }}>Estado</th>
-                    <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {movimientosFiltrados.map((mov, index) => (
-                    <tr
-                      key={mov.idUnico ?? mov.id ?? index}
-                      style={{ borderBottom: '1px solid #f3f4f6' }}
-                      className="mov-row"
-                    >
-                      <td style={tdStyle}>{formatFecha(mov.fecha)}</td>
-                      <td style={tdStyle}>{mov.descripcion}</td>
-                      <td style={{ ...tdStyle, color: '#64748b' }}>{mov.profesional || '-'}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>
-                        <MontoCell mov={mov} />
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <EstadoBadge estado={mov.estado} />
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'center', padding: '10px 8px' }}>
-                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                          <ActionBtn
-                            title="Editar"
-                            onClick={() => setEditando(mov)}
-                            color="#6366f1"
-                          >
-                            ✏️
-                          </ActionBtn>
-                          <ActionBtn
-                            title="Eliminar"
-                            onClick={() => setConfirmDelete(mov)}
-                            color="#ef4444"
-                          >
-                            🗑️
-                          </ActionBtn>
-                        </div>
-                      </td>
+            <>
+              {/* Vista tabla (desktop) */}
+              <div className="mov-table-wrap" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={thStyle}>Fecha</th>
+                      <th style={thStyle}>Descripción</th>
+                      <th style={thStyle}>Profesional</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Monto</th>
+                      <th style={{ ...thStyle, textAlign: 'center' }}>Estado</th>
+                      <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {movimientosFiltrados.map((mov, index) => (
+                      <tr
+                        key={mov.idUnico ?? mov.id ?? index}
+                        style={{ borderBottom: '1px solid #f3f4f6' }}
+                        className="mov-row"
+                      >
+                        <td style={tdStyle}>{formatFecha(mov.fecha)}</td>
+                        <td style={tdStyle}>{mov.descripcion}</td>
+                        <td style={{ ...tdStyle, color: '#64748b' }}>{mov.profesional || '-'}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                          <MontoCell mov={mov} />
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'center' }}>
+                          <EstadoBadge estado={mov.estado} />
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'center', padding: '10px 8px' }}>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                            <ActionBtn
+                              title="Editar"
+                              onClick={() => setEditando(mov)}
+                              color="#6366f1"
+                            >
+                              ✏️
+                            </ActionBtn>
+                            <ActionBtn
+                              title="Eliminar"
+                              onClick={() => setConfirmDelete(mov)}
+                              color="#ef4444"
+                            >
+                              🗑️
+                            </ActionBtn>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Vista tarjetas (mobile) */}
+              <div className="mov-cards">
+                {movimientosFiltrados.map((mov, index) => (
+                  <div key={mov.idUnico ?? mov.id ?? index} className="mov-card">
+                    <div className="mov-card-top">
+                      <span className="mov-card-fecha">{formatFecha(mov.fecha)}</span>
+                      <EstadoBadge estado={mov.estado} />
+                    </div>
+                    <div className="mov-card-desc">{mov.descripcion}</div>
+                    {mov.profesional && (
+                      <div className="mov-card-prof">{mov.profesional}</div>
+                    )}
+                    <div className="mov-card-bottom">
+                      <MontoCell mov={mov} />
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <ActionBtn title="Editar" onClick={() => setEditando(mov)} color="#6366f1">✏️</ActionBtn>
+                        <ActionBtn title="Eliminar" onClick={() => setConfirmDelete(mov)} color="#ef4444">🗑️</ActionBtn>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </main>
