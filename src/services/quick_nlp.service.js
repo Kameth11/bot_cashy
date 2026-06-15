@@ -878,8 +878,8 @@ function matchPagoConTotal(rawText, text) {
 // probablemente es el nombre que no se pudo extraer: forzar fallback a Gemini.
 function ingresoSinPacienteConNombre(result) {
   if (!result || result.intent !== 'registrar_movimiento') return false;
-  const { tipo, pacienteNombre, descripcion } = result.entities || {};
-  if (tipo !== 'ingreso' || pacienteNombre) return false;
+  const { tipo, pacienteNombre, descripcion, tratamientoNombre } = result.entities || {};
+  if (tipo !== 'ingreso' || pacienteNombre || tratamientoNombre) return false;
   return Boolean(descripcion && descripcion.trim());
 }
 
