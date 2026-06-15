@@ -128,7 +128,7 @@ function createModel(ai, modelName) {
       maxOutputTokens: 512,
       temperature: 0.1,
       responseMimeType: "application/json",
-      thinkingConfig: { thinkingBudget: -1 },
+      thinkingConfig: { thinkingBudget: 0 },
     },
   });
 }
