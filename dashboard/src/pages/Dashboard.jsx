@@ -49,9 +49,9 @@ function Dashboard() {
 
   useEffect(() => {
     let active = true
-    async function load() {
-      setLoading(true)
-      setError(null)
+    async function load(background = false) {
+      if (!background) setLoading(true)
+      if (!background) setError(null)
       try {
         const { data } = await api.get('/api/movimientos', {
           params: { desde: range.desde, hasta: range.hasta }
@@ -61,13 +61,27 @@ function Dashboard() {
       } catch (err) {
         if (!active) return
         console.error('Dashboard error', err)
-        setError('No se pudieron cargar los movimientos')
+        if (!background) setError('No se pudieron cargar los movimientos')
       } finally {
-        if (active) setLoading(false)
+        if (active && !background) setLoading(false)
       }
     }
-    load()
-    return () => { active = false }
+
+    load(false)
+
+    // Refresco automático: cada 30s y al volver a la pestaña, para ver
+    // movimientos registrados desde el bot sin tener que recargar la página.
+    const interval = setInterval(() => load(true), 30000)
+    function onVisible() {
+      if (document.visibilityState === 'visible') load(true)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      active = false
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [range, reload])
 
   const metricas = useMemo(() => {
