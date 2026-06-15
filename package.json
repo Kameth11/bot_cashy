@@ -28,6 +28,7 @@
     "telegraf": "^4.16.0"
   },
   "devDependencies": {
+    "@unrs/resolver-binding-win32-x64-msvc": "^1.11.1",
     "jest": "^30.4.2"
   }
 }
