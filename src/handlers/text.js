@@ -212,6 +212,59 @@ const { confirmButtons } = require('./actions');
 
 const regexMsg = /^(consulta|servicio|gasto|pendiente)\s+(.+?)\s+(?:\$|U\$|USD|€|EUR)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
+async function procesarTextoConNlp(ctx, text) {
+  const userId = ctx.from.id;
+  if (state.processingNlp.has(userId)) {
+    return ctx.reply('⏳ Espera, todavía estoy procesando tu mensaje anterior...');
+  }
+  state.processingNlp.add(userId);
+  try {
+    const quickResult = quickParse(text);
+    if (shouldHandleWithQuickParseFirst(quickResult)) {
+      try {
+        const handled = await handleNLPIntent(ctx, quickResult);
+        if (handled) return;
+      } catch (e) {
+        console.error('Error quick NLP:', e.message);
+      }
+    }
+
+    if (geminiService.canAttemptRemoteNlp()) {
+      await ctx.reply('🧠 Procesando...').catch(() => {});
+
+      try {
+        const nlpResult = await geminiService.parseMessage(userId, text);
+        if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
+          const handled = await handleNLPIntent(ctx, nlpResult);
+          if (handled) return;
+        }
+      } catch (nlpError) {
+        console.error('Error NLP fallback:', nlpError.message);
+      }
+    }
+
+    if (quickResult) {
+      try {
+        const handled = await handleNLPIntent(ctx, quickResult);
+        if (handled) return;
+      } catch (e) {
+        console.error('Error quick NLP:', e.message);
+      }
+    }
+
+    return ctx.reply(
+      'No entendí bien ese mensaje 🤔\n\n' +
+      'Podés intentar con un formato más claro, por ejemplo:\n' +
+      '  • consulta Juan $15000 efectivo\n' +
+      '  • gasto insumos $500 transferencia\n' +
+      '  • me deben €200 de García\n\n' +
+      'O usá /registrar para cargarlo paso a paso.'
+    );
+  } finally {
+    state.processingNlp.delete(userId);
+  }
+}
+
 bot.on('text', async (ctx) => {
   try {
   const text = ctx.message.text.trim();
@@ -710,55 +763,7 @@ bot.on('text', async (ctx) => {
 
   const match = text.match(regexMsg);
   if (!match) {
-    if (state.processingNlp.has(userId)) {
-      return ctx.reply('⏳ Espera, todavía estoy procesando tu mensaje anterior...');
-    }
-    state.processingNlp.add(userId);
-    try {
-      const quickResult = quickParse(text);
-      if (shouldHandleWithQuickParseFirst(quickResult)) {
-        try {
-          const handled = await handleNLPIntent(ctx, quickResult);
-          if (handled) return;
-        } catch (e) {
-          console.error('Error quick NLP:', e.message);
-        }
-      }
-
-      if (geminiService.canAttemptRemoteNlp()) {
-        await ctx.reply('🧠 Procesando...').catch(() => {});
-
-        try {
-          const nlpResult = await geminiService.parseMessage(userId, text);
-          if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
-            const handled = await handleNLPIntent(ctx, nlpResult);
-            if (handled) return;
-          }
-        } catch (nlpError) {
-          console.error('Error NLP fallback:', nlpError.message);
-        }
-      }
-
-      if (quickResult) {
-        try {
-          const handled = await handleNLPIntent(ctx, quickResult);
-          if (handled) return;
-        } catch (e) {
-          console.error('Error quick NLP:', e.message);
-        }
-      }
-
-      return ctx.reply(
-        'No entendí bien ese mensaje 🤔\n\n' +
-        'Podés intentar con un formato más claro, por ejemplo:\n' +
-        '  • consulta Juan $15000 efectivo\n' +
-        '  • gasto insumos $500 transferencia\n' +
-        '  • me deben €200 de García\n\n' +
-        'O usá /registrar para cargarlo paso a paso.'
-      );
-    } finally {
-      state.processingNlp.delete(userId);
-    }
+    return procesarTextoConNlp(ctx, text);
   }
 
   const comando = match[1].toLowerCase();
@@ -887,4 +892,4 @@ bot.on('text', async (ctx) => {
   }
 });
 
-module.exports = {};
+module.exports = { procesarTextoConNlp };

@@ -44,6 +44,7 @@ require('./handlers/commands/profesional');
 // Load text handler (must be AFTER commands)
 require('./handlers/text');
 require('./handlers/photo');
+require('./handlers/voice');
 
 // Load callback action handlers (for inline buttons)
 require('./handlers/actions');

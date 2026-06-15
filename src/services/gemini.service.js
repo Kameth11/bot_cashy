@@ -1,4 +1,4 @@
-const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config');
+const { GEMINI_API_KEY, GEMINI_MODEL, GEMINI_VISION_MODEL } = require('../config');
 
 const SYSTEM_PROMPT = `Eres un parser de mensajes de cashflow para un CONSULTORIO ODONTOLOGICO de Argentina. Tu UNICA salida es un JSON objeto, sin texto antes o despues.
 
@@ -83,6 +83,12 @@ const CACHE_TTL_MS = 60000;
 const RATE_LIMIT_COOLDOWN_MS = 65000;
 const SERVICE_ERROR_COOLDOWN_MS = 180000;
 const API_TIMEOUT_MS = 8000;
+const AUDIO_API_TIMEOUT_MS = 20000;
+
+const AUDIO_TRANSCRIPTION_MODELS = [GEMINI_VISION_MODEL, 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const TRANSCRIPTION_PROMPT = 'Transcribí este audio a texto en español neutro (Argentina). ' +
+  'Devolvé ÚNICAMENTE la transcripción del audio, sin comentarios, encabezados ni formato adicional. ' +
+  'Si no se entiende nada, devolvé una cadena vacía.';
 
 let genAI = null;
 let activeModel = null;
@@ -612,4 +618,42 @@ async function parseMessage(userId, text, _retryDepth = 0) {
   }
 }
 
-module.exports = { parseMessage, initModel, canAttemptRemoteNlp };
+async function transcribirAudio(buffer, mimeType = 'audio/ogg') {
+  if (!GEMINI_API_KEY) return null;
+
+  const ai = getGenAI();
+  if (!ai) return null;
+
+  const audioPart = {
+    inlineData: {
+      data: buffer.toString('base64'),
+      mimeType,
+    },
+  };
+
+  for (const modelName of [...new Set(AUDIO_TRANSCRIPTION_MODELS.filter(Boolean))]) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AUDIO_API_TIMEOUT_MS);
+
+    try {
+      const model = ai.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 1024,
+        },
+      });
+      const result = await model.generateContent([audioPart, TRANSCRIPTION_PROMPT], { signal: controller.signal });
+      return result.response.text().trim();
+    } catch (error) {
+      const reason = error.name === 'AbortError' ? 'timeout' : error.message.substring(0, 120);
+      console.log(`NLP: transcripcion de audio con ${modelName} fallo: ${reason}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return null;
+}
+
+module.exports = { parseMessage, initModel, canAttemptRemoteNlp, transcribirAudio };

@@ -5,19 +5,7 @@ const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { procesarFotoAgenda } = require('../services/vision.service');
 const { confirmButtons } = require('./actions');
 const { MAX_PHOTO_SIZE_BYTES, MAX_TURNOS_POR_IMAGEN } = require('../config');
-
-function tieneProcesoPendiente(userId) {
-  return state.pendingAgendaConfirm.has(userId) ||
-    state.pendingRegistros.has(userId) ||
-    state.pendingDeletes.has(userId) ||
-    state.pendingEdits.has(userId) ||
-    state.pendingCotizaciones.has(userId) ||
-    state.pendingPayments.has(userId) ||
-    state.pendingLimpiezas.has(userId) ||
-    state.pendingReinicios.has(userId) ||
-    state.pendingDescripcion.has(userId) ||
-    state.pendingIngresoPacientes.has(userId);
-}
+const { tieneProcesoPendiente } = require('./guards');
 
 bot.on('photo', async (ctx) => {
   const userId = ctx.from.id;
