@@ -28,6 +28,7 @@ const clienteService = require('../services/cliente.service');
 const { sanitizarInput } = require('../utils/formatter');
 const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
+const eventsService = require('../services/events.service');
 const state = require('../state');
 
 const app = express();
@@ -188,7 +189,35 @@ async function getDatosConCache(userId) {
   return data;
 }
 
-function invalidarCacheMovimientos(userId) { _movCache.delete(userId); }
+function invalidarCacheMovimientos(userId) { _movCache.delete(String(userId)); }
+
+// Cuando un movimiento se crea/edita/borra desde CUALQUIER lado (bot o dashboard),
+// invalidamos la cache de /api/movimientos para que el siguiente fetch del
+// dashboard (disparado por el evento SSE) traiga datos frescos.
+eventsService.onMovimientosUpdated(invalidarCacheMovimientos);
+
+// ── Eventos en tiempo real (SSE) ──
+// El frontend se conecta via fetch + ReadableStream (no EventSource) para poder
+// mandar el token en el header Authorization en lugar de la URL.
+app.get('/api/events', authMiddleware, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  res.write(': connected\n\n');
+
+  eventsService.subscribe(req.user.userId, res);
+
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    eventsService.unsubscribe(req.user.userId, res);
+  });
+});
 
 // ── Movimientos: list ──
 app.get('/api/movimientos', authMiddleware, async (req, res) => {

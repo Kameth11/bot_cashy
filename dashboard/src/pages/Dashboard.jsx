@@ -6,6 +6,7 @@ import MetricCard from '../components/MetricCard'
 import PlusButton from '../components/PlusButton'
 import CotizacionWidget from '../components/CotizacionWidget'
 import NuevoMovimientoModal from '../components/NuevoMovimientoModal'
+import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 
 function Dashboard() {
   const [filtro, setFiltro]       = useState('mes')
@@ -69,6 +70,10 @@ function Dashboard() {
     load()
     return () => { active = false }
   }, [range, reload])
+
+  // Cuando el backend avisa (via SSE) que cambiaron los movimientos -ya sea
+  // por el bot o por otra pestaña- forzamos un refetch.
+  useMovimientosEvents(useCallback(() => setReload(r => r + 1), []))
 
   const metricas = useMemo(() => {
     const cobrados = movimientos.filter(m =>

@@ -3,6 +3,7 @@ const { USE_SUPABASE, SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
+const { emitMovimientosUpdated } = require('./events.service');
 const { getRowIdUnico, formatDateValue } = require('../utils/sheet-row');
 const {
   buildMovimientoV2Payload,
@@ -944,6 +945,7 @@ async function addRow(userId, rowData, options = {}) {
     await getSheetService().ensureSheetStructure(sheet);
     const row = await sheet.addRow(rowData, { insert: true });
     await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+    emitMovimientosUpdated(userId);
     return row;
   }
 
@@ -954,6 +956,7 @@ async function addRow(userId, rowData, options = {}) {
     await getSheetService().ensureSheetStructure(sheet);
     const row = await sheet.addRow(rowData, { insert: true });
     await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+    emitMovimientosUpdated(userId);
     return row;
   }
 
@@ -1046,6 +1049,7 @@ async function addRow(userId, rowData, options = {}) {
     // sheet write failed, thats OK - supabase is source of truth
   }
 
+  emitMovimientosUpdated(userId);
   return data || rowData;
 }
 
@@ -1171,6 +1175,7 @@ async function updateMovimiento(userId, idUnico, updates) {
 
   await row.save();
   invalidateCache(userId);
+  emitMovimientosUpdated(userId);
 }
 
 // Elimina un movimiento por ID único.
@@ -1179,6 +1184,7 @@ async function deleteMovimiento(userId, idUnico) {
   if (!row) throw new Error('movimiento_no_encontrado');
   await row.delete();
   invalidateCache(userId);
+  emitMovimientosUpdated(userId);
 }
 
 // Elimina un movimiento por clave compuesta (para filas sin ID_Unico).
@@ -1187,6 +1193,7 @@ async function deleteMovimientoByKey(userId, compositeKey) {
   if (!row) throw new Error('movimiento_no_encontrado');
   await row.delete();
   invalidateCache(userId);
+  emitMovimientosUpdated(userId);
 }
 
 module.exports = {
