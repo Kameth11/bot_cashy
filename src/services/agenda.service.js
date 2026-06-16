@@ -52,7 +52,16 @@ async function guardarTurnosFlat(userId, turnos) {
   const ids = [];
   console.log(`Guardando ${turnos.length} turnos en tab Turnos (${fecha})...`);
 
-  for (const turno of turnos) {
+  // Agrupar por consultorio para que el Sheet quede ordenado por sección
+  const turnosOrdenados = [...turnos].sort((a, b) => {
+    const ca = String(a.consultorio || a.profesional || '').toLowerCase();
+    const cb = String(b.consultorio || b.profesional || '').toLowerCase();
+    if (ca < cb) return -1;
+    if (ca > cb) return 1;
+    return (a.hora || '').localeCompare(b.hora || '');
+  });
+
+  for (const turno of turnosOrdenados) {
     const idTurno = generarIDTurno();
     ids.push(idTurno);
     await sheet.addRow({

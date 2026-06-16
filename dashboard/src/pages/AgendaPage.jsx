@@ -61,6 +61,7 @@ export default function AgendaPage() {
   const [editando, setEditando] = useState(false)
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(null)
   const [eliminando, setEliminando] = useState(false)
+  const [filtroProfesional, setFiltroProfesional] = useState(null)
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -151,14 +152,23 @@ export default function AgendaPage() {
     weekday: 'long', day: 'numeric', month: 'long'
   })
 
-  const turnosConTurno = turnos.filter(t => t.estado !== 'Cancelado')
+  // Profesionales únicos para los filtros (usando nombre resuelto)
+  const profesionalesUnicos = [...new Set(
+    turnos.map(t => resolverProfesional(t.profesional, t.consultorio))
+  )].filter(p => p !== undefined && p !== null).sort()
+
+  const turnosFiltrados = filtroProfesional !== null
+    ? turnos.filter(t => resolverProfesional(t.profesional, t.consultorio) === filtroProfesional)
+    : turnos
+
+  const turnosConTurno = turnosFiltrados.filter(t => t.estado !== 'Cancelado')
   const cobrados   = turnosConTurno.filter(t => t.estado === 'Cobrado').length
   const llegaron   = turnosConTurno.filter(t => t.estado === 'Llegó').length
   const pendientes = turnosConTurno.filter(t => t.estado === 'Pendiente').length
 
   // List view: only slots that have a turno, in order
   const turnosList = SLOTS
-    .map(slot => ({ slot, turno: turnoParaSlot(turnos, slot) }))
+    .map(slot => ({ slot, turno: turnoParaSlot(turnosFiltrados, slot) }))
     .filter(({ turno }) => turno)
 
   return (
@@ -173,8 +183,29 @@ export default function AgendaPage() {
 
       {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}
 
+      {/* Filtros por profesional/consultorio */}
+      {!loading && profesionalesUnicos.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+          <button
+            className={`chip${filtroProfesional === null ? ' active' : ''}`}
+            onClick={() => setFiltroProfesional(null)}
+          >
+            Todos
+          </button>
+          {profesionalesUnicos.map(p => (
+            <button
+              key={p || '__sinprof__'}
+              className={`chip${filtroProfesional === p ? ' active' : ''}`}
+              onClick={() => setFiltroProfesional(p)}
+            >
+              {p || 'Sin profesional'}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Summary chips */}
-      {!loading && turnos.length > 0 && (
+      {!loading && turnosFiltrados.length > 0 && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           {[
             ['Pendientes', pendientes, 'Pendiente'],
