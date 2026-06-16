@@ -8,6 +8,11 @@ const CONSULTORIO_MAP = {
   'consultorio 3': '',
 }
 
+// Opciones fijas de filtro: solo los consultorios con nombre asignado
+const FILTROS_CONSULTORIO = Object.entries(CONSULTORIO_MAP)
+  .filter(([, nombre]) => nombre !== '')
+  .map(([, nombre]) => nombre)
+
 function resolverProfesional(profesional, consultorio) {
   for (const valor of [profesional, consultorio].filter(Boolean)) {
     const key = valor.toLowerCase().trim()
@@ -152,11 +157,6 @@ export default function AgendaPage() {
     weekday: 'long', day: 'numeric', month: 'long'
   })
 
-  // Profesionales únicos para los filtros (usando nombre resuelto)
-  const profesionalesUnicos = [...new Set(
-    turnos.map(t => resolverProfesional(t.profesional, t.consultorio))
-  )].filter(p => p !== undefined && p !== null).sort()
-
   const turnosFiltrados = filtroProfesional !== null
     ? turnos.filter(t => resolverProfesional(t.profesional, t.consultorio) === filtroProfesional)
     : turnos
@@ -183,8 +183,8 @@ export default function AgendaPage() {
 
       {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}
 
-      {/* Filtros por profesional/consultorio */}
-      {!loading && profesionalesUnicos.length > 1 && (
+      {/* Filtros por consultorio */}
+      {!loading && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
           <button
             className={`chip${filtroProfesional === null ? ' active' : ''}`}
@@ -192,13 +192,13 @@ export default function AgendaPage() {
           >
             Todos
           </button>
-          {profesionalesUnicos.map(p => (
+          {FILTROS_CONSULTORIO.map(nombre => (
             <button
-              key={p || '__sinprof__'}
-              className={`chip${filtroProfesional === p ? ' active' : ''}`}
-              onClick={() => setFiltroProfesional(p)}
+              key={nombre}
+              className={`chip${filtroProfesional === nombre ? ' active' : ''}`}
+              onClick={() => setFiltroProfesional(nombre)}
             >
-              {p || 'Sin profesional'}
+              {nombre}
             </button>
           ))}
         </div>
