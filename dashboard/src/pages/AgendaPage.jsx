@@ -6,10 +6,10 @@ const HORA_FIN = 21
 const INTERVALO = 30
 
 const ESTADOS = {
-  Pendiente: { label: 'Pendiente', bg: '#fef3c7', color: '#b45309' },
-  'Llegó':   { label: 'Llegó',    bg: '#dbeafe', color: '#1d4ed8' },
-  Cobrado:   { label: 'Cobrado',  bg: '#dcfce7', color: '#166534' },
-  Cancelado: { label: 'Cancelado',bg: '#fee2e2', color: '#b91c1c' },
+  Pendiente: { label: 'Pendiente', bg: '#FFF4CE', color: '#FF8B00',  bar: '#FF8B00'  },
+  'Llegó':   { label: 'Llegó',    bg: '#DEEBFF', color: '#0747A6',  bar: '#0747A6'  },
+  Cobrado:   { label: 'Cobrado',  bg: '#E3FCEF', color: '#006644',  bar: '#006644'  },
+  Cancelado: { label: 'Cancelado',bg: '#FFEBE6', color: '#BF2600',  bar: '#BF2600'  },
 }
 
 function generarSlots() {
@@ -98,168 +98,135 @@ export default function AgendaPage() {
     weekday: 'long', day: 'numeric', month: 'long'
   })
 
-  const turnosHoy = turnos.filter(t => t.estado !== 'Cancelado')
-  const cobrados = turnosHoy.filter(t => t.estado === 'Cobrado').length
-  const llegaron = turnosHoy.filter(t => t.estado === 'Llegó').length
-  const pendientes = turnosHoy.filter(t => t.estado === 'Pendiente').length
+  const turnosConTurno = turnos.filter(t => t.estado !== 'Cancelado')
+  const cobrados   = turnosConTurno.filter(t => t.estado === 'Cobrado').length
+  const llegaron   = turnosConTurno.filter(t => t.estado === 'Llegó').length
+  const pendientes = turnosConTurno.filter(t => t.estado === 'Pendiente').length
+
+  // List view: only slots that have a turno, in order
+  const turnosList = SLOTS
+    .map(slot => ({ slot, turno: turnoParaSlot(turnos, slot) }))
+    .filter(({ turno }) => turno)
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f3f4f6' }}>
-      {/* Header */}
-      <header style={{
-        background: '#fff', borderBottom: '1px solid #e5e7eb',
-        padding: '10px 20px', position: 'sticky', top: 0, zIndex: 10,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      }}>
+    <div className="page">
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#1f2937' }}>Agenda</h1>
-          <p style={{ color: '#64748b', fontSize: '13px', textTransform: 'capitalize' }}>{hoy}</p>
+          <h1 className="page-title">Agenda</h1>
+          <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>{hoy}</p>
         </div>
-        <button onClick={cargar} style={btnSecundario}>Actualizar</button>
-      </header>
+        <button className="btn-agenda" onClick={cargar}>Actualizar</button>
+      </div>
 
-      <main style={{ padding: '10px 16px', maxWidth: '860px', margin: '0 auto' }}>
-        {error && <div style={errorStyle}>{error}</div>}
+      {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}
 
-        {/* Resumen */}
-        {!loading && turnos.length > 0 && (
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
-            <Chip label="Pendientes" value={pendientes} color="#b45309" bg="#fef3c7" />
-            <Chip label="Llegaron" value={llegaron} color="#1d4ed8" bg="#dbeafe" />
-            <Chip label="Cobrados" value={cobrados} color="#166534" bg="#dcfce7" />
+      {/* Summary chips */}
+      {!loading && turnos.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {[
+            ['Pendientes', pendientes, 'Pendiente'],
+            ['Llegaron',   llegaron,   'Llegó'],
+            ['Cobrados',   cobrados,   'Cobrado'],
+          ].map(([label, count, estado]) => {
+            const e = ESTADOS[estado] || ESTADOS.Pendiente
+            return (
+              <span key={label} className="agenda-badge" style={{ background: e.bg, color: e.color }}>
+                {count} {label}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Appointment list */}
+      <div className="card-surface">
+        {loading && <div className="empty-state">Cargando…</div>}
+
+        {!loading && turnosList.length === 0 && !error && (
+          <div className="empty-state">
+            Sin turnos hoy. Enviá una foto de la agenda al bot para cargarlos.
           </div>
         )}
 
-        {/* Grilla */}
-        <div style={{
-          background: '#fff', borderRadius: '14px',
-          border: '1px solid #e5e7eb', overflow: 'hidden',
-        }}>
-          {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>Cargando...</div>
-          ) : (
-            SLOTS.map((slot, i) => {
-              const turno = turnoParaSlot(turnos, slot)
-              const esMediaHora = slot.endsWith(':30')
-              const esCada2h = i % 4 === 0
-
-              return (
-                <div
-                  key={slot}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '56px 1fr',
-                    borderBottom: i < SLOTS.length - 1 ? '1px solid #f1f5f9' : 'none',
-                    minHeight: '32px',
-                    background: turno ? '#fff' : (esMediaHora ? '#fafafa' : '#fff'),
-                  }}
-                >
-                  {/* Hora */}
-                  <div style={{
-                    padding: '4px 8px',
-                    fontSize: esMediaHora ? '10px' : '11px',
-                    fontWeight: esMediaHora ? 400 : 700,
-                    color: esMediaHora ? '#cbd5e1' : '#64748b',
-                    borderRight: '1px solid #f1f5f9',
-                    display: 'flex',
-                    alignItems: 'center',
-                    userSelect: 'none',
-                  }}>
-                    {!esMediaHora || esCada2h ? slot : '·'}
+        {!loading && turnosList.map(({ slot, turno }, i) => {
+          const e = ESTADOS[turno.estado] || ESTADOS.Pendiente
+          const puedeAccion = turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado'
+          return (
+            <div key={slot} className="agenda-appt">
+              <span className="agenda-time">{slot}</span>
+              <div className="agenda-bar" style={{ background: e.bar }} />
+              <div className="agenda-info">
+                <div className="agenda-patient">{turno.cliente || 'Sin nombre'}</div>
+                {(turno.servicio || turno.profesional) && (
+                  <div className="agenda-treat">
+                    {[turno.servicio, turno.profesional].filter(Boolean).join(' · ')}
                   </div>
-
-                  {/* Contenido */}
-                  <div style={{ display: 'flex', alignItems: 'center', padding: '3px 10px', gap: '8px' }}>
-                    {turno ? (
-                      <>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: '13px', color: '#1f2937' }}>
-                            {turno.cliente || 'Sin nombre'}
-                            {(turno.servicio || turno.profesional) && (
-                              <span style={{ fontWeight: 400, color: '#64748b', marginLeft: '6px', fontSize: '11px' }}>
-                                {[turno.servicio, turno.profesional].filter(Boolean).join(' · ')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <EstadoBadge estado={turno.estado} />
-
-                        {turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado' && (
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            {turno.estado !== 'Llegó' && (
-                              <button
-                                onClick={() => handleLlego(turno)}
-                                disabled={accionando === turno.idTurno}
-                                style={{ ...btnSlot, background: '#eff6ff', color: '#2563eb', padding: '3px 8px', fontSize: '11px' }}
-                              >
-                                {accionando === turno.idTurno ? '...' : 'Llegó'}
-                              </button>
-                            )}
-                            <button
-                              onClick={() => { setModalTurno(turno); setMonto(''); setMetodoPago('efectivo') }}
-                              disabled={accionando === turno.idTurno}
-                              style={{ ...btnSlot, background: '#f0fdf4', color: '#16a34a', padding: '3px 8px', fontSize: '11px' }}
-                            >
-                              Cobrar
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div style={{ height: '28px' }} />
-                    )}
-                  </div>
+                )}
+              </div>
+              <span className="agenda-badge" style={{ background: e.bg, color: e.color, marginRight: 8 }}>
+                {e.label}
+              </span>
+              {puedeAccion && (
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {turno.estado !== 'Llegó' && (
+                    <button
+                      className="btn-agenda"
+                      disabled={accionando === turno.idTurno}
+                      onClick={() => handleLlego(turno)}
+                    >
+                      {accionando === turno.idTurno ? '…' : 'Llegó'}
+                    </button>
+                  )}
+                  <button
+                    className="btn-agenda primary"
+                    disabled={accionando === turno.idTurno}
+                    onClick={() => { setModalTurno(turno); setMonto(''); setMetodoPago('efectivo') }}
+                  >
+                    Cobrar
+                  </button>
                 </div>
-              )
-            })
-          )}
-        </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
 
-        {!loading && turnos.length === 0 && !error && (
-          <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '13px', marginTop: '16px' }}>
-            Sin turnos registrados hoy. Enviá una foto de la agenda al bot para cargarlos.
-          </p>
-        )}
-      </main>
-
-      {/* Modal cobro */}
+      {/* Cobro modal */}
       {modalTurno && (
-        <div style={overlayStyle} onClick={() => setModalTurno(null)}>
-          <div style={modalStyle} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>Registrar cobro</h3>
-            <p style={{ margin: '0 0 20px', color: '#64748b', fontSize: '13px' }}>
+        <div className="overlay" onClick={() => setModalTurno(null)}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title" style={{ fontSize: 16 }}>Registrar cobro</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 20 }}>
               <strong>{modalTurno.cliente}</strong>
               {modalTurno.hora ? ` · ${modalTurno.hora}hs` : ''}
               {modalTurno.servicio ? ` · ${modalTurno.servicio}` : ''}
             </p>
-
-            <label style={labelStyle}>Monto ($)</label>
-            <input
-              type="number"
-              placeholder="15000"
-              value={monto}
-              onChange={e => setMonto(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && confirmarCobro()}
-              style={inputStyle}
-              autoFocus
-            />
-
-            <label style={labelStyle}>Método de pago</label>
-            <select value={metodoPago} onChange={e => setMetodoPago(e.target.value)} style={inputStyle}>
-              <option value="efectivo">Efectivo</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="tarjeta">Tarjeta</option>
-            </select>
-
-            <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-              <button onClick={() => setModalTurno(null)} style={{ ...btnSecundario, flex: 1 }}>Cancelar</button>
-              <button
-                onClick={confirmarCobro}
-                disabled={guardando}
-                style={{ ...btnPrimario, flex: 1, opacity: guardando ? 0.6 : 1 }}
-              >
-                {guardando ? 'Guardando...' : 'Confirmar'}
+            <div className="modal-form">
+              <div>
+                <label className="form-label">Monto ($)</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  placeholder="15000"
+                  value={monto}
+                  onChange={e => setMonto(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && confirmarCobro()}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="form-label">Método de pago</label>
+                <select className="form-input" value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="tarjeta">Tarjeta</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setModalTurno(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={confirmarCobro} disabled={guardando}>
+                {guardando ? 'Guardando…' : 'Confirmar cobro'}
               </button>
             </div>
           </div>
@@ -267,58 +234,4 @@ export default function AgendaPage() {
       )}
     </div>
   )
-}
-
-function EstadoBadge({ estado }) {
-  const e = ESTADOS[estado] || ESTADOS.Pendiente
-  return (
-    <span style={{
-      padding: '2px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 700,
-      background: e.bg, color: e.color, whiteSpace: 'nowrap',
-    }}>
-      {e.label}
-    </span>
-  )
-}
-
-function Chip({ label, value, color, bg }) {
-  return (
-    <div style={{
-      background: bg, color, borderRadius: '8px',
-      padding: '6px 14px', fontSize: '13px', fontWeight: 600,
-    }}>
-      {value} {label}
-    </div>
-  )
-}
-
-const btnPrimario = {
-  background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', color: '#fff',
-  border: 'none', borderRadius: '8px', padding: '10px 16px',
-  fontWeight: 600, fontSize: '14px', cursor: 'pointer',
-}
-const btnSecundario = {
-  background: '#fff', color: '#374151', border: '1px solid #e5e7eb',
-  borderRadius: '8px', padding: '8px 16px', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
-}
-const btnSlot = {
-  border: 'none', borderRadius: '6px', padding: '5px 10px',
-  fontWeight: 600, fontSize: '12px', cursor: 'pointer',
-}
-const errorStyle = {
-  background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-  padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '14px',
-}
-const overlayStyle = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-}
-const modalStyle = {
-  background: '#fff', borderRadius: '16px', padding: '24px',
-  width: '100%', maxWidth: '380px', margin: '16px',
-}
-const labelStyle = { display: 'block', fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }
-const inputStyle = {
-  width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e5e7eb',
-  fontSize: '14px', outline: 'none', boxSizing: 'border-box', marginBottom: '14px',
 }
