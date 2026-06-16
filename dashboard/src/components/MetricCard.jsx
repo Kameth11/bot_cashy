@@ -13,12 +13,13 @@ function formatMontoMoneda(moneda, monto) {
 export default function MetricCard({ label, value, subtitle, variant = 'default', breakdown }) {
   const [hovered, setHovered] = useState(false)
 
-  const currencies  = breakdown ? Object.keys(breakdown) : []
-  const hasMultiple = currencies.length > 1
+  const currencies   = breakdown ? Object.keys(breakdown) : []
+  const hasBreakdown = currencies.length >= 1
 
   return (
     <div
       className={`metric-card metric-${variant}`}
+      style={{ position: 'relative' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -26,13 +27,13 @@ export default function MetricCard({ label, value, subtitle, variant = 'default'
       <p className="metric-value">{value}</p>
       {subtitle && <p className="metric-sub">{subtitle}</p>}
 
-      {hasMultiple && (
+      {hasBreakdown && (
         <span style={{ position: 'absolute', top: 14, right: 14, fontSize: 10, color: 'var(--text-3)', userSelect: 'none' }}>
           ···
         </span>
       )}
 
-      {hovered && hasMultiple && (
+      {hovered && hasBreakdown && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50,
           background: '#172B4D', color: '#f1f5f9', borderRadius: 8,
