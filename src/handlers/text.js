@@ -304,7 +304,9 @@ bot.on('text', async (ctx) => {
   if (state.pendingRegistros.has(userId)) {
     const result = await registrationService.handlePendingRegistration(userId, text);
     if (result) {
-      return ctx.reply(result.message, result.parse_mode ? { parse_mode: result.parse_mode } : undefined);
+      const extra = result.parse_mode ? { parse_mode: result.parse_mode } : {};
+      if (result.reply_markup) extra.reply_markup = result.reply_markup;
+      return ctx.reply(result.message, extra);
     }
     return;
   }

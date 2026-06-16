@@ -3,6 +3,7 @@ const { bot } = require('../lib/telegraf');
 const state = require('../state');
 const cmd = require('../services/command.service');
 const { escapeMarkdown, formatMonto } = require('../utils/formatter');
+const { DASHBOARD_URL } = require('../config');
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
@@ -172,7 +173,9 @@ async function handleNlpSave(ctx) {
       return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
     }
     if (resultado.success) {
-      return ctx.editMessageText(resultado.mensaje, { parse_mode: 'Markdown' });
+      const extra = { parse_mode: 'Markdown' };
+      if (DASHBOARD_URL) extra.reply_markup = { inline_keyboard: [[{ text: '📊 Ver Dashboard', url: DASHBOARD_URL }]] };
+      return ctx.editMessageText(resultado.mensaje, extra);
     }
     return ctx.editMessageText('❌ No se pudo registrar. Intentá de nuevo.');
   } catch (error) {

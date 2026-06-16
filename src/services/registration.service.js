@@ -1,5 +1,5 @@
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
-const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL } = require('../config');
+const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, DASHBOARD_URL } = require('../config');
 const state = require('../state');
 const {
   esAdminOriginal,
@@ -138,6 +138,10 @@ async function handleSheetIdStep(userId, text, registro) {
 
     state.pendingRegistros.delete(userId);
 
+    const dashboardBtn = DASHBOARD_URL
+      ? { inline_keyboard: [[{ text: '📊 Abrir Dashboard', url: DASHBOARD_URL }]] }
+      : undefined;
+
     if (registro.email) {
       return {
         message:
@@ -146,7 +150,8 @@ async function handleSheetIdStep(userId, text, registro) {
           `Tu sheet ha sido configurado.\n` +
           `Ahora puedes usar el bot.\n\n` +
           `Usa /start para comenzar.`,
-        parse_mode: 'Markdown'
+        parse_mode: 'Markdown',
+        reply_markup: dashboardBtn,
       };
     }
 
@@ -158,7 +163,8 @@ async function handleSheetIdStep(userId, text, registro) {
         `1. Comparte este email con tu sheet: *${GOOGLE_SERVICE_ACCOUNT_EMAIL}*\n` +
         `2. Dale permisos de "Editor"\n\n` +
         `Usa /start para comenzar.`,
-      parse_mode: 'Markdown'
+      parse_mode: 'Markdown',
+      reply_markup: dashboardBtn,
     };
   } catch (error) {
     console.error('Error al verificar sheet:', error.message);
