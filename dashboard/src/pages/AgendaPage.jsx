@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Pencil } from 'lucide-react'
 import { api } from '../services/api'
 
 const HORA_INICIO = 8
@@ -41,6 +42,9 @@ export default function AgendaPage() {
   const [metodoPago, setMetodoPago] = useState('efectivo')
   const [guardando, setGuardando] = useState(false)
   const [accionando, setAccionando] = useState(null)
+  const [modalEditar, setModalEditar] = useState(null)
+  const [editForm, setEditForm] = useState({ cliente: '', servicio: '', profesional: '', hora: '' })
+  const [editando, setEditando] = useState(false)
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -68,6 +72,26 @@ export default function AgendaPage() {
       alert('Error al registrar llegada')
     } finally {
       setAccionando(null)
+    }
+  }
+
+  function abrirEditar(turno) {
+    setEditForm({ cliente: turno.cliente || '', servicio: turno.servicio || '', profesional: turno.profesional || '', hora: turno.hora || '' })
+    setModalEditar(turno)
+  }
+
+  async function confirmarEdicion() {
+    setEditando(true)
+    try {
+      await api.patch(`/api/agenda/${modalEditar.idTurno}`, editForm)
+      setTurnos(prev => prev.map(t =>
+        t.idTurno === modalEditar.idTurno ? { ...t, ...editForm } : t
+      ))
+      setModalEditar(null)
+    } catch {
+      alert('Error al guardar los cambios')
+    } finally {
+      setEditando(false)
     }
   }
 
@@ -166,30 +190,68 @@ export default function AgendaPage() {
               <span className="agenda-badge" style={{ background: e.bg, color: e.color, marginRight: 8 }}>
                 {e.label}
               </span>
-              {puedeAccion && (
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {turno.estado !== 'Llegó' && (
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <button className="action-btn" title="Editar" onClick={() => abrirEditar(turno)}>
+                  <Pencil size={14} />
+                </button>
+                {puedeAccion && (
+                  <>
+                    {turno.estado !== 'Llegó' && (
+                      <button
+                        className="btn-agenda"
+                        disabled={accionando === turno.idTurno}
+                        onClick={() => handleLlego(turno)}
+                      >
+                        {accionando === turno.idTurno ? '…' : 'Llegó'}
+                      </button>
+                    )}
                     <button
-                      className="btn-agenda"
+                      className="btn-agenda primary"
                       disabled={accionando === turno.idTurno}
-                      onClick={() => handleLlego(turno)}
+                      onClick={() => { setModalTurno(turno); setMonto(''); setMetodoPago('efectivo') }}
                     >
-                      {accionando === turno.idTurno ? '…' : 'Llegó'}
+                      Cobrar
                     </button>
-                  )}
-                  <button
-                    className="btn-agenda primary"
-                    disabled={accionando === turno.idTurno}
-                    onClick={() => { setModalTurno(turno); setMonto(''); setMetodoPago('efectivo') }}
-                  >
-                    Cobrar
-                  </button>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           )
         })}
       </div>
+
+      {/* Edición modal */}
+      {modalEditar && (
+        <div className="overlay" onClick={() => setModalEditar(null)}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title" style={{ fontSize: 16 }}>Editar turno</h2>
+            <div className="modal-form">
+              {[
+                { label: 'Paciente', key: 'cliente' },
+                { label: 'Servicio', key: 'servicio' },
+                { label: 'Profesional', key: 'profesional' },
+                { label: 'Hora', key: 'hora', placeholder: '09:00' },
+              ].map(({ label, key, placeholder }) => (
+                <div key={key}>
+                  <label className="form-label">{label}</label>
+                  <input
+                    className="form-input"
+                    value={editForm[key]}
+                    placeholder={placeholder || ''}
+                    onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setModalEditar(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={confirmarEdicion} disabled={editando}>
+                {editando ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cobro modal */}
       {modalTurno && (

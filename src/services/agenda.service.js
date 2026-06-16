@@ -86,6 +86,19 @@ async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
   await row.save();
 }
 
+async function actualizarDatosTurno(userId, idTurno, datos) {
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+  const rows = await sheet.getRows();
+  const row = rows.find(r => r.get('ID_Turno') === idTurno);
+  if (!row) throw new Error('turno_no_encontrado');
+  const campos = { Cliente: datos.cliente, Servicio: datos.servicio, Profesional: datos.profesional, Hora: datos.hora };
+  for (const [col, val] of Object.entries(campos)) {
+    if (val !== undefined) row.set(col, val);
+  }
+  await row.save();
+}
+
 const BLOCK_WIDTH = 5;
 const BLOCK_SPACING = 1;
 const BLOCK_HEADERS = ['Hora', 'Cliente', 'Servicio', 'Estado', 'Fecha'];
@@ -259,5 +272,6 @@ module.exports = {
   guardarTurnosFlat,
   obtenerTurnosPorFecha,
   actualizarEstadoTurno,
+  actualizarDatosTurno,
   fechaHoyStr,
 };

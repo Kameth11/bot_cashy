@@ -22,6 +22,7 @@ const {
 const {
   obtenerTurnosPorFecha,
   actualizarEstadoTurno,
+  actualizarDatosTurno,
   fechaHoyStr,
 } = require('../services/agenda.service');
 const clienteService = require('../services/cliente.service');
@@ -420,6 +421,22 @@ app.get('/api/agenda', authMiddleware, async (req, res) => {
     res.json({ turnos });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
+  try {
+    const { idTurno } = req.params;
+    const { cliente, servicio, profesional, hora } = req.body || {};
+    if (!cliente && !servicio && !profesional && !hora) {
+      return res.status(400).json({ error: 'Al menos un campo es requerido' });
+    }
+    await actualizarDatosTurno(req.user.userId, idTurno, { cliente, servicio, profesional, hora });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.message === 'turno_no_encontrado') return res.status(404).json({ error: 'Turno no encontrado' });
+    console.error('Error PATCH /api/agenda:', err);
+    res.status(500).json({ error: 'Error al actualizar turno' });
   }
 });
 
