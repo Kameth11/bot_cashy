@@ -1,4 +1,16 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
+const { CONSULTORIO_MAP } = require('../config');
+
+function resolverProfesional(profesional, consultorio) {
+  const candidatos = [profesional, consultorio].filter(Boolean);
+  for (const valor of candidatos) {
+    const key = String(valor).toLowerCase().trim();
+    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
+      return CONSULTORIO_MAP[key]; // puede ser '' → vacío intencional
+    }
+  }
+  return profesional || '';
+}
 
 // ── Tab "Turnos" — estructura plana, consultable por fecha ──
 
@@ -49,7 +61,7 @@ async function guardarTurnosFlat(userId, turnos) {
       Hora: turno.hora || '',
       Cliente: turno.cliente || '',
       Servicio: turno.servicio || '',
-      Profesional: turno.profesional || '',
+      Profesional: resolverProfesional(turno.profesional, turno.consultorio),
       Consultorio: turno.consultorio || '',
       Estado: 'Pendiente',
     });
@@ -227,6 +239,13 @@ function escribirBloque(sheet, startRow, startColumn, group, fechaStr) {
     sheet.getCell(rowIndex, startColumn + 3).value = turno.estado || 'Pendiente';
     sheet.getCell(rowIndex, startColumn + 4).value = fechaStr;
   });
+
+  // Reemplaza el label del bloque si el nombre del consultorio tiene mapeo
+  const labelKey = group.label.toLowerCase().trim();
+  if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, labelKey)) {
+    const mappedLabel = CONSULTORIO_MAP[labelKey];
+    titleCell.value = mappedLabel || group.label;
+  }
 }
 
 async function guardarTurnosAgenda(userId, turnos) {

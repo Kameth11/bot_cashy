@@ -2,6 +2,20 @@ import { useState, useEffect, useCallback } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { api } from '../services/api'
 
+const CONSULTORIO_MAP = {
+  'consultorio 1': 'Laura',
+  'consultorio 2': 'Diego',
+  'consultorio 3': '',
+}
+
+function resolverProfesional(profesional, consultorio) {
+  for (const valor of [profesional, consultorio].filter(Boolean)) {
+    const key = valor.toLowerCase().trim()
+    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
+  }
+  return profesional || ''
+}
+
 const HORA_INICIO = 8
 const HORA_FIN = 21
 const INTERVALO = 30
@@ -196,9 +210,9 @@ export default function AgendaPage() {
               <div className="agenda-bar" style={{ background: e.bar }} />
               <div className="agenda-info">
                 <div className="agenda-patient">{turno.cliente || 'Sin nombre'}</div>
-                {(turno.servicio || turno.profesional) && (
+                {(turno.servicio || resolverProfesional(turno.profesional, turno.consultorio)) && (
                   <div className="agenda-treat">
-                    {[turno.servicio, turno.profesional].filter(Boolean).join(' · ')}
+                    {[turno.servicio, resolverProfesional(turno.profesional, turno.consultorio)].filter(Boolean).join(' · ')}
                   </div>
                 )}
               </div>

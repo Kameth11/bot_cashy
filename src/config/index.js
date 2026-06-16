@@ -32,6 +32,14 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || 'gemini-2.5-flash';
 const CODIGO_EXPIRACION_HORAS = 24;
 
+// Mapeo de nombre de consultorio → profesional. Clave en minúsculas.
+// Valor vacío ('') significa que no se muestra nombre de profesional.
+const CONSULTORIO_MAP = {
+  'consultorio 1': 'Laura',
+  'consultorio 2': 'Diego',
+  'consultorio 3': '',
+};
+
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -78,4 +86,5 @@ module.exports = {
   SUPABASE_SERVICE_ROLE_KEY,
   USE_SUPABASE,
   DASHBOARD_URL,
+  CONSULTORIO_MAP,
 };
