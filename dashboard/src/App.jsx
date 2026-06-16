@@ -4,6 +4,7 @@ import { useAuth } from './hooks/useAuth'
 import { AppProvider, useApp } from './contexts/AppContext'
 import AuthGuard from './components/AuthGuard'
 import NavBar from './components/NavBar'
+import BottomNav from './components/BottomNav'
 import NuevoMovimientoModal from './components/NuevoMovimientoModal'
 import ErrorBoundary from './components/ErrorBoundary'
 import Login from './pages/Login'
@@ -43,6 +44,7 @@ function LayoutWithModal() {
           <Route path="*"            element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      <BottomNav />
       {showNuevo && (
         <NuevoMovimientoModal
           guardando={creando}
