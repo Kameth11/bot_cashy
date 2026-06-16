@@ -2,14 +2,20 @@ const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
 
 function resolverProfesional(profesional, consultorio) {
-  const candidatos = [profesional, consultorio].filter(Boolean);
-  for (const valor of candidatos) {
-    const key = String(valor).toLowerCase().trim();
+  if (profesional) {
+    const key = String(profesional).toLowerCase().trim();
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
-      return CONSULTORIO_MAP[key]; // puede ser '' → vacío intencional
+      return CONSULTORIO_MAP[key];
+    }
+    return profesional;
+  }
+  if (consultorio) {
+    const key = String(consultorio).toLowerCase().trim();
+    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
+      return CONSULTORIO_MAP[key];
     }
   }
-  return profesional || '';
+  return '';
 }
 
 // ── Tab "Turnos" — estructura plana, consultable por fecha ──

@@ -14,11 +14,16 @@ const FILTROS_CONSULTORIO = Object.entries(CONSULTORIO_MAP)
   .map(([, nombre]) => nombre)
 
 function resolverProfesional(profesional, consultorio) {
-  for (const valor of [profesional, consultorio].filter(Boolean)) {
-    const key = valor.toLowerCase().trim()
+  if (profesional) {
+    const key = profesional.toLowerCase().trim()
+    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
+    return profesional
+  }
+  if (consultorio) {
+    const key = consultorio.toLowerCase().trim()
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
   }
-  return profesional || ''
+  return ''
 }
 
 const HORA_INICIO = 8
@@ -157,6 +162,13 @@ export default function AgendaPage() {
     weekday: 'long', day: 'numeric', month: 'long'
   })
 
+  // Profesionales ocasionales del día (no están en los chips fijos)
+  const profesionalesExtra = [...new Set(
+    turnos
+      .map(t => resolverProfesional(t.profesional, t.consultorio))
+      .filter(p => p && !FILTROS_CONSULTORIO.includes(p))
+  )]
+
   const turnosFiltrados = filtroProfesional !== null
     ? turnos.filter(t => resolverProfesional(t.profesional, t.consultorio) === filtroProfesional)
     : turnos
@@ -193,6 +205,15 @@ export default function AgendaPage() {
             Todos
           </button>
           {FILTROS_CONSULTORIO.map(nombre => (
+            <button
+              key={nombre}
+              className={`chip${filtroProfesional === nombre ? ' active' : ''}`}
+              onClick={() => setFiltroProfesional(nombre)}
+            >
+              {nombre}
+            </button>
+          ))}
+          {profesionalesExtra.map(nombre => (
             <button
               key={nombre}
               className={`chip${filtroProfesional === nombre ? ' active' : ''}`}

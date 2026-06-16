@@ -17,6 +17,7 @@ Reglas:
 - No inventes apellidos ni datos que no se vean, pero sí intentá leer lo que está escrito.
 - Ignora garabatos, lineas, anotaciones marginales y texto irrelevante.
 - Si hay varios consultorios o profesionales como encabezados de columna, usalos para agrupar cada turno.
+- Si el encabezado del consultorio incluye un nombre de profesional (ej: "Consultorio 1 - Teo Delia" o "Consultorio 1 García"), extrae el nombre del profesional en "profesional" y solo la etiqueta del consultorio (ej: "Consultorio 1") en "consultorio".
 - Para cada turno, informa consultorio y/o profesional si se pueden leer. Si no se ve, usa null.
 - Si una celda tiene solo un nombre sin servicio, poné el nombre en "cliente" y null en "servicio".
 
