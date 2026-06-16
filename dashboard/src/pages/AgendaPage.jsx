@@ -14,14 +14,14 @@ const FILTROS_CONSULTORIO = Object.entries(CONSULTORIO_MAP)
   .map(([, nombre]) => nombre)
 
 function resolverProfesional(profesional, consultorio) {
+  if (consultorio) {
+    const key = consultorio.toLowerCase().trim()
+    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
+  }
   if (profesional) {
     const key = profesional.toLowerCase().trim()
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
     return profesional
-  }
-  if (consultorio) {
-    const key = consultorio.toLowerCase().trim()
-    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
   }
   return ''
 }

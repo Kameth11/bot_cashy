@@ -2,18 +2,20 @@ const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
 
 function resolverProfesional(profesional, consultorio) {
+  // El mapa de consultorio siempre tiene prioridad
+  if (consultorio) {
+    const key = String(consultorio).toLowerCase().trim();
+    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
+      return CONSULTORIO_MAP[key];
+    }
+  }
+  // Si el profesional extraído es él mismo un label de consultorio, mapearlo
   if (profesional) {
     const key = String(profesional).toLowerCase().trim();
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
       return CONSULTORIO_MAP[key];
     }
     return profesional;
-  }
-  if (consultorio) {
-    const key = String(consultorio).toLowerCase().trim();
-    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
-      return CONSULTORIO_MAP[key];
-    }
   }
   return '';
 }
