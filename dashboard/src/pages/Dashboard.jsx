@@ -416,7 +416,7 @@ function ConfirmDeleteModal({ mov, borrando, error, onConfirmar, onCancelar }) {
         <h2 className="modal-title" style={{ fontSize: 16 }}>¿Eliminar movimiento?</h2>
         <p style={{ color: 'var(--text)', fontSize: 14, marginBottom: 6 }}>{mov.descripcion}</p>
         <p style={{ color: 'var(--text-3)', fontSize: 13, marginBottom: 16 }}>
-          {format(new Date(mov.fecha || Date.now()), 'dd/MM/yyyy', { locale: es })} · {mov.estado}
+          {formatFecha(mov.fecha)} · {mov.estado}
         </p>
         {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}
         <div className="modal-footer">

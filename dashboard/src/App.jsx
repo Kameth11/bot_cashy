@@ -5,6 +5,7 @@ import { AppProvider, useApp } from './contexts/AppContext'
 import AuthGuard from './components/AuthGuard'
 import NavBar from './components/NavBar'
 import NuevoMovimientoModal from './components/NuevoMovimientoModal'
+import ErrorBoundary from './components/ErrorBoundary'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import AgendaPage from './pages/AgendaPage'
@@ -60,18 +61,20 @@ export default function App() {
   if (loading) return <div className="center-screen">Cargando...</div>
 
   return (
-    <AppProvider>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/*"
-          element={
-            <AuthGuard>
-              <LayoutWithModal />
-            </AuthGuard>
-          }
-        />
-      </Routes>
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/*"
+            element={
+              <AuthGuard>
+                <LayoutWithModal />
+              </AuthGuard>
+            }
+          />
+        </Routes>
+      </AppProvider>
+    </ErrorBoundary>
   )
 }
