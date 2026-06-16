@@ -361,4 +361,67 @@ bot.action('cancel_agenda', async (ctx) => {
   await ctx.editMessageText('❌ Turnos descartados.');
 });
 
+// ── Edición de turno ──────────────────────────────────────────────────────────
+
+const CAMPOS_TURNO = [
+  { key: 'cliente',     label: 'Paciente' },
+  { key: 'servicio',    label: 'Servicio' },
+  { key: 'profesional', label: 'Profesional' },
+  { key: 'hora',        label: 'Hora' },
+];
+
+function buildCamposKeyboard() {
+  const botones = CAMPOS_TURNO.map(c => [Markup.button.callback(c.label, `agenda_edit_campo_${c.key}`)]);
+  botones.push([Markup.button.callback('❌ Cancelar', 'agenda_edit_cancel')]);
+  return Markup.inlineKeyboard(botones);
+}
+
+bot.action(/^agenda_edit_pick_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingTurnoEdits.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /editarturno de nuevo.');
+
+  const index = parseInt(ctx.match[1]);
+  const turno = pending.turnos[index];
+  if (!turno) return ctx.editMessageText('❌ Turno no encontrado.');
+
+  pending.turno = turno;
+  pending.step = 'select_campo';
+  state.pendingTurnoEdits.set(userId, pending);
+
+  const hora = turno.hora ? turno.hora.substring(0, 5) : '??:??';
+  await ctx.editMessageText(
+    `✏️ *${hora} · ${turno.cliente || 'Sin nombre'}*\n\n¿Qué campo querés editar?`,
+    { parse_mode: 'Markdown', ...buildCamposKeyboard() }
+  );
+});
+
+bot.action(/^agenda_edit_campo_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingTurnoEdits.get(userId);
+  if (!pending || !pending.turno) return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /editarturno de nuevo.');
+
+  const key = ctx.match[1];
+  const campo = CAMPOS_TURNO.find(c => c.key === key);
+  if (!campo) return ctx.editMessageText('❌ Campo inválido.');
+
+  pending.campo = campo;
+  pending.step = 'ingresar_valor';
+  state.pendingTurnoEdits.set(userId, pending);
+
+  const valorActual = pending.turno[campo.key] || '(vacío)';
+  await ctx.editMessageText(
+    `✏️ *${campo.label}*\nValor actual: \`${valorActual}\`\n\nEscribí el nuevo valor:`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.action('agenda_edit_cancel', async (ctx) => {
+  await ctx.answerCbQuery();
+  state.pendingTurnoEdits.delete(ctx.from.id);
+  await ctx.editMessageText('❌ Edición cancelada.');
+});
+
 module.exports = { confirmButtons, buildDeleteListKeyboard };

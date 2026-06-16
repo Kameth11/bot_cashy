@@ -653,6 +653,28 @@ bot.on('text', async (ctx) => {
     return;
   }
 
+  if (state.pendingTurnoEdits.has(ctx.from.id)) {
+    const pending = state.pendingTurnoEdits.get(ctx.from.id);
+    if (pending.step === 'ingresar_valor') {
+      const valor = sanitizarInput(text, 120);
+      if (!valor) return ctx.reply('⚠️ El valor no puede estar vacío. Escribí de nuevo:');
+
+      state.pendingTurnoEdits.delete(ctx.from.id);
+      try {
+        const { actualizarDatosTurno } = require('../services/agenda.service');
+        await actualizarDatosTurno(ctx.from.id, pending.turno.idTurno, { [pending.campo.key]: valor });
+        return ctx.reply(
+          `✅ *${pending.campo.label}* actualizado a: \`${escapeMarkdown(valor)}\``,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (err) {
+        console.error('Error al editar turno:', err.message);
+        return ctx.reply('❌ No se pudo guardar el cambio. Intentá de nuevo con /editarturno.');
+      }
+    }
+    return;
+  }
+
   if (state.pendingEdits.has(ctx.from.id)) {
     const editData = state.pendingEdits.get(ctx.from.id);
     console.log('DEBUG editar - step:', editData.step, 'texto:', text);

@@ -40,6 +40,7 @@ require('./handlers/commands/sheet');
 require('./handlers/commands/salir');
 require('./handlers/commands/nlptest');
 require('./handlers/commands/profesional');
+require('./handlers/commands/editarturno');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');

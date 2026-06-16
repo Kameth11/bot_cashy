@@ -590,7 +590,8 @@ function buildHelpMessage() {
     '💬 *Primero intenta interpretar palabras clave sin IA.*\n' +
     'Si no alcanza, recurre al parser remoto para lenguaje natural.\n\n' +
     '📸 *Agenda por foto:*\n' +
-    'Envía una foto de tu agenda o turnero para extraer y guardar turnos\n\n' +
+    'Envía una foto de tu agenda o turnero para extraer y guardar turnos\n' +
+    '`/editarturno` - Corregir datos de un turno de hoy\n\n' +
     '💵 *Monedas:*\n' +
     '$ - Pesos | U$ / USD - Dólares\n\n' +
     '💳 *Método de pago:*\n' +

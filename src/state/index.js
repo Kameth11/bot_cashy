@@ -69,6 +69,7 @@ const pendingReinicios      = new TTLMap();
 const pendingDescripcion    = new TTLMap();
 const pendingAgendaConfirm  = new TTLMap();
 const pendingIngresoPacientes = new TTLMap();
+const pendingTurnoEdits       = new TTLMap();
 
 // Cache de documentos — TTL más largo (2 horas)
 const docsCache = new TTLMap(2 * 60 * 60 * 1000);
@@ -104,6 +105,7 @@ module.exports = {
   pendingDescripcion,
   pendingAgendaConfirm,
   pendingIngresoPacientes,
+  pendingTurnoEdits,
   docsCache,
   userRateLimits,
   processingNlp,
