@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Pencil } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { api } from '../services/api'
 
 const HORA_INICIO = 8
@@ -45,6 +45,8 @@ export default function AgendaPage() {
   const [modalEditar, setModalEditar] = useState(null)
   const [editForm, setEditForm] = useState({ cliente: '', servicio: '', profesional: '', hora: '' })
   const [editando, setEditando] = useState(false)
+  const [confirmandoEliminar, setConfirmandoEliminar] = useState(null)
+  const [eliminando, setEliminando] = useState(false)
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -72,6 +74,19 @@ export default function AgendaPage() {
       alert('Error al registrar llegada')
     } finally {
       setAccionando(null)
+    }
+  }
+
+  async function confirmarEliminar() {
+    setEliminando(true)
+    try {
+      await api.delete(`/api/agenda/${confirmandoEliminar.idTurno}`)
+      setTurnos(prev => prev.filter(t => t.idTurno !== confirmandoEliminar.idTurno))
+      setConfirmandoEliminar(null)
+    } catch {
+      alert('Error al eliminar el turno')
+    } finally {
+      setEliminando(false)
     }
   }
 
@@ -194,6 +209,9 @@ export default function AgendaPage() {
                 <button className="action-btn" title="Editar" onClick={() => abrirEditar(turno)}>
                   <Pencil size={14} />
                 </button>
+                <button className="action-btn" title="Eliminar" style={{ color: 'var(--red)' }} onClick={() => setConfirmandoEliminar(turno)}>
+                  <Trash2 size={14} />
+                </button>
                 {puedeAccion && (
                   <>
                     {turno.estado !== 'Llegó' && (
@@ -219,6 +237,25 @@ export default function AgendaPage() {
           )
         })}
       </div>
+
+      {/* Eliminar modal */}
+      {confirmandoEliminar && (
+        <div className="overlay" onClick={() => setConfirmandoEliminar(null)}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title" style={{ fontSize: 16 }}>¿Eliminar turno?</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 20 }}>
+              <strong>{confirmandoEliminar.hora ? `${confirmandoEliminar.hora} · ` : ''}{confirmandoEliminar.cliente || 'Sin nombre'}</strong>
+              <br />Esta acción borra la fila del Sheet y no se puede deshacer.
+            </p>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setConfirmandoEliminar(null)}>Cancelar</button>
+              <button className="btn-danger" onClick={confirmarEliminar} disabled={eliminando}>
+                {eliminando ? 'Eliminando…' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edición modal */}
       {modalEditar && (

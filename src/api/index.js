@@ -23,6 +23,7 @@ const {
   obtenerTurnosPorFecha,
   actualizarEstadoTurno,
   actualizarDatosTurno,
+  eliminarTurno,
   fechaHoyStr,
 } = require('../services/agenda.service');
 const clienteService = require('../services/cliente.service');
@@ -421,6 +422,17 @@ app.get('/api/agenda', authMiddleware, async (req, res) => {
     res.json({ turnos });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
+  try {
+    await eliminarTurno(req.user.userId, req.params.idTurno);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.message === 'turno_no_encontrado') return res.status(404).json({ error: 'Turno no encontrado' });
+    console.error('Error DELETE /api/agenda:', err);
+    res.status(500).json({ error: 'Error al eliminar turno' });
   }
 });
 

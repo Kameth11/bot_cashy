@@ -86,6 +86,15 @@ async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
   await row.save();
 }
 
+async function eliminarTurno(userId, idTurno) {
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+  const rows = await sheet.getRows();
+  const row = rows.find(r => r.get('ID_Turno') === idTurno);
+  if (!row) throw new Error('turno_no_encontrado');
+  await row.delete();
+}
+
 async function actualizarDatosTurno(userId, idTurno, datos) {
   const sheet = await crearTabTurnosSiNoExiste(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
@@ -273,5 +282,6 @@ module.exports = {
   obtenerTurnosPorFecha,
   actualizarEstadoTurno,
   actualizarDatosTurno,
+  eliminarTurno,
   fechaHoyStr,
 };
