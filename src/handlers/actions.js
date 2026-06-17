@@ -336,8 +336,12 @@ bot.action('confirm_agenda', async (ctx) => {
     await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
     const { guardados, errores, total, fechaStr, grupos = [] } = await guardarTurnosAgenda(userId, turnos);
 
-    // Guardar en tab plana Turnos (consultable por fecha)
-    try { await guardarTurnosFlat(userId, turnos); } catch (e) { console.error('guardarTurnosFlat:', e.message); }
+    // Guardar en tab plana Turnos (consultable por fecha, la usa el dashboard)
+    let errorTurnosFlat = null;
+    try { await guardarTurnosFlat(userId, turnos); } catch (e) {
+      console.error('guardarTurnosFlat:', e.message);
+      errorTurnosFlat = e.message;
+    }
     const huboErrores = errores > 0;
 
     await ctx.editMessageText(
@@ -345,6 +349,7 @@ bot.action('confirm_agenda', async (ctx) => {
       `📅 Fecha: ${fechaStr}\n` +
       `${huboErrores ? `❌ No se pudieron guardar ${errores} de ${total} turno${total !== 1 ? 's' : ''}\n` : ''}` +
       `${grupos.length > 0 ? `🗂️ Bloques: ${grupos.join(' | ')}\n` : ''}` +
+      `${errorTurnosFlat ? `⚠️ No se pudo actualizar el dashboard (tab Turnos): ${errorTurnosFlat}\n` : ''}` +
       `📊 Ver en tu Google Sheet (tab "Agenda")`,
       { parse_mode: 'Markdown' }
     );
