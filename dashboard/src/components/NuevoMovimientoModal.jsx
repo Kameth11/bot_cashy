@@ -35,9 +35,22 @@ const CATEGORIAS_EGRESO = [
   { value: 'otro_egreso', label: 'Otro egreso' },
 ]
 
+const DESCRIPCIONES_INGRESO = [
+  'Consulta general',
+  'Tratamiento',
+]
+
+const DESCRIPCIONES_EGRESO = [
+  'Compra de insumos',
+  'Pago de servicios',
+]
+
+const OTRO_VALUE = '__otro__'
+
 const initialState = {
   tipo: 'Ingreso',
-  descripcion: '',
+  descripcionPreset: '',
+  descripcionLibre: '',
   monto: '',
   moneda: 'Pesos',
   metodoPago: '',
@@ -60,12 +73,23 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
     [form.tipo]
   )
 
+  const descripciones = useMemo(
+    () => (form.tipo === 'Egreso' ? DESCRIPCIONES_EGRESO : DESCRIPCIONES_INGRESO),
+    [form.tipo]
+  )
+
+  const esOtraDescripcion = form.descripcionPreset === OTRO_VALUE
+
   const update = (field) => (e) => {
     const value = e.target.value
     setForm(f => {
       const next = { ...f, [field]: value }
-      // Si cambia el tipo, la categoría previa puede no aplicar para el otro tipo
-      if (field === 'tipo') next.categoria = ''
+      // Si cambia el tipo, la categoría y descripción previas pueden no aplicar para el otro tipo
+      if (field === 'tipo') {
+        next.categoria = ''
+        next.descripcionPreset = ''
+        next.descripcionLibre = ''
+      }
       return next
     })
   }
@@ -74,7 +98,7 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
     e.preventDefault()
     setValidationError(null)
 
-    const descripcion = form.descripcion.trim()
+    const descripcion = (esOtraDescripcion ? form.descripcionLibre : form.descripcionPreset).trim()
     if (!descripcion) {
       setValidationError('La descripción es obligatoria.')
       return
@@ -126,7 +150,14 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
 
           <div>
             <label className="form-label">Descripción *</label>
-            <input className="form-input" value={form.descripcion} onChange={update('descripcion')} placeholder="Ej: Consulta general" maxLength={200} required autoFocus />
+            <select className="form-input" value={form.descripcionPreset} onChange={update('descripcionPreset')} autoFocus>
+              <option value="" disabled>Seleccioná una opción</option>
+              {descripciones.map(d => <option key={d} value={d}>{d}</option>)}
+              <option value={OTRO_VALUE}>Otro/s...</option>
+            </select>
+            {esOtraDescripcion && (
+              <input className="form-input" style={{ marginTop: 8 }} value={form.descripcionLibre} onChange={update('descripcionLibre')} placeholder="Escribí la descripción" maxLength={200} required autoFocus />
+            )}
           </div>
 
           <div>
