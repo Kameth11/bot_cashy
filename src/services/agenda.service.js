@@ -1,21 +1,20 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
 
+// El profesional siempre se determina por CONSULTORIO_MAP, nunca por el
+// nombre que Gemini haya podido leer junto a un "Dr."/"Dra." en la imagen.
 function resolverProfesional(profesional, consultorio) {
-  // El mapa de consultorio siempre tiene prioridad
   if (consultorio) {
     const key = String(consultorio).toLowerCase().trim();
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
       return CONSULTORIO_MAP[key];
     }
   }
-  // Si el profesional extraído es él mismo un label de consultorio, mapearlo
   if (profesional) {
     const key = String(profesional).toLowerCase().trim();
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
       return CONSULTORIO_MAP[key];
     }
-    return profesional;
   }
   return '';
 }
@@ -156,7 +155,7 @@ function indexToColumnLetter(index) {
 
 function getBlockLabel(turno) {
   const consultorio = turno.consultorio ? String(turno.consultorio).trim() : '';
-  const profesional = turno.profesional ? String(turno.profesional).trim() : '';
+  const profesional = resolverProfesional(turno.profesional, turno.consultorio);
 
   if (consultorio && profesional) return `${consultorio} - ${profesional}`;
   if (consultorio) return consultorio;
@@ -256,13 +255,6 @@ function escribirBloque(sheet, startRow, startColumn, group, fechaStr) {
     sheet.getCell(rowIndex, startColumn + 3).value = turno.estado || 'Pendiente';
     sheet.getCell(rowIndex, startColumn + 4).value = fechaStr;
   });
-
-  // Reemplaza el label del bloque si el nombre del consultorio tiene mapeo
-  const labelKey = group.label.toLowerCase().trim();
-  if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, labelKey)) {
-    const mappedLabel = CONSULTORIO_MAP[labelKey];
-    titleCell.value = mappedLabel || group.label;
-  }
 }
 
 async function guardarTurnosAgenda(userId, turnos) {
@@ -320,4 +312,5 @@ module.exports = {
   actualizarDatosTurno,
   eliminarTurno,
   fechaHoyStr,
+  resolverProfesional,
 };
