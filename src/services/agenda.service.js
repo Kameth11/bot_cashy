@@ -36,11 +36,13 @@ async function crearTabTurnosSiNoExiste(userId) {
   const doc = await getDocCliente(userId, true);
   if (!doc) return null;
   try {
-    if (doc.sheetsByTitle['Turnos']) {
-      return doc.sheetsByTitle['Turnos'];
+    let sheet = doc.sheetsByTitle['Turnos'];
+    if (sheet) {
+      await sheet.loadHeaderRow();
+      return sheet;
     }
     console.log('Creando tab Turnos...');
-    const sheet = await doc.addSheet({ title: 'Turnos' });
+    sheet = await doc.addSheet({ title: 'Turnos' });
     await sheet.setHeaderRow(TURNOS_COLS);
     await sheet.loadHeaderRow();
     console.log('Tab Turnos creada OK');
