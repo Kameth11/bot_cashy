@@ -57,7 +57,7 @@ async function crearTabTurnosSiNoExiste(userId) {
     return sheet;
   } catch (err) {
     console.error('Error al crear tab Turnos:', err.message);
-    return null;
+    throw new Error(`No se pudo acceder a la tab Turnos: ${err.message}`);
   }
 }
 
@@ -78,10 +78,10 @@ async function guardarTurnosFlat(userId, turnos) {
     return (a.hora || '').localeCompare(b.hora || '');
   });
 
-  for (const turno of turnosOrdenados) {
+  const filas = turnosOrdenados.map(turno => {
     const idTurno = generarIDTurno();
     ids.push(idTurno);
-    await sheet.addRow({
+    return {
       ID_Turno: idTurno,
       Fecha: fecha,
       Hora: turno.hora || '',
@@ -90,8 +90,12 @@ async function guardarTurnosFlat(userId, turnos) {
       Profesional: resolverProfesional(turno.profesional, turno.consultorio),
       Consultorio: turno.consultorio || '',
       Estado: 'Pendiente',
-    });
-  }
+    };
+  });
+
+  // Una sola llamada en lote en vez de un addRow por turno: evita pegarle
+  // muchas requests seguidas a la API de Sheets (rate limit) con agendas grandes.
+  await sheet.addRows(filas);
 
   return ids;
 }
