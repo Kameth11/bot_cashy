@@ -1,17 +1,33 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
 
+// Normaliza variantes como "Consultorio N° 1", "Consultorio Nro. 1",
+// "CONSULTORIO #1" a la forma "consultorio 1" que usa CONSULTORIO_MAP.
+// Sin esto, Gemini puede leer el "N°" de la imagen y romper el match exacto.
+function normalizarConsultorioKey(value) {
+  if (!value) return '';
+  let key = String(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  const match = key.match(/consultorio[^0-9]*([0-9]+)/);
+  if (match) return `consultorio ${match[1]}`;
+  return key;
+}
+
 // El profesional siempre se determina por CONSULTORIO_MAP, nunca por el
 // nombre que Gemini haya podido leer junto a un "Dr."/"Dra." en la imagen.
 function resolverProfesional(profesional, consultorio) {
   if (consultorio) {
-    const key = String(consultorio).toLowerCase().trim();
+    const key = normalizarConsultorioKey(consultorio);
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
       return CONSULTORIO_MAP[key];
     }
   }
   if (profesional) {
-    const key = String(profesional).toLowerCase().trim();
+    const key = normalizarConsultorioKey(profesional);
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
       return CONSULTORIO_MAP[key];
     }

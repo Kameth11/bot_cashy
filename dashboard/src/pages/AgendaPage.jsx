@@ -13,15 +13,29 @@ const FILTROS_CONSULTORIO = Object.entries(CONSULTORIO_MAP)
   .filter(([, nombre]) => nombre !== '')
   .map(([, nombre]) => nombre)
 
+// Normaliza variantes como "Consultorio N° 1", "Consultorio Nro. 1",
+// "CONSULTORIO #1" a la forma "consultorio 1" que usa CONSULTORIO_MAP.
+function normalizarConsultorioKey(value) {
+  if (!value) return ''
+  const key = String(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+  const match = key.match(/consultorio[^0-9]*([0-9]+)/)
+  if (match) return `consultorio ${match[1]}`
+  return key
+}
+
 function resolverProfesional(profesional, consultorio) {
   if (consultorio) {
-    const key = consultorio.toLowerCase().trim()
+    const key = normalizarConsultorioKey(consultorio)
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
   }
   if (profesional) {
-    const key = profesional.toLowerCase().trim()
+    const key = normalizarConsultorioKey(profesional)
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
-    return profesional
   }
   return ''
 }
