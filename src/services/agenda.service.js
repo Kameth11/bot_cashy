@@ -38,12 +38,17 @@ async function crearTabTurnosSiNoExiste(userId) {
   try {
     let sheet = doc.sheetsByTitle['Turnos'];
     if (sheet) {
+      // sheet.headerValues es un getter que TIRA si el header no está
+      // cargado (no devuelve undefined) -> hay que probarlo dentro del try.
+      let headerValues = null;
       try {
         await sheet.loadHeaderRow();
+        headerValues = sheet.headerValues;
       } catch (_) {
         // Tab existente sin header row (ej: quedó a medio crear) -> la rearmamos
+        headerValues = null;
       }
-      if (!Array.isArray(sheet.headerValues) || sheet.headerValues.length === 0) {
+      if (!Array.isArray(headerValues) || headerValues.length === 0) {
         await sheet.setHeaderRow(TURNOS_COLS);
         await sheet.loadHeaderRow();
       }
