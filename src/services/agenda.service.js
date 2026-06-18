@@ -187,18 +187,6 @@ const BLOCK_WIDTH = 5;
 const BLOCK_SPACING = 1;
 const BLOCK_HEADERS = ['Hora', 'Cliente', 'Servicio', 'Estado', 'Fecha'];
 
-function indexToColumnLetter(index) {
-  let current = index + 1;
-  let result = '';
-
-  while (current > 0) {
-    const remainder = (current - 1) % 26;
-    result = String.fromCharCode(65 + remainder) + result;
-    current = Math.floor((current - 1) / 26);
-  }
-
-  return result;
-}
 
 function getBlockLabel(turno) {
   const consultorio = turno.consultorio ? String(turno.consultorio).trim() : '';
@@ -259,30 +247,6 @@ async function asegurarTamanoSheet(sheet, requiredColumns, requiredRows) {
   }
 }
 
-async function getNextStartRow(sheet) {
-  await sheet.loadCells();
-  let lastUsedRow = 0;
-
-  for (let rowIndex = 0; rowIndex < sheet.rowCount; rowIndex++) {
-    let rowHasValue = false;
-
-    for (let colIndex = 0; colIndex < sheet.columnCount; colIndex++) {
-      const cell = sheet.getCell(rowIndex, colIndex);
-      const value = cell.value;
-      if (value !== null && value !== '') {
-        rowHasValue = true;
-        break;
-      }
-    }
-
-    if (rowHasValue) {
-      lastUsedRow = rowIndex + 1;
-    }
-  }
-
-  return lastUsedRow === 0 ? 1 : lastUsedRow + 2;
-}
-
 function escribirBloque(sheet, startRow, startColumn, group, fechaStr) {
   const titleCell = sheet.getCell(startRow - 1, startColumn);
   titleCell.value = group.label;
@@ -318,35 +282,57 @@ async function guardarTurnosAgenda(userId, turnos) {
   const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
   const groups = agruparTurnos(turnos);
 
-  const requiredColumns = groups.length * BLOCK_WIDTH + Math.max(0, groups.length - 1) * BLOCK_SPACING;
-  await asegurarTamanoSheet(agendaSheet, Math.max(requiredColumns, 30), Math.max(agendaSheet.rowCount, 300));
+  // Ensure generous size upfront so loadCells cubre todo el rango de escritura
+  await asegurarTamanoSheet(agendaSheet, Math.max(agendaSheet.columnCount, 60), Math.max(agendaSheet.rowCount, 500));
+  await agendaSheet.loadCells();
 
-  const startRow1Based = await getNextStartRow(agendaSheet);
-  const rowsNeeded = startRow1Based + Math.max(...groups.map(group => group.turnos.length + 2), 2);
-  await asegurarTamanoSheet(agendaSheet, Math.max(requiredColumns, agendaSheet.columnCount), rowsNeeded + 2);
+  // Buscar sección existente para esta fecha.
+  // fechaStr se escribe en la columna (blockStartCol + 4) de cada fila de datos,
+  // y los bloques están separados cada BLOCK_WIDTH + BLOCK_SPACING = 6 columnas.
+  let minDataRow = Infinity;
+  let maxColUsed = -1;
 
-  const endColumnIndex = requiredColumns - 1;
-  const endColumnLetter = indexToColumnLetter(endColumnIndex);
-  const loadStartRow = Math.max(1, startRow1Based);
-  const endRow = startRow1Based + Math.max(...groups.map(group => group.turnos.length + 1), 1);
-  await agendaSheet.loadCells(`A${loadStartRow}:${endColumnLetter}${endRow}`);
+  for (let r = 0; r < agendaSheet.rowCount; r++) {
+    for (let c = BLOCK_HEADERS.length - 1; c < agendaSheet.columnCount; c += BLOCK_WIDTH + BLOCK_SPACING) {
+      if (agendaSheet.getCell(r, c).value === fechaStr) {
+        if (r < minDataRow) minDataRow = r;
+        if (c > maxColUsed) maxColUsed = c;
+      }
+    }
+  }
+
+  let startRow, startColumnOffset;
+  if (minDataRow !== Infinity) {
+    // Ya existe una sección para esta fecha: agregar bloques a la derecha
+    startRow = minDataRow - 1;
+    startColumnOffset = maxColUsed + 1 + BLOCK_SPACING;
+  } else {
+    // Fecha nueva: buscar la primera fila libre debajo del contenido existente
+    let lastUsedRow = 0;
+    for (let r = 0; r < agendaSheet.rowCount; r++) {
+      for (let c = 0; c < agendaSheet.columnCount; c++) {
+        const v = agendaSheet.getCell(r, c).value;
+        if (v !== null && v !== '') { lastUsedRow = r + 1; break; }
+      }
+    }
+    startRow = lastUsedRow === 0 ? 1 : lastUsedRow + 2;
+    startColumnOffset = 0;
+  }
 
   groups.forEach((group, groupIndex) => {
-    const startColumn = groupIndex * (BLOCK_WIDTH + BLOCK_SPACING);
-    escribirBloque(agendaSheet, startRow1Based, startColumn, group, fechaStr);
+    const startColumn = startColumnOffset + groupIndex * (BLOCK_WIDTH + BLOCK_SPACING);
+    escribirBloque(agendaSheet, startRow, startColumn, group, fechaStr);
   });
 
   await agendaSheet.saveUpdatedCells();
   invalidateCache(userId);
-
-  const labels = groups.map(group => group.label);
 
   return {
     guardados: turnos.length,
     errores: 0,
     total: turnos.length,
     fechaStr,
-    grupos: labels,
+    grupos: groups.map(g => g.label),
   };
 }
 
