@@ -40,10 +40,6 @@ function resolverProfesional(profesional, consultorio) {
   return ''
 }
 
-const HORA_INICIO = 8
-const HORA_FIN = 21
-const INTERVALO = 30
-
 const ESTADOS = {
   Pendiente: { label: 'Pendiente', bg: '#FFF4CE', color: '#FF8B00',  bar: '#FF8B00'  },
   'Llegó':   { label: 'Llegó',    bg: '#DEEBFF', color: '#0747A6',  bar: '#0747A6'  },
@@ -51,25 +47,6 @@ const ESTADOS = {
   Cancelado: { label: 'Cancelado',bg: '#FFEBE6', color: '#BF2600',  bar: '#BF2600'  },
 }
 
-function generarSlots() {
-  const slots = []
-  for (let h = HORA_INICIO; h < HORA_FIN; h++) {
-    for (let m = 0; m < 60; m += INTERVALO) {
-      slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-    }
-  }
-  return slots
-}
-
-const SLOTS = generarSlots()
-
-function turnoParaSlot(turnos, slot) {
-  return turnos.find(t => {
-    if (!t.hora) return false
-    const hora = t.hora.trim().substring(0, 5)
-    return hora === slot
-  })
-}
 
 export default function AgendaPage() {
   const [turnos, setTurnos] = useState([])
@@ -203,10 +180,9 @@ export default function AgendaPage() {
   const llegaron   = turnosConTurno.filter(t => t.estado === 'Llegó').length
   const pendientes = turnosConTurno.filter(t => t.estado === 'Pendiente').length
 
-  // List view: only slots that have a turno, in order
-  const turnosList = SLOTS
-    .map(slot => ({ slot, turno: turnoParaSlot(turnosFiltrados, slot) }))
-    .filter(({ turno }) => turno)
+  const turnosList = [...turnosFiltrados].sort((a, b) =>
+    (a.hora || '').localeCompare(b.hora || '')
+  )
 
   return (
     <div className="page">
@@ -287,12 +263,12 @@ export default function AgendaPage() {
           </div>
         )}
 
-        {!loading && turnosList.map(({ slot, turno }, i) => {
+        {!loading && turnosList.map((turno, i) => {
           const e = ESTADOS[turno.estado] || ESTADOS.Pendiente
           const puedeAccion = turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado'
           return (
-            <div key={slot} className="agenda-appt">
-              <span className="agenda-time">{slot}</span>
+            <div key={turno.idTurno || i} className="agenda-appt">
+              <span className="agenda-time">{turno.hora || '–'}</span>
               <div className="agenda-bar" style={{ background: e.bar }} />
               <div className="agenda-info">
                 <div className="agenda-patient">{turno.cliente || 'Sin nombre'}</div>
