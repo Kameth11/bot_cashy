@@ -86,19 +86,32 @@ export default function AgendaPage() {
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(null)
   const [eliminando, setEliminando] = useState(false)
   const [filtroProfesional, setFiltroProfesional] = useState(null)
+  const [fechaOffset, setFechaOffset] = useState(0)
+
+  function getFechaStr(offset) {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`
+  }
+
+  function getFechaLabel(offset) {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
+  }
 
   const cargar = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const { data } = await api.get('/api/agenda')
+      const { data } = await api.get(`/api/agenda?fecha=${getFechaStr(fechaOffset)}`)
       setTurnos(data.turnos || [])
     } catch {
       setError('No se pudo cargar la agenda. ¿Está corriendo el servidor?')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fechaOffset])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -172,9 +185,7 @@ export default function AgendaPage() {
     }
   }
 
-  const hoy = new Date().toLocaleDateString('es-AR', {
-    weekday: 'long', day: 'numeric', month: 'long'
-  })
+  const esHoy = fechaOffset === 0
 
   // Profesionales ocasionales del día (no están en los chips fijos)
   const profesionalesExtra = [...new Set(
@@ -202,9 +213,16 @@ export default function AgendaPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Agenda</h1>
-          <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>{hoy}</p>
+          <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>{getFechaLabel(fechaOffset)}</p>
         </div>
-        <button className="btn-agenda" onClick={cargar}>Actualizar</button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button className="btn-agenda" onClick={() => { setFechaOffset(o => o - 1); setFiltroProfesional(null) }} title="Día anterior">←</button>
+          {!esHoy && (
+            <button className="btn-agenda" onClick={() => { setFechaOffset(0); setFiltroProfesional(null) }}>Hoy</button>
+          )}
+          <button className="btn-agenda" onClick={() => { setFechaOffset(o => o + 1); setFiltroProfesional(null) }} disabled={esHoy} title="Día siguiente">→</button>
+          <button className="btn-agenda" onClick={cargar}>↻</button>
+        </div>
       </div>
 
       {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}
@@ -263,7 +281,9 @@ export default function AgendaPage() {
 
         {!loading && turnosList.length === 0 && !error && (
           <div className="empty-state">
-            Sin turnos hoy. Enviá una foto de la agenda al bot para cargarlos.
+            {esHoy
+              ? 'Sin turnos hoy. Enviá una foto de la agenda al bot para cargarlos.'
+              : 'Sin turnos para este día.'}
           </div>
         )}
 

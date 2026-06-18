@@ -21,6 +21,7 @@ const {
 } = require('../services/db.service');
 const {
   obtenerTurnosPorFecha,
+  obtenerTurnoPorId,
   actualizarEstadoTurno,
   actualizarDatosTurno,
   eliminarTurno,
@@ -458,9 +459,7 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
     const { monto, metodoPago, moneda = 'Pesos' } = req.body;
     if (!monto || Number(monto) <= 0) return res.status(400).json({ error: 'monto requerido' });
 
-    const fecha = fechaHoyStr();
-    const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
-    const turno = turnos.find(t => t.idTurno === idTurno);
+    const turno = await obtenerTurnoPorId(req.user.userId, idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
 
     await actualizarEstadoTurno(req.user.userId, idTurno, 'Cobrado');
@@ -489,9 +488,7 @@ app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
     const { monto, metodoPago, moneda = 'Pesos' } = req.body;
     if (!monto || Number(monto) <= 0) return res.status(400).json({ error: 'monto requerido' });
 
-    const fecha = fechaHoyStr();
-    const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
-    const turno = turnos.find(t => t.idTurno === idTurno);
+    const turno = await obtenerTurnoPorId(req.user.userId, idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
 
     await actualizarEstadoTurno(req.user.userId, idTurno, 'Cobrado');

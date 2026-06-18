@@ -121,22 +121,34 @@ async function guardarTurnosFlat(userId, turnos) {
   return ids;
 }
 
+function rowToTurno(r) {
+  return {
+    idTurno: r.get('ID_Turno'),
+    fecha: r.get('Fecha'),
+    hora: r.get('Hora'),
+    cliente: r.get('Cliente'),
+    servicio: r.get('Servicio'),
+    profesional: r.get('Profesional'),
+    consultorio: r.get('Consultorio'),
+    estado: r.get('Estado'),
+  };
+}
+
 async function obtenerTurnosPorFecha(userId, fechaStr) {
   const sheet = await crearTabTurnosSiNoExiste(userId);
   if (!sheet) return [];
   const rows = await sheet.getRows();
   return rows
     .filter(r => r.get('Fecha') === fechaStr)
-    .map(r => ({
-      idTurno: r.get('ID_Turno'),
-      fecha: r.get('Fecha'),
-      hora: r.get('Hora'),
-      cliente: r.get('Cliente'),
-      servicio: r.get('Servicio'),
-      profesional: r.get('Profesional'),
-      consultorio: r.get('Consultorio'),
-      estado: r.get('Estado'),
-    }));
+    .map(rowToTurno);
+}
+
+async function obtenerTurnoPorId(userId, idTurno) {
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) return null;
+  const rows = await sheet.getRows();
+  const row = rows.find(r => r.get('ID_Turno') === idTurno);
+  return row ? rowToTurno(row) : null;
 }
 
 async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
@@ -343,6 +355,7 @@ module.exports = {
   guardarTurnosAgenda,
   guardarTurnosFlat,
   obtenerTurnosPorFecha,
+  obtenerTurnoPorId,
   actualizarEstadoTurno,
   actualizarDatosTurno,
   eliminarTurno,
