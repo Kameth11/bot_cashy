@@ -1,7 +1,14 @@
 # bot_cashy — Contexto del Proyecto
 
-Bot de Telegram para gestión de cashflow de un consultorio médico.
-Registra ingresos/egresos en lenguaje natural y los guarda en Google Sheets individuales por usuario.
+Bot de Telegram + dashboard web para gestión de cashflow de un consultorio médico.
+Registra ingresos/egresos en lenguaje natural y los guarda en Google Sheets individuales por usuario (+ Supabase opcional).
+
+**Alcance de negocio**: hoy hay un cliente real, pero la intención es venderlo
+a otros consultorios (SaaS multi-tenant). Esto todavía NO está implementado
+a nivel de datos/seguridad — antes de tocar arquitectura, auth, o el modelo
+de datos, leer `ARCHITECTURE.md` (decisiones de fondo, plan de multi-tenancy,
+seguridad pendiente). Para qué falta del producto en sí (categorías,
+reportes, etc.), ver `ROADMAP_CASHY_CLINICA.md`.
 
 ---
 
@@ -29,13 +36,21 @@ bot_cashy/
 │   ├── state/     # TTLMaps de estados conversacionales pendientes
 │   ├── utils/     # Helpers (formatter, validation, sheet-row, movimiento-v2)
 │   └── config/    # Variables de entorno centralizadas
+├── dashboard/     # Dashboard web (React + Vite) — Inicio, Movimientos, Agenda, Config
 ├── scripts/       # Scripts auxiliares
 ├── sql/           # Migraciones / queries SQL (schema v1 y v2)
 ├── tests/         # Tests Jest
+├── .github/workflows/ci.yml  # CI: tests + build en cada push, notifica a Discord
 ├── index.js       # LEGACY — no usar
 ├── jest.config.js
 └── package.json
 ```
+
+El dashboard se sirve desde el mismo proceso/servicio que el bot (Express
+sirve el build estático de `dashboard/dist`). Tiene su propia API (`src/api/`)
+montada en el mismo `src/index.js`. Auth del dashboard: código de Telegram +
+JWT (180 días hoy — ver `ARCHITECTURE.md` sección 4 para por qué eso está
+marcado como mejora pendiente).
 
 ---
 
@@ -161,6 +176,10 @@ gasto Insumos $-500
 5. Queda registrado en `clientes.json` (NO commitear)
 6. Máximo 3 intentos de email fallidos
 
+`ALLOWED_EMAILS` hoy vive en `.env` (cambiarlo requiere redeploy) — es un
+bloqueante conocido para self-service, ver `ARCHITECTURE.md` sección 3,
+Fase 1.
+
 ---
 
 ## Privacidad
@@ -173,15 +192,26 @@ gasto Insumos $-500
 
 ## Features pendientes / roadmap
 
+Detalle completo, priorizado y actualizado en `ROADMAP_CASHY_CLINICA.md`.
+Resumen de lo más visible:
+
 - [ ] Integración AFIP / facturación electrónica (candidato: FacturAPI)
 - [ ] Consolidación de sheets multi-usuario para el admin
 - [ ] Alertas automáticas de cobros pendientes
+- [ ] Modelo de datos v2 (categorías, paciente/profesional como entidades)
 
 ---
 
 ## Decisiones de arquitectura
 
+Decisiones de stack puntuales (no requieren más contexto):
+
 - **No usar n8n**: el bot ya tiene toda la lógica implementada en código
 - **Gemini para visión** en lugar de OpenAI Vision (más barato para el volumen del consultorio)
-- **Sheet por usuario** (no una DB centralizada) para simplicidad de onboarding
+- **Sheet por usuario** (no una DB centralizada) para simplicidad de onboarding — pero ver `ARCHITECTURE.md` sección 3, esto no escala tal cual a multi-tenant
 - **Bluelytics** para dólar blue argentino (no el oficial)
+- **No usar PRs/branch protection por ahora**: push directo a `main`, válido mientras sea un solo desarrollador (criterio de cuándo cambiar esto en `ARCHITECTURE.md` sección 6)
+
+Decisiones de fondo (multi-tenancy, seguridad, infraestructura, modelo de
+datos v2, registro de decisiones) viven en `ARCHITECTURE.md` — no se
+duplican acá para que no queden desincronizadas.
