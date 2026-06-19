@@ -8,6 +8,8 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.test.outputs.summary }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,10 +17,28 @@ jobs:
           node-version: '18'
           cache: 'npm'
       - run: npm ci
-      - run: npm test
+      - name: Run tests
+        id: test
+        run: |
+          set +e
+          npm test > test-output.log 2>&1
+          EXIT_CODE=$?
+          sed -ri 's/\x1b\[[0-9;]*[mK]//g' test-output.log
+          cat test-output.log
+          if [ $EXIT_CODE -ne 0 ]; then
+            SUMMARY=$(grep -E '✕|FAIL |Tests:' test-output.log | head -25)
+            {
+              echo "summary<<EOF"
+              echo "$SUMMARY"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+          exit $EXIT_CODE
 
   dashboard-build:
     runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.build.outputs.summary }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,8 +48,24 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
         working-directory: dashboard
-      - run: npm run build
+      - name: Build
+        id: build
         working-directory: dashboard
+        run: |
+          set +e
+          npm run build > build-output.log 2>&1
+          EXIT_CODE=$?
+          sed -ri 's/\x1b\[[0-9;]*[mK]//g' build-output.log
+          cat build-output.log
+          if [ $EXIT_CODE -ne 0 ]; then
+            SUMMARY=$(tail -25 build-output.log)
+            {
+              echo "summary<<EOF"
+              echo "$SUMMARY"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+          exit $EXIT_CODE
 
   notify:
     runs-on: ubuntu-latest
@@ -37,19 +73,32 @@ jobs:
     if: always()
     steps:
       - name: Notificar a Discord
+        env:
+          BACKEND_RESULT: ${{ needs.backend-tests.result }}
+          DASHBOARD_RESULT: ${{ needs.dashboard-build.result }}
+          BACKEND_SUMMARY: ${{ needs.backend-tests.outputs.summary }}
+          DASHBOARD_SUMMARY: ${{ needs.dashboard-build.outputs.summary }}
         run: |
-          if [ "${{ needs.backend-tests.result }}" = "success" ] && [ "${{ needs.dashboard-build.result }}" = "success" ]; then
+          if [ "$BACKEND_RESULT" = "success" ] && [ "$DASHBOARD_RESULT" = "success" ]; then
             STATUS="✅ CI en verde"
             COLOR=3066993
           else
             STATUS="❌ CI con errores"
             COLOR=15158332
           fi
-          curl -H "Content-Type: application/json" -X POST -d '{
-            "embeds": [{
-              "title": "'"$STATUS"'",
-              "description": "Repo: ${{ github.repository }}\nRama: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nAutor: ${{ github.actor }}",
-              "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-              "color": '"$COLOR"'
-            }]
-          }' "${{ secrets.DISCORD_WEBHOOK_URL }}"
+
+          DESCRIPTION=$(printf 'Repo: %s\nRama: %s\nCommit: %s\nAutor: %s' "${{ github.repository }}" "${{ github.ref_name }}" "${{ github.sha }}" "${{ github.actor }}")
+
+          DETAIL=$(printf '%s\n%s' "$BACKEND_SUMMARY" "$DASHBOARD_SUMMARY" | sed '/^[[:space:]]*$/d' | head -c 1500)
+          if [ -n "$DETAIL" ]; then
+            DESCRIPTION=$(printf '%s\n\n```\n%s\n```' "$DESCRIPTION" "$DETAIL")
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg title "$STATUS" \
+            --arg desc "$DESCRIPTION" \
+            --arg url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --argjson color "$COLOR" \
+            '{embeds: [{title: $title, description: $desc, url: $url, color: $color}]}')
+
+          curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "${{ secrets.DISCORD_WEBHOOK_URL }}"
