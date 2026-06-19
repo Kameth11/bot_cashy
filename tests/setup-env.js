@@ -6,3 +6,4 @@ process.env.AUTHORIZED_USER_ID = process.env.AUTHORIZED_USER_ID || '123456';
 process.env.ALLOWED_EMAILS = process.env.ALLOWED_EMAILS || 'test@example.com';
 process.env.COTIZACION_DEFAULT = process.env.COTIZACION_DEFAULT || '1200';
 process.env.USE_SUPABASE = process.env.USE_SUPABASE || 'false';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-tests-only';

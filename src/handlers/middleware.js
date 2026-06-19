@@ -2,6 +2,7 @@ const { bot } = require('../lib/telegraf');
 const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_EVENTS, MAX_TEXT_LENGTH } = require('../config');
+const logger = require('../lib/logger');
 
 const COMANDOS_PUBLICOS = new Set(['/start', '/unir', '/cancelar']);
 
@@ -65,7 +66,7 @@ bot.use((ctx, next) => {
     return next();
   }
 
-  console.log(`Usuario no registrado: ${userId}`);
+  logger.audit('bot_unauthorized_access', { userId });
   if (ctx.reply) {
     ctx.reply('No estas autorizado para usar este bot. Usa /start para registrarte o /unir CODIGO si te invitaron.').catch(() => {});
   }

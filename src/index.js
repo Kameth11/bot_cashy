@@ -4,6 +4,7 @@ const { obtenerCotizacionDolar } = require('./services/cotizacion.service');
 const { initModel } = require('./services/gemini.service');
 const { startApi } = require('./api');
 const state = require('./state');
+const logger = require('./lib/logger');
 
 // Load middleware (must be first, before commands)
 require('./handlers/middleware');
@@ -52,29 +53,29 @@ require('./handlers/actions');
 require('./handlers/nlp-confirm');
 
 // Start API immediately (does not depend on bot)
-startApi().catch(err => console.error('Error al iniciar API:', err));
+startApi().catch(err => logger.error('PROCESS', 'Error al iniciar API', { err: err.message }));
 
 // Launch bot independently
 bot.launch().then(async () => {
-  console.log('Bot iniciado correctamente');
+  logger.info('BOT', 'Bot iniciado correctamente');
   initModel();
   await obtenerCotizacionDolar();
-  console.log(`Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
+  logger.info('BOT', `Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
   const timer = setInterval(() => obtenerCotizacionDolar(), 3 * 60 * 60 * 1000);
   if (timer.unref) timer.unref();
 }).catch(err => {
-  console.error('Error al iniciar bot:', err);
+  logger.error('PROCESS', 'Error al iniciar bot', { err: err.message });
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection:', reason);
+process.on('unhandledRejection', (reason) => {
+  logger.error('PROCESS', 'Unhandled Rejection', { reason: reason instanceof Error ? reason.message : reason });
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
+  logger.error('PROCESS', 'Uncaught Exception', { err: err.message, stack: err.stack });
 });
 
 module.exports = { bot };

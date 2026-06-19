@@ -6,6 +6,7 @@ const AUTHORIZED_USER_ID = process.env.AUTHORIZED_USER_ID ? parseInt(process.env
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '';
+const JWT_SECRET = process.env.JWT_SECRET;
 const COTIZACION_DEFAULT = process.env.COTIZACION_DEFAULT ? parseFloat(process.env.COTIZACION_DEFAULT) : null;
 const ALLOWED_EMAILS = process.env.ALLOWED_EMAILS ? process.env.ALLOWED_EMAILS.split(',').map(e => e.trim().toLowerCase()) : [];
 const MAX_INTENTOS_EMAIL = 3;
@@ -48,7 +49,7 @@ const USE_SUPABASE = process.env.USE_SUPABASE === 'true';
 const DASHBOARD_URL = process.env.DASHBOARD_URL ||
   (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '');
 
-if (!BOT_TOKEN || !SPREADSHEET_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
+if (!BOT_TOKEN || !SPREADSHEET_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY || !JWT_SECRET) {
   console.error('Faltan variables de entorno. Revisa tu archivo .env');
   process.exit(1);
 }
@@ -59,6 +60,7 @@ module.exports = {
   SPREADSHEET_ID,
   GOOGLE_SERVICE_ACCOUNT_EMAIL,
   GOOGLE_PRIVATE_KEY,
+  JWT_SECRET,
   COTIZACION_DEFAULT,
   ALLOWED_EMAILS,
   MAX_INTENTOS_EMAIL,

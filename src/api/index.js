@@ -33,6 +33,8 @@ const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const eventsService = require('../services/events.service');
 const state = require('../state');
+const logger = require('../lib/logger');
+const { createLimiter } = require('../lib/rate-limiter');
 
 const app = express();
 
@@ -52,7 +54,7 @@ app.use(cors({
 app.use(express.json());
 
 const PORT = process.env.DASHBOARD_API_PORT || process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'cashy-dashboard-secret-change-in-production';
+const JWT_SECRET = config.JWT_SECRET;
 
 const SESSION_DURATION = '180d';
 const SESSION_REFRESH_THRESHOLD_SEC = 30 * 24 * 60 * 60; // renovar si quedan menos de 30 dias
@@ -84,6 +86,24 @@ function adminOnly(req, res, next) {
   next();
 }
 
+// Rate limiting de las rutas de auth: doble clave (IP + telegramId) para que
+// no sea bypasseable variando solo una de las dos.
+const requestCodeByIp   = createLimiter({ windowMs: 10 * 60 * 1000, max: 20 });
+const requestCodeByUser = createLimiter({ windowMs: 10 * 60 * 1000, max: 5 });
+const verifyByIp        = createLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
+const verifyByUser      = createLimiter({ windowMs: 10 * 60 * 1000, max: 10 });
+
+function rateLimit(limiter, keyFn) {
+  return (req, res, next) => {
+    const key = keyFn(req);
+    if (!limiter(key).allowed) {
+      logger.audit('rate_limit_blocked', { route: req.path });
+      return res.status(429).json({ error: 'Demasiados intentos. Probá de nuevo en unos minutos.' });
+    }
+    next();
+  };
+}
+
 const FECHA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 // Acepta solo fechas en formato YYYY-MM-DD (input type="date") o vacio/ausente.
@@ -97,7 +117,10 @@ function validarFechaOpcional(valor) {
 }
 
 // ── Auth: request code ──
-app.post('/api/auth/request-code', async (req, res) => {
+app.post('/api/auth/request-code',
+  rateLimit(requestCodeByIp, req => req.ip),
+  rateLimit(requestCodeByUser, req => String(req.body.userId)),
+  async (req, res) => {
   const { userId } = req.body;
   if (!userId || isNaN(Number(userId))) return res.status(400).json({ error: 'userId invalido' });
   const telegramId = String(userId);
@@ -115,7 +138,9 @@ app.post('/api/auth/request-code', async (req, res) => {
         { telegram_user_id: telegramId, code, expires_at: expiresAt.toISOString(), used: false },
         { onConflict: 'telegram_user_id' }
       );
-    } catch {}
+    } catch (err) {
+      logger.warn('AUTH', 'No se pudo persistir auth_code en Supabase', { telegramId, err: err.message });
+    }
   }
   if (!global._authCodes) global._authCodes = new Map();
   global._authCodes.set(telegramId, { code, expiresAt, used: false });
@@ -127,15 +152,19 @@ app.post('/api/auth/request-code', async (req, res) => {
       { parse_mode: 'Markdown' }
     );
   } catch (err) {
-    console.error('[DASHBOARD] Error enviando codigo Telegram:', err.message);
-    console.log(`[DASHBOARD] Codigo para ${telegramId}: ${code}`);
+    logger.error('AUTH', 'Error enviando codigo por Telegram', { telegramId, err: err.message });
+    logger.audit('auth_code_send_failed', { telegramId });
     return res.status(500).json({ error: 'No se pudo enviar el codigo por Telegram. Ya iniciaste el bot con /start?' });
   }
+  logger.audit('auth_code_requested', { telegramId });
   res.json({ success: true, message: 'Codigo enviado por Telegram' });
 });
 
 // ── Auth: verify code ──
-app.post('/api/auth/verify', async (req, res) => {
+app.post('/api/auth/verify',
+  rateLimit(verifyByIp, req => req.ip),
+  rateLimit(verifyByUser, req => String(req.body.userId || req.ip)),
+  async (req, res) => {
   const { userId, code } = req.body;
   if (!userId || !code) return res.status(400).json({ error: 'userId y codigo son requeridos' });
   const telegramId = String(userId);
@@ -145,6 +174,7 @@ app.post('/api/auth/verify', async (req, res) => {
     const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: SESSION_DURATION });
     const cliente = obtenerClientePorUserId(Number(telegramId));
     const esAdmin = esAdminOriginal(Number(telegramId));
+    logger.audit('auth_dev_token_login', { telegramId });
     return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
   }
 
@@ -156,20 +186,37 @@ app.post('/api/auth/verify', async (req, res) => {
     if (data) codeData = { code: data.code, expiresAt: new Date(data.expires_at), used: data.used };
   }
 
-  if (!codeData) return res.status(400).json({ error: 'No hay codigo solicitado para este usuario' });
-  if (codeData.used) return res.status(400).json({ error: 'Codigo ya utilizado' });
-  if (new Date() > codeData.expiresAt) return res.status(400).json({ error: 'Codigo expirado' });
-  if (codeData.code !== code) return res.status(400).json({ error: 'Codigo incorrecto' });
+  if (!codeData) {
+    logger.audit('auth_verify_failed', { telegramId, reason: 'no_code_requested' });
+    return res.status(400).json({ error: 'No hay codigo solicitado para este usuario' });
+  }
+  if (codeData.used) {
+    logger.audit('auth_verify_failed', { telegramId, reason: 'code_already_used' });
+    return res.status(400).json({ error: 'Codigo ya utilizado' });
+  }
+  if (new Date() > codeData.expiresAt) {
+    logger.audit('auth_verify_failed', { telegramId, reason: 'code_expired' });
+    return res.status(400).json({ error: 'Codigo expirado' });
+  }
+  if (codeData.code !== code) {
+    logger.audit('auth_verify_failed', { telegramId, reason: 'code_incorrect' });
+    return res.status(400).json({ error: 'Codigo incorrecto' });
+  }
 
   codeData.used = true;
   if (global._authCodes?.has(telegramId)) global._authCodes.set(telegramId, codeData);
   if (isAvailable() && getSupabase()) {
-    try { await getSupabase().from('auth_codes').update({ used: true }).eq('telegram_user_id', telegramId); } catch {}
+    try {
+      await getSupabase().from('auth_codes').update({ used: true }).eq('telegram_user_id', telegramId);
+    } catch (err) {
+      logger.warn('AUTH', 'No se pudo marcar auth_code como usado en Supabase', { telegramId, err: err.message });
+    }
   }
 
   const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: SESSION_DURATION });
   const cliente = obtenerClientePorUserId(Number(telegramId));
   const esAdmin = esAdminOriginal(Number(telegramId));
+  logger.audit('auth_verify_success', { telegramId, esAdmin });
   res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
 });
 
@@ -250,7 +297,7 @@ app.get('/api/movimientos', authMiddleware, async (req, res) => {
 
     res.json({ movimientos: filtered, total: datos.length });
   } catch (err) {
-    console.error('Error /api/movimientos:', err);
+    logger.error('API', 'Error /api/movimientos', { err: err.message });
     res.status(500).json({ error: 'Error al obtener movimientos' });
   }
 });
@@ -302,9 +349,10 @@ app.post('/api/movimientos', authMiddleware, async (req, res) => {
 
     if (!resultado) return res.status(500).json({ error: 'No se pudo guardar el movimiento' });
     invalidarCacheMovimientos(req.user.userId);
+    logger.audit('movimiento_created', { userId: req.user.userId, monto, tipo });
     res.status(201).json({ movimiento: resultado });
   } catch (err) {
-    console.error('Error POST /api/movimientos:', err);
+    logger.error('API', 'Error POST /api/movimientos', { err: err.message });
     res.status(500).json({ error: 'Error al guardar movimiento' });
   }
 });
@@ -325,10 +373,11 @@ app.put('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
 
     await updateMovimiento(req.user.userId, idUnico, updates);
     invalidarCacheMovimientos(req.user.userId);
+    logger.audit('movimiento_updated', { userId: req.user.userId, idUnico, fields: Object.keys(updates) });
     res.json({ ok: true });
   } catch (err) {
     if (err.message === 'movimiento_no_encontrado') return res.status(404).json({ error: 'Movimiento no encontrado' });
-    console.error('Error PUT /api/movimientos:', err);
+    logger.error('API', 'Error PUT /api/movimientos', { err: err.message });
     res.status(500).json({ error: 'Error al actualizar movimiento' });
   }
 });
@@ -338,10 +387,11 @@ app.delete('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
   try {
     await deleteMovimiento(req.user.userId, req.params.idUnico);
     invalidarCacheMovimientos(req.user.userId);
+    logger.audit('movimiento_deleted', { userId: req.user.userId, idUnico: req.params.idUnico });
     res.json({ ok: true });
   } catch (err) {
     if (err.message === 'movimiento_no_encontrado') return res.status(404).json({ error: 'Movimiento no encontrado' });
-    console.error('Error DELETE /api/movimientos:', err);
+    logger.error('API', 'Error DELETE /api/movimientos', { err: err.message });
     res.status(500).json({ error: 'Error al eliminar movimiento' });
   }
 });
@@ -353,10 +403,11 @@ app.delete('/api/movimientos-by-key', authMiddleware, async (req, res) => {
     if (!descripcion || monto === undefined) return res.status(400).json({ error: 'descripcion y monto son requeridos' });
     await deleteMovimientoByKey(req.user.userId, { descripcion, monto, fecha });
     invalidarCacheMovimientos(req.user.userId);
+    logger.audit('movimiento_deleted', { userId: req.user.userId, descripcion });
     res.json({ ok: true });
   } catch (err) {
     if (err.message === 'movimiento_no_encontrado') return res.status(404).json({ error: 'No se encontro la fila. Ejecuta /regenerar_ids en el bot e intenta de nuevo.' });
-    console.error('Error DELETE /api/movimientos-by-key:', err);
+    logger.error('API', 'Error DELETE /api/movimientos-by-key', { err: err.message });
     res.status(500).json({ error: 'Error al eliminar movimiento' });
   }
 });
@@ -383,7 +434,7 @@ app.delete('/api/users/:userId', authMiddleware, adminOnly, async (req, res) => 
     if (!eliminado) return res.status(404).json({ error: 'Usuario no encontrado' });
     res.json({ ok: true, mensaje: `Usuario ${userId} eliminado` });
   } catch (err) {
-    console.error('Error DELETE /api/users:', err);
+    logger.error('API', 'Error DELETE /api/users', { err: err.message });
     res.status(500).json({ error: 'Error al eliminar usuario' });
   }
 });
@@ -432,7 +483,7 @@ app.delete('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     if (err.message === 'turno_no_encontrado') return res.status(404).json({ error: 'Turno no encontrado' });
-    console.error('Error DELETE /api/agenda:', err);
+    logger.error('API', 'Error DELETE /api/agenda', { err: err.message });
     res.status(500).json({ error: 'Error al eliminar turno' });
   }
 });
@@ -448,7 +499,7 @@ app.patch('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     if (err.message === 'turno_no_encontrado') return res.status(404).json({ error: 'Turno no encontrado' });
-    console.error('Error PATCH /api/agenda:', err);
+    logger.error('API', 'Error PATCH /api/agenda', { err: err.message });
     res.status(500).json({ error: 'Error al actualizar turno' });
   }
 });
@@ -471,6 +522,7 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
       referenciaId: idTurno, origenCarga: 'dashboard',
     });
     invalidarCacheMovimientos(req.user.userId);
+    logger.audit('movimiento_created', { userId: req.user.userId, monto: Number(monto), tipo: 'Ingreso', idTurno });
 
     if (turno.profesional) {
       notificarLlegadaPaciente(turno.profesional, turno.cliente, turno.hora, turno.servicio).catch(() => {});
@@ -499,6 +551,7 @@ app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
       profesionalNombre: turno.profesional || null, tratamientoNombre: turno.servicio || null,
       referenciaId: idTurno, origenCarga: 'dashboard',
     });
+    logger.audit('movimiento_created', { userId: req.user.userId, monto: Number(monto), tipo: 'Ingreso', idTurno });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -534,7 +587,7 @@ if (fs.existsSync(DIST)) {
 function startApi() {
   return new Promise((resolve) => {
     const server = app.listen(PORT, () => {
-      console.log(`API escuchando en http://localhost:${PORT}`);
+      logger.info('API', `Escuchando en http://localhost:${PORT}`);
       resolve(server);
     });
   });
