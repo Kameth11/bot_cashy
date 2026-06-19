@@ -4,6 +4,7 @@ const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 const { emitMovimientosUpdated } = require('./events.service');
+const { withUserWriteLock } = require('../lib/write-queue');
 const { getRowIdUnico, formatDateValue } = require('../utils/sheet-row');
 const {
   buildMovimientoV2Payload,
@@ -939,6 +940,10 @@ async function getSheetCliente(userId) {
 }
 
 async function addRow(userId, rowData, options = {}) {
+  return withUserWriteLock(userId, () => doAddRow(userId, rowData, options));
+}
+
+async function doAddRow(userId, rowData, options = {}) {
   if (!USE_SUPABASE) {
     const sheet = await getSheetService().getSheetCliente(userId);
     if (!sheet) return null;
@@ -1155,43 +1160,49 @@ async function findRowByCompositeKey(userId, { descripcion, monto, fecha }) {
 
 // Actualiza un movimiento por ID único.
 async function updateMovimiento(userId, idUnico, updates) {
-  const row = await findRowByIdUnico(userId, idUnico);
-  if (!row) throw new Error('movimiento_no_encontrado');
+  await withUserWriteLock(userId, async () => {
+    const row = await findRowByIdUnico(userId, idUnico);
+    if (!row) throw new Error('movimiento_no_encontrado');
 
-  const fieldMap = {
-    descripcion: 'Descripcion',
-    monto:       'Monto',
-    estado:      'Estado',
-    moneda:      'Moneda',
-    metodoPago:  'MetodoPago',
-    metodo_pago: 'MetodoPago',
-    montoPesos:  'MontoPesos',
-  };
+    const fieldMap = {
+      descripcion: 'Descripcion',
+      monto:       'Monto',
+      estado:      'Estado',
+      moneda:      'Moneda',
+      metodoPago:  'MetodoPago',
+      metodo_pago: 'MetodoPago',
+      montoPesos:  'MontoPesos',
+    };
 
-  for (const [key, value] of Object.entries(updates)) {
-    const col = fieldMap[key];
-    if (col !== undefined) row.set(col, value);
-  }
+    for (const [key, value] of Object.entries(updates)) {
+      const col = fieldMap[key];
+      if (col !== undefined) row.set(col, value);
+    }
 
-  await row.save();
+    await row.save();
+  });
   invalidateCache(userId);
   emitMovimientosUpdated(userId);
 }
 
 // Elimina un movimiento por ID único.
 async function deleteMovimiento(userId, idUnico) {
-  const row = await findRowByIdUnico(userId, idUnico);
-  if (!row) throw new Error('movimiento_no_encontrado');
-  await row.delete();
+  await withUserWriteLock(userId, async () => {
+    const row = await findRowByIdUnico(userId, idUnico);
+    if (!row) throw new Error('movimiento_no_encontrado');
+    await row.delete();
+  });
   invalidateCache(userId);
   emitMovimientosUpdated(userId);
 }
 
 // Elimina un movimiento por clave compuesta (para filas sin ID_Unico).
 async function deleteMovimientoByKey(userId, compositeKey) {
-  const row = await findRowByCompositeKey(userId, compositeKey);
-  if (!row) throw new Error('movimiento_no_encontrado');
-  await row.delete();
+  await withUserWriteLock(userId, async () => {
+    const row = await findRowByCompositeKey(userId, compositeKey);
+    if (!row) throw new Error('movimiento_no_encontrado');
+    await row.delete();
+  });
   invalidateCache(userId);
   emitMovimientosUpdated(userId);
 }

@@ -1,4 +1,5 @@
 const { obtenerDatosSheet, getSheetCliente, invalidateCache } = require('./sheet.service');
+const { withUserWriteLock } = require('../lib/write-queue');
 const db = require('./db.service');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 
@@ -307,6 +308,13 @@ async function ejecutarActualizarDolar() {
 }
 
 async function ejecutarCobrar(userId, nombre) {
+  return withUserWriteLock(userId, () => doEjecutarCobrar(userId, nombre));
+}
+
+// El lookup de la fila pendiente tiene que ir adentro del lock junto con el
+// save: si quedara afuera, un delete/update concurrente del mismo usuario
+// podria invalidar la fila entre el lookup y el guardado.
+async function doEjecutarCobrar(userId, nombre) {
   const filas = await db.getRows(userId);
 
   const pendientes = filas.filter(f => getRowEstado(f) === 'Pendiente');

@@ -10,6 +10,7 @@ const { convertirAPesos } = require('../services/movimiento.service');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const { guardarTurnosAgenda, guardarTurnosFlat } = require('../services/agenda.service');
 const { aplicarColorMontoEnFila } = require('../services/sheet-format.service');
+const { withUserWriteLock } = require('../lib/write-queue');
 
 function confirmButtons(confirmAction, cancelAction) {
   return Markup.inlineKeyboard([
@@ -89,7 +90,7 @@ bot.action('del_conf', async (ctx) => {
   state.pendingDeletes.delete(userId);
 
   try {
-    await item.fila.delete();
+    await withUserWriteLock(userId, () => item.fila.delete());
     invalidateCache(userId);
     await ctx.editMessageText(
       `✅ *Eliminado*\n\n📝 ${escapeMarkdown(item.desc)}\n💰 ${formatMonto(Math.abs(item.monto), item.moneda)}`,
@@ -144,7 +145,7 @@ bot.action('confirm_delete', async (ctx) => {
   state.pendingDeletes.delete(userId);
 
   try {
-    await fila.delete();
+    await withUserWriteLock(userId, () => fila.delete());
     invalidateCache(userId);
     await ctx.editMessageText(
       '✅ *Movimiento eliminado*\n\n' + `📝 ${escapeMarkdown(desc)}`,
@@ -179,15 +180,17 @@ bot.action('confirm_clean', async (ctx) => {
     let eliminadas = 0;
     let errores = 0;
 
-    for (const item of filas) {
-      try {
-        await item.fila.delete();
-        eliminadas++;
-      } catch (error) {
-        errores++;
-        console.error(`Error al eliminar fila #${item.index + 1}:`, error.message);
+    await withUserWriteLock(userId, async () => {
+      for (const item of filas) {
+        try {
+          await item.fila.delete();
+          eliminadas++;
+        } catch (error) {
+          errores++;
+          console.error(`Error al eliminar fila #${item.index + 1}:`, error.message);
+        }
       }
-    }
+    });
 
     invalidateCache(userId);
 
@@ -234,9 +237,11 @@ bot.action('confirm_reset', async (ctx) => {
       await docToClear.loadInfo();
       const sheetToClear = docToClear.sheetsByIndex[0];
       const rows = await sheetToClear.getRows();
-      for (const row of rows) {
-        await row.delete();
-      }
+      await withUserWriteLock(userId, async () => {
+        for (const row of rows) {
+          await row.delete();
+        }
+      });
       await ctx.editMessageText(
         '✅ *Registro reiniciado*\n\n' +
         'Se borraron:\n' +
@@ -299,8 +304,10 @@ bot.action('confirm_edit', async (ctx) => {
         fila.set('MontoPesos', convertirAPesos(editData.nuevoMonto, editData.moneda));
       }
     }
-    await fila.save();
-    await aplicarColorMontoEnFila(fila, fila.get('Monto'), fila.get('Estado'));
+    await withUserWriteLock(userId, async () => {
+      await fila.save();
+      await aplicarColorMontoEnFila(fila, fila.get('Monto'), fila.get('Estado'));
+    });
 
     await ctx.editMessageText(
       `✅ *Movimiento actualizado*\n\n` +

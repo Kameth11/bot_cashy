@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 const SIMBOLOS = { Dólares: 'U$S', Euros: '€', Pesos: '$' }
 
@@ -18,18 +18,34 @@ function formatFechaCorta(value) {
 
 export default function MetricCard({ label, value, subtitle, variant = 'default', breakdown, items }) {
   const [hovered, setHovered] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const cardRef = useRef(null)
 
   const currencies   = breakdown ? Object.keys(breakdown) : []
   const hasBreakdown = currencies.length >= 1
   const hasItems     = Array.isArray(items) && items.length > 0
   const hasPopover    = hasBreakdown || hasItems
+  const showPopover   = (hovered || pinned) && hasPopover
+
+  // En touch no existe "mouseleave", asi que un tap afuera de la card
+  // cierra el popover que quedo fijado por un tap previo.
+  useEffect(() => {
+    if (!pinned) return
+    function onDocClick(e) {
+      if (cardRef.current && !cardRef.current.contains(e.target)) setPinned(false)
+    }
+    document.addEventListener('click', onDocClick)
+    return () => document.removeEventListener('click', onDocClick)
+  }, [pinned])
 
   return (
     <div
+      ref={cardRef}
       className={`metric-card metric-${variant}`}
-      style={{ position: 'relative' }}
+      style={{ position: 'relative', cursor: hasPopover ? 'pointer' : 'default' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={() => hasPopover && setPinned(p => !p)}
     >
       <p className="metric-label">{label}</p>
       <p className="metric-value">{value}</p>
@@ -41,7 +57,7 @@ export default function MetricCard({ label, value, subtitle, variant = 'default'
         </span>
       )}
 
-      {hovered && hasBreakdown && (
+      {showPopover && hasBreakdown && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50,
           background: '#172B4D', color: '#f1f5f9', borderRadius: 8,
@@ -71,7 +87,7 @@ export default function MetricCard({ label, value, subtitle, variant = 'default'
         </div>
       )}
 
-      {hovered && hasItems && (
+      {showPopover && hasItems && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50,
           background: '#172B4D', color: '#f1f5f9', borderRadius: 8,

@@ -2,6 +2,7 @@ const { bot } = require('../../lib/telegraf');
 const { getSheetCliente } = require('../../services/sheet.service');
 const { generarIDUnico } = require('../../services/movimiento.service');
 const { getRowIdUnico } = require('../../utils/sheet-row');
+const { withUserWriteLock } = require('../../lib/write-queue');
 
 bot.command('regenerar_ids', async (ctx) => {
   try {
@@ -14,22 +15,24 @@ bot.command('regenerar_ids', async (ctx) => {
     
     let actualizados = 0;
     let yaTenianId = 0;
-    
-    for (let i = 0; i < filas.length; i++) {
-      const f = filas[i];
-      
-      const idActual = getRowIdUnico(f, '');
-      
-      if (!idActual || idActual === 'undefined' || idActual === 'null' || idActual.trim() === '') {
-        const nuevoId = generarIDUnico();
-        f.set('ID_Unico', nuevoId);
-        await f.save();
-        actualizados++;
-        console.log(`✅ Fila ${i + 1}: ID guardado -> ${nuevoId}`);
-      } else {
-        yaTenianId++;
+
+    await withUserWriteLock(ctx.from.id, async () => {
+      for (let i = 0; i < filas.length; i++) {
+        const f = filas[i];
+
+        const idActual = getRowIdUnico(f, '');
+
+        if (!idActual || idActual === 'undefined' || idActual === 'null' || idActual.trim() === '') {
+          const nuevoId = generarIDUnico();
+          f.set('ID_Unico', nuevoId);
+          await f.save();
+          actualizados++;
+          console.log(`✅ Fila ${i + 1}: ID guardado -> ${nuevoId}`);
+        } else {
+          yaTenianId++;
+        }
       }
-    }
+    });
     
     let msg = `✨ *Regeneración de IDs completada*\n\n`;
     msg += `📊 *Resumen:*\n`;
