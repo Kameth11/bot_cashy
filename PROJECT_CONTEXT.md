@@ -7,8 +7,8 @@
 
 ## ¿Qué es este proyecto?
 
-**bot_cashy** es un bot de Telegram para gestión de cashflow de un consultorio médico argentino.
-Permite registrar ingresos y egresos en lenguaje natural desde Telegram, guardándolos en Google Sheets.
+**bot_cashy** es un bot de Telegram + dashboard web para gestión de cashflow y agenda de un consultorio médico argentino.
+Permite registrar ingresos y egresos en lenguaje natural desde Telegram, guardándolos en Google Sheets (siempre) y opcionalmente en Supabase. El dashboard web permite además ver, filtrar, editar y cobrar desde el navegador.
 Está pensado para uso interno de un equipo pequeño (médicos/administrativos), no para el público general.
 
 **Repo**: https://github.com/Kameth11/bot_cashy
@@ -78,21 +78,23 @@ COTIZACION_DEFAULT=1250                    # Fallback si falla Bluelytics
 | Hora | Hora del movimiento |
 | Descripcion | Texto libre |
 | Monto | Número (negativo = egreso) |
-| Estado | `Cobrado` o `Pendiente` |
+| Estado | `Cobrado`, `Pendiente`, `Pagado`, `Rechazado` o `Presentado OS` |
 | Tipo | `Ingreso` o `Egreso` |
 | Moneda | `Pesos` o `Dólares` |
 | MetodoPago | `efectivo`, `transferencia`, etc. |
-| ID_unico | ID generado por el bot |
+| ID_Unico | ID generado por el bot |
 | MontoPesos | Conversión automática a pesos |
 | ID_Origen | Email del usuario (o Telegram ID) |
 | Categoria | Clasificación del movimiento |
 | Paciente | Nombre del paciente |
+| Pagador | Quién pagó, si difiere del paciente |
 | Profesional | Nombre del profesional |
 | Tratamiento | Tipo de tratamiento |
 | Proveedor | Para egresos a proveedores |
 | FechaPrestacion | Fecha en que se realizó el servicio |
 | FechaVencimiento | Para pagos diferidos |
 | SaldoPendiente | Monto todavía no cobrado |
+| ReferenciaId | Vínculo con otro movimiento (ej. turno de agenda cobrado) |
 
 ---
 
@@ -128,8 +130,21 @@ gasto Insumos $-500
 /egresos        → Lista de egresos
 /dolar          → Cotización actual
 /actualizardolar→ Actualizar cotización
-/ayuda          → Todos los comandos
+/cobrar [nombre] [monto?] → Cobrar pendiente (total o parcial)
+/editar / /eliminar → Editar o eliminar un movimiento
+/listar         → Últimos movimientos
+/debug          → Diagnóstico interno
+/limpiar        → Limpiar filas inválidas
+/regenerar_ids  → Regenerar ID_Unico faltantes
+/codigo / /unir → Generar y usar código de invitación
+/misusuarios    → Listar usuarios invitados (admin)
+/reiniciar      → Borrar registro propio
+/sheet          → Link al Google Sheet propio
+/cancelar       → Cortar un flujo pendiente
+/ayuda / /help  → Todos los comandos
 ```
+
+(lista completa y al día en `CASHY_CONTEXT.md`, sección "Comandos existentes del bot")
 
 ---
 
@@ -169,7 +184,11 @@ gasto Insumos $-500
 - AFIP / facturación electrónica (pendiente, candidato: FacturAPI)
 - Vista consolidada para el admin de todos los usuarios
 - Alertas automáticas de cobros pendientes
-- Dashboard web
+- Modelo de datos v2 (categorías/entidades estructuradas — ver `ROADMAP_CASHY_CLINICA.md`)
+
+**Ya implementado (corrección):** el dashboard web existe y está en uso
+activo — no es un placeholder ni algo pendiente. Tiene Inicio, Movimientos,
+Agenda y Config, con edición/cobro/borrado y tiempo real.
 
 ---
 
@@ -201,4 +220,4 @@ npm test      # Correr tests Jest
 - El código está en **español e inglés mezclado** (logs en español, código en inglés)
 - Priorizar **simplicidad** sobre elegancia: es un MVP funcional
 - Si sugerís nuevas dependencias, preferir las que ya están en el proyecto o las nativas de Node
-- El entorno de producción es probable que sea un **VPS barato o Railway**
+- El entorno de producción es **Railway** (bot + API + dashboard estático en un solo servicio, con CI en GitHub Actions corriendo en cada push)

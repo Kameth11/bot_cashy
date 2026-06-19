@@ -25,7 +25,7 @@ Bot de Telegram para cashflow de un consultorio odontológico.
 | Persistencia principal | Supabase (cuando USE_SUPABASE=true) |
 | Persistencia respaldo | Google Sheets (via google-spreadsheet) |
 | Cotización dólar | Bluelytics API |
-| Dashboard | React 19 + Vite 8 + react-router-dom 7 |
+| Dashboard | React 19 + Vite 5 + react-router-dom 7 |
 | Auth dashboard | JWT vía API propia + token key `cashy_token` |
 
 ---
@@ -103,7 +103,7 @@ src/
 
 ## Columnas del Google Sheet
 
-Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_Unico | MontoPesos | ID_Origen | Categoria | Paciente | Profesional | Tratamiento | Proveedor | FechaPrestacion | FechaVencimiento | SaldoPendiente
+Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_Unico | MontoPesos | ID_Origen | Categoria | Paciente | Pagador | Profesional | Tratamiento | Proveedor | FechaPrestacion | FechaVencimiento | SaldoPendiente | ReferenciaId
 
 - Egresos se guardan con **monto negativo**
 - `montoPesos` es la base de reporting consolidado (siempre en ARS)
@@ -117,34 +117,48 @@ Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago | ID_Un
 
 **Egresos:** sueldos, honorarios, insumos, alquiler, expensas, servicios, impuestos, mantenimiento, software, otro_egreso
 
-**Estados:** Cobrado, Pendiente (+ parcial planeado en v2)
+**Estados:** Cobrado, Pendiente, Pagado, Rechazado, Presentado OS (+ parcial planeado en v2)
 
 ---
 
 ## Dashboard web (dashboard/)
 
+Ya es un dashboard completo y en uso activo (no un MVP de lectura) — permite
+ver, filtrar, editar, cobrar y eliminar, con actualización en tiempo real
+vía SSE cuando cambia algo desde el bot o desde otra sesión del dashboard.
+
 ```
 dashboard/src/
   main.jsx            ← BrowserRouter wrappea todo
-  App.jsx             ← Routes: /login (público) + /* (AuthGuard → AuthenticatedLayout)
-  hooks/useAuth.js    ← token key: 'cashy_token' (CRÍTICO - debe coincidir con api.js)
+  App.jsx             ← Routes: /login (público), /, /movimientos, /agenda, /config (AuthGuard)
+  hooks/
+    useAuth.js        ← token key: 'cashy_token' (CRÍTICO - debe coincidir con api.js)
+    useMovimientosEvents.js ← SSE (fetch + ReadableStream) para tiempo real
   services/
     api.js            ← axios, lee token de localStorage['cashy_token'], interceptor 401
-    supabase.js       ← cliente Supabase (creado pero no usado aún en el dashboard)
+                         (solo desloguea si el 401 corresponde al token vigente,
+                         no a un request viejo en vuelo)
+    supabase.js       ← cliente Supabase (existe, no se usa directo desde el dashboard;
+                         todo pasa por axios → API propia)
   pages/
-    Login.jsx         ← auth por Telegram ID + código 6 dígitos + demo mode
-    Dashboard.jsx     ← métricas + tabla movimientos (usa MetricCard, PlusButton)
-    Proxim.jsx        ← placeholder para rutas futuras
+    Login.jsx         ← auth por Telegram ID + código 6 dígitos
+    Dashboard.jsx     ← métricas (MetricCard) + "últimos movimientos"
+    MovimientosPage.jsx ← tabla completa con filtros (tipo/moneda/fecha), edición y borrado
+    AgendaPage.jsx    ← turnos del día, navegación de fecha, cobrar/marcar llegada
+    ConfigPage.jsx    ← gestión de usuarios (solo admin)
   components/
-    AuthGuard.jsx     ← redirect a /login si no autenticado
-    Sidebar.jsx       ← nav: /, /movimientos, /nuevo, /config
-    MetricCard.jsx    ← card reutilizable con variantes: ingresos/egresos/pendientes/neto
-    PlusButton.jsx    ← botón PLUS con ícono Crown
+    AuthGuard.jsx, Sidebar.jsx, NavBar.jsx, BottomNav.jsx
+    MetricCard.jsx    ← card con desglose por moneda / listado de pendientes al hover o tap
+    DatePickerButton.jsx ← botón calendario reutilizable (Movimientos y Agenda)
+    NuevoMovimientoModal.jsx, CotizacionWidget.jsx, ErrorBoundary.jsx, PlusButton.jsx
 ```
 
 **Ojo con egresos:** en DB son negativos → usar `Math.abs()` al mostrar y calcular neto.
 
-**Build:** Vite 8 + rolldown. Hay un bug pendiente donde `npx vite build` falla con "Unexpected token" en JSX a pesar de que el plugin está bien configurado. `npm run dev` debería funcionar. Investigar o downgrade a Vite 5/6 si el build sigue fallando.
+**Build:** Vite 5.4.21 + plugin React estándar, sin problemas conocidos.
+`npm run build` (dentro de `dashboard/`) genera `dist/`, que el backend sirve
+como estático en producción. Corre además en CI (`.github/workflows/ci.yml`)
+en cada push a `main`.
 
 ---
 
@@ -172,15 +186,18 @@ actualizado en `ROADMAP_CASHY_CLINICA.md`.
 
 ## Roadmap de producto — Etapas
 
+Detalle completo y actualizado en `ROADMAP_CASHY_CLINICA.md` (evitar duplicar
+la tabla acá para que no se desincronice de nuevo). Resumen rápido:
+
 | Etapa | Qué es | Estado |
 |-------|--------|--------|
 | 0 | Definición funcional | ✅ Decidido: clinica completa, pacientes directos primero |
-| 1 | Normalizar movimiento (campos estructurados) | 🔄 Parcial (categoría, paciente, profesional ya en v2) |
+| 1 | Normalizar movimiento (campos estructurados) | 🔄 Parcial (schema v2 en Supabase existe, el bot sigue escribiendo en v1) |
 | 2 | Temporalidad real (fechas separadas) | 🔄 Campos en schema, falta captura completa |
 | 3 | Cuentas por cobrar y pagar | ⏳ Pendiente |
 | 4 | Reportes de gestión | ⏳ Pendiente |
 | 5 | Configuración y alertas | ⏳ Pendiente |
-| 6 | Web MVP | ⏳ Pendiente (no prioridad hasta tener modelo sólido) |
+| 6 | Web MVP | ✅ Hecha y superada — el dashboard ya permite editar/cobrar/eliminar, no solo leer |
 
 **Decisiones fijas:**
 - Supabase = modelo objetivo, Sheets = vista/respaldo durante transición
@@ -244,9 +261,9 @@ COTIZACION_DEFAULT   ← opcional, dólar hardcodeado
 
 ## Bugs/deuda técnica conocida
 
-1. **Vite 8 build falla** con JSX ("Unexpected token") — `npm run dev` funciona, producción build bloqueada. Posible fix: downgrade a Vite 5/6 o investigar config de oxc.
-2. **supabase.js del dashboard** — cliente creado pero no se usa (todo va por axios → API propia).
-3. **`debug` command** — no usa helpers normalizados de `sheet-row.js` todavía (Spec 3 pendiente).
-4. **Agenda ↔ movimientos** — no están conectados aún (agenda guarda en tab separada, no genera movimiento financiero).
-5. **`esEstaSemana`** en `date.js` — usa "últimos 7 días" no semana calendario lunes-domingo. Puede ser intencional.
-6. ~~**Reportes mezclan `monto` y `montoPesos`**~~ — ✅ Resuelto. Todos los totales en `command.service.js` usan `montoPesos` (ingresos: `d.montoPesos`, egresos: `Math.abs(d.montoPesos)`). El detalle por línea sigue usando `formatMonto(d.monto, d.moneda)` para mostrar la moneda original.
+1. **`debug` command** — no usa helpers normalizados de `sheet-row.js` todavía (ver "QA conocido" en `ROADMAP_CASHY_CLINICA.md`).
+2. **`esEstaSemana`** en `date.js` — usa "últimos 7 días" no semana calendario lunes-domingo. Puede ser intencional.
+3. **Flujo de invitación inconsistente** — la documentación sugiere `/start` + código, el camino operativo real es `/unir CODIGO` (ver `ROADMAP_CASHY_CLINICA.md` sección 8).
+4. ~~**Reportes mezclan `monto` y `montoPesos`**~~ — ✅ Resuelto. Todos los totales en `command.service.js` usan `montoPesos` (ingresos: `d.montoPesos`, egresos: `Math.abs(d.montoPesos)`). El detalle por línea sigue usando `formatMonto(d.monto, d.moneda)` para mostrar la moneda original.
+5. ~~**Agenda ↔ movimientos no conectados**~~ — ✅ Resuelto. Cobrar un turno desde el dashboard genera el movimiento automáticamente.
+6. ~~**Vite 8 build rompía con JSX**~~ — ✅ No reproducible. El dashboard usa Vite 5.4.21 y compila bien (`npm run build`, también corre en CI).
