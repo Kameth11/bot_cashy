@@ -6,6 +6,7 @@ import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
+import { ordenarPorFechaDesc } from '../utils/movimientos'
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -188,7 +189,7 @@ export default function Dashboard() {
   }, [])
 
   // Preview: last 6 movements
-  const preview = movimientos.slice(0, 6)
+  const preview = ordenarPorFechaDesc(movimientos).slice(0, 6)
 
   const periodLabel = { 'este-mes': 'Este mes', 'mes-anterior': 'Mes anterior', '3-meses': 'Últimos 3 meses' }
 

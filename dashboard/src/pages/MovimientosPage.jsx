@@ -5,6 +5,7 @@ import { api } from '../services/api'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import DatePickerButton from '../components/DatePickerButton'
+import { ordenarPorFechaDesc } from '../utils/movimientos'
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -112,13 +113,14 @@ export default function MovimientosPage() {
     }
     if (fecha) {
       r = r.filter(m => {
-        const d = new Date(m.fecha)
-        if (Number.isNaN(d.getTime())) return false
-        const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        // m.fecha viene como "DD/MM/YYYY" (no lo puede parsear new Date())
+        const [d, mo, y] = String(m.fecha || '').split('/')
+        if (!d || !mo || !y) return false
+        const ymd = `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
         return ymd === fecha
       })
     }
-    return r
+    return ordenarPorFechaDesc(r)
   }, [movimientos, tipo, moneda, q, fecha])
 
   const handleGuardar = useCallback(async (idUnico, updates) => {
