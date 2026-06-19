@@ -39,8 +39,14 @@ bot_cashy/
 ├── index.js       # LEGACY — ignorar, no usar
 ├── .env           # Credenciales (nunca commitear)
 ├── clientes.json  # Usuarios registrados (nunca commitear)
-├── BOT_MVP_V2_SPEC.md          # Spec funcional completa
-├── ROADMAP_CASHY_CLINICA.md    # Features planificadas
+├── ROADMAP_CASHY_CLINICA.md    # Roadmap + spec funcional unificados (antes
+│                                # estaban en archivos separados: BOT_MVP_V2_SPEC.md
+│                                # tenía la spec del modelo v2, README_REFACTOR.md /
+│                                # README_REFACTOR_SDD.md el plan de migración legacy
+│                                # → src/, y QA_SPEC7_CHECKLIST.md el checklist de QA
+│                                # de esa migración. Esos 4 archivos se fusionaron
+│                                # acá y se borraron — el detalle completo de cada
+│                                # uno sigue en el historial de git si hace falta)
 └── package.json
 ```
 

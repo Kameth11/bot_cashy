@@ -148,22 +148,25 @@ dashboard/src/
 
 ---
 
-## Refactor — Estado actual (SDD)
+## Refactor — Estado actual (histórico)
 
-| Spec | Qué es | Estado |
-|------|--------|--------|
-| Spec 1 | Runtime oficial | ✅ Hecho |
-| Spec 2 | Agenda por foto | 🔄 En progreso (falta prueba real en Telegram) |
-| Spec 3 | Filas Sheet normalizadas | 🔄 En progreso (falta prueba real + debug) |
-| Spec 4 | Guardado unificado | ✅ Hecho |
-| Spec 5 | text.js como orquestador | ✅ Hecho |
-| Spec 6 | Delegación slash ↔ NLP | ✅ Hecho |
-| Spec 7 | Paridad funcional total | ⏳ Pendiente (QA_SPEC7_CHECKLIST.md) |
-| Spec 8 | Retiro del legacy | 🔄 En progreso (bloqueado por Spec 7) |
+Esta tabla seguía el plan de migración `index.js` legacy → `src/`, que antes
+vivía en `README_REFACTOR_SDD.md` (con sus 8 "specs" numeradas) y se validaba
+contra `QA_SPEC7_CHECKLIST.md`. Esos dos archivos se fusionaron y resumieron
+dentro de `ROADMAP_CASHY_CLINICA.md` (secciones "7. Migración legacy
+index.js → src/" y "8. QA conocido / pendiente de validación manual") y ya
+no existen por separado — el detalle de cada spec sigue en el historial de
+git si hace falta.
 
-**Protocolo por sesión:** elegir una sola spec, definir acceptance antes de tocar código, cambios chicos, validar, actualizar este archivo.
-
-**Próximo paso:** Spec 7 (QA) o cerrar pruebas reales de Spec 2 y Spec 3.
+**Resumen del resultado:** la migración está completa en lo estructural — el
+entrypoint oficial es `src/index.js`, no queda dependencia operativa del
+legacy. Lo que sigue pendiente no es código sino validación manual: prueba
+real de agenda por foto en Telegram, prueba real de los helpers de filas de
+Sheet, y un QA extremo a extremo que ya encontró un par de gaps menores (el
+flujo público de invitación está inconsistente entre `/start`+código y
+`/unir CODIGO`, y `movimientos_v2`/`movimiento_eventos_v2` todavía no estaban
+desplegadas en Supabase a la fecha de esa auditoría) — ver el detalle
+actualizado en `ROADMAP_CASHY_CLINICA.md`.
 
 ---
 
