@@ -116,9 +116,10 @@ export default function Dashboard() {
   useMovimientosEvents(useCallback(() => setReload(r => r + 1), []))
 
   const metricas = useMemo(() => {
-    const cobrados   = movimientos.filter(m => m.tipo?.toLowerCase() === 'ingreso' && m.estado?.toLowerCase() === 'cobrado')
-    const egresosArr = movimientos.filter(m => m.tipo?.toLowerCase() === 'egreso')
-    const pendientes = movimientos.filter(m => m.estado?.toLowerCase() === 'pendiente').length
+    const cobrados      = movimientos.filter(m => m.tipo?.toLowerCase() === 'ingreso' && m.estado?.toLowerCase() === 'cobrado')
+    const egresosArr    = movimientos.filter(m => m.tipo?.toLowerCase() === 'egreso')
+    const pendientesArr = movimientos.filter(m => m.estado?.toLowerCase() === 'pendiente')
+    const pendientes    = pendientesArr.length
 
     const sumPesos = arr => arr.reduce((acc, m) => acc + Math.abs(Number(m.montoPesos || m.monto || 0)), 0)
 
@@ -138,7 +139,7 @@ export default function Dashboard() {
     const neto     = ingresos - egresos
 
     return {
-      ingresos, egresos, pendientes, neto,
+      ingresos, egresos, pendientes, pendientesArr, neto,
       bIngresos: buildBreakdown(cobrados, 1),
       bEgresos:  buildBreakdown(egresosArr, 1),
       bNeto: (() => {
@@ -251,6 +252,7 @@ export default function Dashboard() {
           value={String(metricas.pendientes)}
           subtitle={metricas.pendientes === 1 ? '1 movimiento' : `${metricas.pendientes} movimientos`}
           variant="pendientes"
+          items={metricas.pendientesArr}
         />
         <MetricCard
           label="Neto del período"

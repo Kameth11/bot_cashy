@@ -10,11 +10,19 @@ function formatMontoMoneda(moneda, monto) {
   return `${sign}${sim} ${abs.toLocaleString('es-AR')}`
 }
 
-export default function MetricCard({ label, value, subtitle, variant = 'default', breakdown }) {
+function formatFechaCorta(value) {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
+}
+
+export default function MetricCard({ label, value, subtitle, variant = 'default', breakdown, items }) {
   const [hovered, setHovered] = useState(false)
 
   const currencies   = breakdown ? Object.keys(breakdown) : []
   const hasBreakdown = currencies.length >= 1
+  const hasItems     = Array.isArray(items) && items.length > 0
+  const hasPopover    = hasBreakdown || hasItems
 
   return (
     <div
@@ -27,7 +35,7 @@ export default function MetricCard({ label, value, subtitle, variant = 'default'
       <p className="metric-value">{value}</p>
       {subtitle && <p className="metric-sub">{subtitle}</p>}
 
-      {hasBreakdown && (
+      {hasPopover && (
         <span style={{ position: 'absolute', top: 14, right: 14, fontSize: 10, color: 'var(--text-3)', userSelect: 'none' }}>
           ···
         </span>
@@ -60,6 +68,30 @@ export default function MetricCard({ label, value, subtitle, variant = 'default'
               </div>
             )
           })}
+        </div>
+      )}
+
+      {hovered && hasItems && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50,
+          background: '#172B4D', color: '#f1f5f9', borderRadius: 8,
+          padding: '10px 14px', minWidth: 240, maxWidth: 320, maxHeight: 280, overflowY: 'auto',
+          boxShadow: '0 8px 24px rgba(9,30,66,0.22)', fontSize: 13, lineHeight: 1.5,
+        }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+            Movimientos pendientes
+          </p>
+          {items.map((m, i) => (
+            <div key={m.idUnico ?? i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, paddingBottom: 6 }}>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ color: '#8993A4', fontSize: 11, marginRight: 6 }}>{formatFechaCorta(m.fecha)}</span>
+                {m.descripcion || m.paciente || m.proveedor || 'Sin descripción'}
+              </span>
+              <span style={{ fontWeight: 600, flexShrink: 0 }}>
+                {formatMontoMoneda(m.moneda || 'Pesos', Math.abs(Number(m.monto || 0)))}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
