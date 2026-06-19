@@ -55,6 +55,10 @@ app.use(express.json());
 
 const PORT = process.env.DASHBOARD_API_PORT || process.env.PORT || 3001;
 const JWT_SECRET = config.JWT_SECRET;
+logger.info('AUTH', 'JWT_SECRET cargado', {
+  fingerprint: crypto.createHash('sha256').update(JWT_SECRET).digest('hex').slice(0, 12),
+  length: JWT_SECRET.length,
+});
 
 const SESSION_DURATION = '180d';
 const SESSION_REFRESH_THRESHOLD_SEC = 30 * 24 * 60 * 60; // renovar si quedan menos de 30 dias
@@ -77,7 +81,12 @@ function authMiddleware(req, res, next) {
 
     next();
   } catch (err) {
-    logger.warn('AUTH', 'Token rechazado en authMiddleware', { route: req.path, errName: err.name, errMessage: err.message });
+    logger.warn('AUTH', 'Token rechazado en authMiddleware', {
+      route: req.path,
+      errName: err.name,
+      errMessage: err.message,
+      fingerprint: crypto.createHash('sha256').update(JWT_SECRET).digest('hex').slice(0, 12),
+    });
     res.status(401).json({ error: 'Token invalido o expirado' });
   }
 }
@@ -217,7 +226,11 @@ app.post('/api/auth/verify',
   const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: SESSION_DURATION });
   const cliente = obtenerClientePorUserId(Number(telegramId));
   const esAdmin = esAdminOriginal(Number(telegramId));
-  logger.audit('auth_verify_success', { telegramId, esAdmin });
+  logger.audit('auth_verify_success', {
+    telegramId,
+    esAdmin,
+    fingerprint: crypto.createHash('sha256').update(JWT_SECRET).digest('hex').slice(0, 12),
+  });
   res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
 });
 
