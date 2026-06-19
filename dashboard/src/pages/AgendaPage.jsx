@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { api } from '../services/api'
+import DatePickerButton from '../components/DatePickerButton'
+
+const pad2 = n => String(n).padStart(2, '0')
+const hoyMedianoche = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }
+const toApiFormat = d => `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`
+const toInputValue = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+const fromInputValue = v => { const [y, m, d] = v.split('-').map(Number); const date = new Date(y, m - 1, d); date.setHours(0, 0, 0, 0); return date }
 
 const CONSULTORIO_MAP = {
   'consultorio 1': 'Laura',
@@ -63,32 +70,25 @@ export default function AgendaPage() {
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(null)
   const [eliminando, setEliminando] = useState(false)
   const [filtroProfesional, setFiltroProfesional] = useState(null)
-  const [fechaOffset, setFechaOffset] = useState(0)
+  const [fecha, setFecha] = useState(hoyMedianoche)
 
-  function getFechaStr(offset) {
-    const d = new Date()
-    d.setDate(d.getDate() + offset)
-    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`
-  }
-
-  function getFechaLabel(offset) {
-    const d = new Date()
-    d.setDate(d.getDate() + offset)
-    return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
+  function shiftFecha(deltaDias) {
+    setFecha(f => { const d = new Date(f); d.setDate(d.getDate() + deltaDias); return d })
+    setFiltroProfesional(null)
   }
 
   const cargar = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const { data } = await api.get(`/api/agenda?fecha=${getFechaStr(fechaOffset)}`)
+      const { data } = await api.get(`/api/agenda?fecha=${toApiFormat(fecha)}`)
       setTurnos(data.turnos || [])
     } catch {
       setError('No se pudo cargar la agenda. ¿Está corriendo el servidor?')
     } finally {
       setLoading(false)
     }
-  }, [fechaOffset])
+  }, [fecha])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -162,7 +162,7 @@ export default function AgendaPage() {
     }
   }
 
-  const esHoy = fechaOffset === 0
+  const esHoy = toInputValue(fecha) === toInputValue(hoyMedianoche())
 
   // Profesionales ocasionales del día (no están en los chips fijos)
   const profesionalesExtra = [...new Set(
@@ -189,14 +189,21 @@ export default function AgendaPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Agenda</h1>
-          <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>{getFechaLabel(fechaOffset)}</p>
+          <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>
+            {fecha.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button className="btn-agenda" onClick={() => { setFechaOffset(o => o - 1); setFiltroProfesional(null) }} title="Día anterior">←</button>
+          <button className="btn-agenda" onClick={() => shiftFecha(-1)} title="Día anterior">←</button>
           {!esHoy && (
-            <button className="btn-agenda" onClick={() => { setFechaOffset(0); setFiltroProfesional(null) }}>Hoy</button>
+            <button className="btn-agenda" onClick={() => { setFecha(hoyMedianoche()); setFiltroProfesional(null) }}>Hoy</button>
           )}
-          <button className="btn-agenda" onClick={() => { setFechaOffset(o => o + 1); setFiltroProfesional(null) }} disabled={esHoy} title="Día siguiente">→</button>
+          <button className="btn-agenda" onClick={() => shiftFecha(1)} disabled={esHoy} title="Día siguiente">→</button>
+          <DatePickerButton
+            value={toInputValue(fecha)}
+            onChange={v => { if (v) { setFecha(fromInputValue(v)); setFiltroProfesional(null) } }}
+            title="Elegir fecha"
+          />
           <button className="btn-agenda" onClick={cargar}>↻</button>
         </div>
       </div>

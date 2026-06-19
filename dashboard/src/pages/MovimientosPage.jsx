@@ -4,6 +4,7 @@ import { es } from 'date-fns/locale'
 import { api } from '../services/api'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
+import DatePickerButton from '../components/DatePickerButton'
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -12,6 +13,13 @@ function formatFecha(value) {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return String(value)
   return format(d, 'dd/MM/yy', { locale: es })
+}
+
+// Para valores de <input type="date"> ("yyyy-mm-dd"), evita el corrimiento
+// de un día que produce `new Date(value)` al interpretarlo como UTC.
+function formatFechaInput(value) {
+  const [y, m, d] = value.split('-').map(Number)
+  return format(new Date(y, m - 1, d), 'dd/MM/yy', { locale: es })
 }
 
 const MONEDA_KEY = { Pesos: 'ARS', Dólares: 'USD', Euros: 'EUR' }
@@ -58,6 +66,7 @@ export default function MovimientosPage() {
   const [q,      setQ]      = useState('')
   const [tipo,   setTipo]   = useState('todos')
   const [moneda, setMoneda] = useState('todas')
+  const [fecha,  setFecha]  = useState('') // yyyy-mm-dd
 
   const [editando,      setEditando]      = useState(null)
   const [guardando,     setGuardando]     = useState(false)
@@ -101,8 +110,16 @@ export default function MovimientosPage() {
         (m.categoria   || '').toLowerCase().includes(qn)
       )
     }
+    if (fecha) {
+      r = r.filter(m => {
+        const d = new Date(m.fecha)
+        if (Number.isNaN(d.getTime())) return false
+        const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        return ymd === fecha
+      })
+    }
     return r
-  }, [movimientos, tipo, moneda, q])
+  }, [movimientos, tipo, moneda, q, fecha])
 
   const handleGuardar = useCallback(async (idUnico, updates) => {
     setModalError(null)
@@ -130,7 +147,7 @@ export default function MovimientosPage() {
     } finally { setBorrando(false) }
   }, [])
 
-  const hasFilters = tipo !== 'todos' || moneda !== 'todas' || q.trim()
+  const hasFilters = tipo !== 'todos' || moneda !== 'todas' || q.trim() || fecha
 
   return (
     <div className="page">
@@ -180,8 +197,17 @@ export default function MovimientosPage() {
             <button key={v} className={`chip${moneda === v ? ' active' : ''}`} onClick={() => setMoneda(v)}>{l}</button>
           ))}
         </div>
+        <div className="filter-divider" />
+        <div className="filter-chips" style={{ alignItems: 'center' }}>
+          <DatePickerButton value={fecha} onChange={setFecha} title="Filtrar por fecha" className="chip" />
+          {fecha && (
+            <button className="chip active" onClick={() => setFecha('')}>
+              {formatFechaInput(fecha)} ×
+            </button>
+          )}
+        </div>
         {hasFilters && (
-          <button className="clear-btn" onClick={() => { setQ(''); setTipo('todos'); setMoneda('todas') }}>
+          <button className="clear-btn" onClick={() => { setQ(''); setTipo('todos'); setMoneda('todas'); setFecha('') }}>
             Limpiar filtros ×
           </button>
         )}
