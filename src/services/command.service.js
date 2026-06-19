@@ -37,7 +37,7 @@ async function construirMensajeCotizacion(monto) {
 
   return (
     `💵 *Movimiento en dólares*\n\n` +
-    `Monto: U$${Math.abs(monto).toLocaleString()}\n\n` +
+    `Monto: U$${Math.abs(monto).toLocaleString('es-AR')}\n\n` +
     promedioActual +
     `Ingresá la cotización del dólar (ej: 1250):`
   );
@@ -68,14 +68,14 @@ async function ejecutarBalance(userId) {
   return (
     `💰 *RESUMEN DE CAJA*\n\n` +
     `📅 *Hoy:*\n` +
-    `   Ingresos: $${ingresosHoy.toLocaleString()}\n` +
-    `   Egresos: $${egresosHoy.toLocaleString()}\n` +
-    `   Neto: $${(ingresosHoy - egresosHoy).toLocaleString()}\n` +
+    `   Ingresos: $${ingresosHoy.toLocaleString('es-AR')}\n` +
+    `   Egresos: $${egresosHoy.toLocaleString('es-AR')}\n` +
+    `   Neto: $${(ingresosHoy - egresosHoy).toLocaleString('es-AR')}\n` +
     `   Pendientes: ${pendientesHoy.length}\n\n` +
-    `📆 *Esta semana:* $${totalSemana.toLocaleString()}\n\n` +
-    `📆 *Este mes:* $${totalMes.toLocaleString()}\n` +
+    `📆 *Esta semana:* $${totalSemana.toLocaleString('es-AR')}\n\n` +
+    `📆 *Este mes:* $${totalMes.toLocaleString('es-AR')}\n` +
     `   Movimientos: ${mes.length}\n` +
-    `   Pendientes total: ${pendientes.length} ($${totalPendiente.toLocaleString()})`
+    `   Pendientes total: ${pendientes.length} ($${totalPendiente.toLocaleString('es-AR')})`
   );
 }
 
@@ -112,9 +112,9 @@ async function ejecutarHoy(userId) {
   const totalEgresos = egresos.reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
 
   msg += `━━━━━━━━━━━━━━━\n`;
-  msg += `💰 Ingresos: $${totalIngresos.toLocaleString()}\n`;
-  msg += `💸 Egresos: $${totalEgresos.toLocaleString()}\n`;
-  msg += `💵 Neto: $${(totalIngresos - totalEgresos).toLocaleString()}`;
+  msg += `💰 Ingresos: $${totalIngresos.toLocaleString('es-AR')}\n`;
+  msg += `💸 Egresos: $${totalEgresos.toLocaleString('es-AR')}\n`;
+  msg += `💵 Neto: $${(totalIngresos - totalEgresos).toLocaleString('es-AR')}`;
 
   return msg;
 }
@@ -156,13 +156,13 @@ async function ejecutarSemana(userId) {
     return dateA - dateB;
   }).forEach(fecha => {
     const info = porDia[fecha];
-    msg += `📅 ${fecha}: ${info.cantidad} mov - $${(info.ingresos - info.egresos).toLocaleString()}\n`;
+    msg += `📅 ${fecha}: ${info.cantidad} mov - $${(info.ingresos - info.egresos).toLocaleString('es-AR')}\n`;
   });
 
   msg += `\n━━━━━━━━━━━━━━━\n`;
-  msg += `💰 Ingresos: ${ingresos.length} - $${totalIngresos.toLocaleString()}\n`;
-  msg += `💸 Egresos: ${egresos.length} - $${totalEgresos.toLocaleString()}\n\n`;
-  msg += `💵 *Neto semanal: $${(totalIngresos - totalEgresos).toLocaleString()}*`;
+  msg += `💰 Ingresos: ${ingresos.length} - $${totalIngresos.toLocaleString('es-AR')}\n`;
+  msg += `💸 Egresos: ${egresos.length} - $${totalEgresos.toLocaleString('es-AR')}\n\n`;
+  msg += `💵 *Neto semanal: $${(totalIngresos - totalEgresos).toLocaleString('es-AR')}*`;
 
   return msg;
 }
@@ -186,9 +186,9 @@ async function ejecutarMes(userId) {
 
   let msg = `📊 *BALANCE DEL MES*\n`;
   msg += `━━━━━━━━━━━━━━━━━\n\n`;
-  msg += `💰 Ingresos: ${ingresos.length} - $${totalIngresos.toLocaleString()}\n`;
-  msg += `💸 Egresos: ${egresos.length} - $${totalEgresos.toLocaleString()}\n\n`;
-  msg += `💵 *Neto: $${(totalIngresos - totalEgresos).toLocaleString()}*\n\n`;
+  msg += `💰 Ingresos: ${ingresos.length} - $${totalIngresos.toLocaleString('es-AR')}\n`;
+  msg += `💸 Egresos: ${egresos.length} - $${totalEgresos.toLocaleString('es-AR')}\n\n`;
+  msg += `💵 *Neto: $${(totalIngresos - totalEgresos).toLocaleString('es-AR')}*\n\n`;
   msg += `📊 *Por moneda:*\n`;
   msg += `   Pesos: ${pesos.length} movimientos\n`;
   msg += `   Dólares: ${dolares.length} movimientos`;
@@ -215,7 +215,7 @@ async function ejecutarIngresos(userId) {
 
   const total = ingresos.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
   msg += `━━━━━━━━━━━━━━━\n`;
-  msg += `💵 Total ingresos: $${total.toLocaleString()}`;
+  msg += `💵 Total ingresos: $${total.toLocaleString('es-AR')}`;
 
   return msg;
 }
@@ -239,7 +239,7 @@ async function ejecutarEgresos(userId) {
 
   const total = egresos.reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
   msg += `━━━━━━━━━━━━━━━\n`;
-  msg += `💵 Total egresos: $${total.toLocaleString()}`;
+  msg += `💵 Total egresos: $${total.toLocaleString('es-AR')}`;
 
   return msg;
 }
@@ -277,7 +277,7 @@ async function ejecutarPendientes(userId) {
 
   const totalPendiente = pendientes.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
   msg += `\n━━━━━━━━━━━━━━━\n`;
-  msg += `💵 Total pendiente: $${totalPendiente.toLocaleString()}`;
+  msg += `💵 Total pendiente: $${totalPendiente.toLocaleString('es-AR')}`;
 
   return msg;
 }

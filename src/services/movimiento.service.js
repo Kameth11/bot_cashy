@@ -94,14 +94,14 @@ function crearMensajeMovimientoRegistrado({ tipo, descripcion, monto, moneda, me
 
   let montoTexto = formatMonto(monto, moneda);
   if (moneda === 'Dólares' && cotizacionUsada) {
-    montoTexto = `U$${Math.abs(monto).toLocaleString()} (cotización: $${cotizacionUsada.toLocaleString()})`;
+    montoTexto = `U$${Math.abs(monto).toLocaleString('es-AR')} (cotización: $${cotizacionUsada.toLocaleString('es-AR')})`;
     if (montoPesos !== null) {
-      montoTexto += `\n💵 En pesos: $${montoPesos.toLocaleString()}`;
+      montoTexto += `\n💵 En pesos: $${montoPesos.toLocaleString('es-AR')}`;
     }
   } else if (moneda === 'Euros' && cotizacionUsada) {
-    montoTexto = `€${Math.abs(monto).toLocaleString()} (cotización: $${cotizacionUsada.toLocaleString()})`;
+    montoTexto = `€${Math.abs(monto).toLocaleString('es-AR')} (cotización: $${cotizacionUsada.toLocaleString('es-AR')})`;
     if (montoPesos !== null) {
-      montoTexto += `\n💶 En pesos: $${montoPesos.toLocaleString()}`;
+      montoTexto += `\n💶 En pesos: $${montoPesos.toLocaleString('es-AR')}`;
     }
   }
 

@@ -42,11 +42,11 @@ bot.command('debug', async (ctx) => {
     msg += `📅 *DEL MES ACTUAL*\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `Movimientos: ${mes.length}\n`;
-    msg += `Total: $${mes.reduce((sum, d) => sum + d.monto, 0).toLocaleString()}\n\n`;
+    msg += `Total: $${mes.reduce((sum, d) => sum + d.monto, 0).toLocaleString('es-AR')}\n\n`;
     msg += `📆 *HOY*\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `Movimientos: ${hoy.length}\n`;
-    msg += `Total: $${hoy.reduce((sum, d) => sum + d.monto, 0).toLocaleString()}`;
+    msg += `Total: $${hoy.reduce((sum, d) => sum + d.monto, 0).toLocaleString('es-AR')}`;
 
     await ctx.reply(msg, { parse_mode: 'Markdown' });
 
@@ -78,7 +78,7 @@ bot.command('debug', async (ctx) => {
         
         msg2 += `\n📆 ${nombreMes} ${anio}${esMesActual ? ' *(MES ACTUAL)*' : ''}\n`;
         msg2 += `   Movimientos: ${datos.count}\n`;
-        msg2 += `   Total: $${datos.total.toLocaleString()}`;
+        msg2 += `   Total: $${datos.total.toLocaleString('es-AR')}`;
       });
       
       await ctx.reply(msg2, { parse_mode: 'Markdown' });

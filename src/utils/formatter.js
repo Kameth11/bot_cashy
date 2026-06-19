@@ -22,7 +22,7 @@ function formatFecha(fechaStr) {
 function formatMonto(monto, moneda) {
   const monedaSimbolo = moneda === 'Dólares' ? 'U$' : '$';
   const montoAbs = Math.abs(monto);
-  return monto < 0 ? `-${monedaSimbolo}${montoAbs.toLocaleString()}` : `${monedaSimbolo}${montoAbs.toLocaleString()}`;
+  return monto < 0 ? `-${monedaSimbolo}${montoAbs.toLocaleString('es-AR')}` : `${monedaSimbolo}${montoAbs.toLocaleString('es-AR')}`;
 }
 
 function sanitizarInput(texto, maxLength = 200) {
