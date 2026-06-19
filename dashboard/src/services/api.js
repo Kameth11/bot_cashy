@@ -25,9 +25,16 @@ api.interceptors.response.use(
   },
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('cashy_token');
-      localStorage.removeItem('cashy_user');
-      window.location.href = '/login';
+      // Si este request quedo en vuelo con un token viejo (ej: JWT_SECRET
+      // rotado, o el usuario ya inicio sesion de nuevo en esta misma pestana),
+      // no hay que pisar la sesion nueva que ya esta guardada en localStorage.
+      const tokenDelRequest = err.config?.headers?.Authorization?.replace('Bearer ', '');
+      const tokenActual = localStorage.getItem('cashy_token');
+      if (!tokenActual || tokenDelRequest === tokenActual) {
+        localStorage.removeItem('cashy_token');
+        localStorage.removeItem('cashy_user');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(err);
   }
