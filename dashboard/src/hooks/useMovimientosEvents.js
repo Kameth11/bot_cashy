@@ -26,6 +26,9 @@ export function useMovimientosEvents(onUpdate) {
           headers: { Authorization: `Bearer ${token}` },
           signal: abortController.signal,
         })
+        // Token invalido/vencido: no tiene sentido reintentar con el mismo
+        // token para siempre, solo generaria ruido en los logs del backend.
+        if (response.status === 401) return
         if (!response.ok || !response.body) throw new Error('SSE no disponible')
 
         const reader = response.body.getReader()
