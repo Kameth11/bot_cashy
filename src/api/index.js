@@ -76,7 +76,8 @@ function authMiddleware(req, res, next) {
     }
 
     next();
-  } catch {
+  } catch (err) {
+    logger.warn('AUTH', 'Token rechazado en authMiddleware', { route: req.path, errName: err.name, errMessage: err.message });
     res.status(401).json({ error: 'Token invalido o expirado' });
   }
 }
