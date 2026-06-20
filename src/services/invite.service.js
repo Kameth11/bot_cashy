@@ -1,4 +1,4 @@
-const { CODIGO_EXPIRACION_HORAS, MAX_INTENTOS_CODIGO } = require('../config');
+const { CODIGO_EXPIRACION_HORAS, MAX_INTENTOS_CODIGO, GOOGLE_SERVICE_ACCOUNT_EMAIL } = require('../config');
 const {
   obtenerClientePorUserId,
   codigoInvitacionExpirado,
@@ -69,7 +69,11 @@ function resolveInviteCode(userId, rawCode) {
   return { ok: true, codigo, ownerId, clientes, codigoData };
 }
 
-async function joinWithInviteCode(userId, rawCode) {
+// Camino público único de invitación: el invitado valida el código y queda
+// con su PROPIO Google Sheet aislado (no comparte el del owner). Valida el
+// código y arranca el flujo de alta de sheet (paso `sheetId`), que termina
+// de configurarse en registration.service.handleSheetIdStep.
+async function beginInviteRegistration(userId, rawCode) {
   if (obtenerClientePorUserId(userId)) {
     return { message: '⚠️ Ya tienes una cuenta registrada. Habla con el owner si necesitas agregar otro usuario.' };
   }
@@ -86,18 +90,26 @@ async function joinWithInviteCode(userId, rawCode) {
   }
 
   if (clientes[ownerId].usuarios.includes(userId)) {
-    return { message: '⚠️ Ya estás autorizado en esta cuenta.' };
+    state.pendingRegistros.delete(userId);
+    return { message: '⚠️ Ya estás autorizado.' };
   }
 
-  clientes[ownerId].usuarios.push(userId);
-  await clienteService.guardarClientes(clientes);
+  state.pendingRegistros.set(userId, {
+    step: 'sheetId',
+    ownerId,
+    codigo
+  });
   state.pendingCodigos.delete(codigo);
 
   return {
     message:
-      `✅ *¡Te uniste correctamente!*\n\n` +
-      `Ahora puedes usar el bot con la cuenta del owner.\n` +
-      `Usa /start para ver los comandos disponibles.`,
+      '✅ *Código válido!*\n\n' +
+      'Ahora configura tu propio Google Sheet (cada usuario tiene el suyo).\n\n' +
+      '📊 *Paso 1:* Compártelo con mi service account:\n\n' +
+      `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
+      'Dale permisos de "Editor" y luego ingresa el ID de tu spreadsheet:\n' +
+      'Ejemplo: `1abc123def456GHI789jkl012`\n\n' +
+      'Usa /cancelar para salir.',
     parse_mode: 'Markdown'
   };
 }
@@ -106,5 +118,5 @@ module.exports = {
   generateInviteCode,
   buildInviteCodeMessage,
   createInviteCode,
-  joinWithInviteCode,
+  beginInviteRegistration,
 };

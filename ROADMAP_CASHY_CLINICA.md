@@ -363,10 +363,13 @@ Telegram real). Hallazgos que siguen siendo relevantes:
 - ~~**Inconsistencia en el flujo de invitación**: la documentación sugiere
   `/start` + ingresar código, pero el camino operativo real es `/unir
   CODIGO`.~~ **Resuelto.** Se unificó a un solo camino público: `/unir
-  CODIGO` (`joinWithInviteCode`). Se eliminó el código muerto del paso
-  `codigoInvitacion`/`beginInviteRegistration` que nunca se activaba, se
-  corrigió el mensaje de `/codigo` para que apunte a `/unir`, y se documentó
-  el comando en `/ayuda` y en el mensaje de registro de `/start`.
+  CODIGO` → `beginInviteRegistration`, que valida el código y arranca el alta
+  del **sheet propio** del invitado (cada usuario tiene su Google Sheet
+  aislado, según el modelo de privacidad del proyecto). Se eliminó el paso
+  muerto `codigoInvitacion` de `handlePendingRegistration` (nunca se
+  activaba), se corrigió el mensaje de `/codigo` para que apunte a `/unir`, y
+  se documentó el comando en `/ayuda` y en el mensaje de registro de
+  `/start`.
 - **`movimientos_v2` y `movimiento_eventos_v2` no estaban desplegadas** en
   Supabase al momento de la auditoría (solo existían `profiles` y
   `movimientos`) — relevante para cuando se arranque la etapa 1 del roadmap
