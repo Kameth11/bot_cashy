@@ -1,4 +1,4 @@
-const { CODIGO_EXPIRACION_HORAS, GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_CODIGO } = require('../config');
+const { CODIGO_EXPIRACION_HORAS, MAX_INTENTOS_CODIGO } = require('../config');
 const {
   obtenerClientePorUserId,
   codigoInvitacionExpirado,
@@ -23,7 +23,8 @@ function buildInviteCodeMessage(codigo) {
     `🔑 *Código de invitación*\n\n` +
     `Comparte este código (vigencia ${CODIGO_EXPIRACION_HORAS}h):\n\n` +
     `*${codigo}*\n\n` +
-    `La persona debe usar /start y luego ingresar el código.`
+    `La persona debe enviar:\n` +
+    `\`/unir ${codigo}\``
   );
 }
 
@@ -101,47 +102,9 @@ async function joinWithInviteCode(userId, rawCode) {
   };
 }
 
-async function beginInviteRegistration(userId, rawCode) {
-  const resolved = resolveInviteCode(userId, rawCode);
-  if (!resolved.ok) {
-    return { message: resolved.message.replace('o expirado. ', '. ').replace('❌ El owner ya no existe.', '❌ El owner ya no existe. Pide un código nuevo.') };
-  }
-
-  const { codigo, ownerId, clientes } = resolved;
-
-  if (!clientes[ownerId].usuarios) {
-    clientes[ownerId].usuarios = [];
-  }
-
-  if (clientes[ownerId].usuarios.includes(userId)) {
-    state.pendingRegistros.delete(userId);
-    return { message: '⚠️ Ya estás autorizado.' };
-  }
-
-  state.pendingRegistros.set(userId, {
-    step: 'sheetId',
-    ownerId,
-    codigo
-  });
-  state.pendingCodigos.delete(codigo);
-
-  return {
-    message:
-      '✅ *Código válido!*\n\n' +
-      'Ahora configura tu sheet.\n\n' +
-      '📊 *Paso 1:* Comparte tu Google Sheet con mi service account:\n\n' +
-      `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
-      'Luego ingresa el ID de tu spreadsheet:\n' +
-      'Ejemplo: `1abc123def456GHI789jkl012`\n\n' +
-      'Usa /cancelar para salir.',
-    parse_mode: 'Markdown'
-  };
-}
-
 module.exports = {
   generateInviteCode,
   buildInviteCodeMessage,
   createInviteCode,
   joinWithInviteCode,
-  beginInviteRegistration,
 };

@@ -781,7 +781,10 @@ function buildHelpMessage() {
     '`/dolar` - Ver cotización actual\n' +
     '`/actualizardolar` - Actualizar cotización\n\n' +
     '📄 *Sheet:*\n' +
-    '`/sheet` - Ver link de tu Google Sheet'
+    '`/sheet` - Ver link de tu Google Sheet\n\n' +
+    '👥 *Invitaciones:*\n' +
+    '`/codigo` - Generar un código de invitación (solo owner)\n' +
+    '`/unir CODIGO` - Unirte a una cuenta con un código'
   );
 }
 

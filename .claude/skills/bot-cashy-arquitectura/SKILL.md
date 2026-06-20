@@ -112,8 +112,8 @@ TTL default 30 min salvo donde se indica:
   original, usa `SPREADSHEET_ID` del `.env` directo, sin pasar por
   `clientes.json`).
 - Flujo de invitación: owner genera código (`/codigo` →
-  `invite.service.createInviteCode`) → invitado usa `/unir <codigo>` o se
-  registra con código durante `/start` → `resolveInviteCode` valida
+  `invite.service.createInviteCode`) → invitado usa `/unir <codigo>`
+  (único camino público; `joinWithInviteCode`) → `resolveInviteCode` valida
   (con límite de intentos `MAX_INTENTOS_CODIGO`) → se agrega a
   `usuarios[]` del owner.
 

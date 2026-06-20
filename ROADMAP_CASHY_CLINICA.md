@@ -360,10 +360,13 @@ este historial.
 Supabase + Sheets + `npm test` (sin pruebas manuales extremo a extremo en
 Telegram real). Hallazgos que siguen siendo relevantes:
 
-- **Inconsistencia en el flujo de invitación**: la documentación sugiere
+- ~~**Inconsistencia en el flujo de invitación**: la documentación sugiere
   `/start` + ingresar código, pero el camino operativo real es `/unir
-  CODIGO`. Conviene unificar a un solo camino público antes de considerar
-  esto cerrado.
+  CODIGO`.~~ **Resuelto.** Se unificó a un solo camino público: `/unir
+  CODIGO` (`joinWithInviteCode`). Se eliminó el código muerto del paso
+  `codigoInvitacion`/`beginInviteRegistration` que nunca se activaba, se
+  corrigió el mensaje de `/codigo` para que apunte a `/unir`, y se documentó
+  el comando en `/ayuda` y en el mensaje de registro de `/start`.
 - **`movimientos_v2` y `movimiento_eventos_v2` no estaban desplegadas** en
   Supabase al momento de la auditoría (solo existían `profiles` y
   `movimientos`) — relevante para cuando se arranque la etapa 1 del roadmap

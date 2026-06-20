@@ -9,7 +9,6 @@ const {
   resetIntentosEmail,
 } = require('../auth');
 const clienteService = require('./cliente.service');
-const { beginInviteRegistration } = require('./invite.service');
 const { validarEmail, validarSheetId } = require('../utils/validation');
 const { ensureSheetStructure } = require('./sheet.service');
 
@@ -33,7 +32,8 @@ function buildStartRegistrationMessage() {
     '📧 *Verificación de email*\n\n' +
     'Ingresa tu email corporativo:\n' +
     'Ejemplo: `juan@tuempresa.com`\n\n' +
-    'Solo emails autorizados pueden registrarse.\n' +
+    'Solo emails autorizados pueden registrarse.\n\n' +
+    '🔑 ¿Tenés un código de invitación? Usá `/unir CODIGO`.\n' +
     'O usa /cancelar para salir.'
   );
 }
@@ -186,10 +186,6 @@ async function handlePendingRegistration(userId, text) {
 
   if (registro.step === 'email') {
     return handleEmailStep(userId, text);
-  }
-
-  if (registro.step === 'codigoInvitacion') {
-    return beginInviteRegistration(userId, text);
   }
 
   if (registro.step === 'sheetId') {
