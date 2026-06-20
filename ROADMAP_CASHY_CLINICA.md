@@ -192,10 +192,20 @@ transferencia`, `honorarios Dra Lopez $180000 transferencia`.
 
 ### Reportes MVP obligatorios (cuando se implemente el modelo v2)
 
-- `/por_profesional`: cantidad de movimientos, ingresos cobrados, pendientes.
-- `/cobros_por_metodo`: efectivo, transferencia, tarjeta, obra social.
-- `/deudores`: por paciente — monto original, cobrado, saldo pendiente, vencimiento.
-- `/egresos_categoria`: total, cantidad y peso relativo por categoría.
+- [x] `/por_profesional`: ingresos del mes por profesional — cantidad de
+  movimientos, cobrado, pendiente. **Implementado.**
+- [x] `/cobros_por_metodo`: cobros del mes por método (efectivo, transferencia,
+  tarjeta, etc.) con total y peso relativo. **Implementado.**
+- [x] `/deudores`: ingresos pendientes agrupados por paciente — saldo,
+  cantidad y vencimiento. **Implementado.**
+- [x] `/egresos_categoria`: egresos del mes por categoría — total, cantidad y
+  peso relativo. **Implementado.**
+
+> Los 4 reportes leen del modelo legacy/v1 vía `obtenerDatosSheet` y toleran
+> datos sin categoría/paciente/profesional (los agrupan como "sin
+> categoría"/"Sin nombre"/"Sin profesional"). Funcionan ya, sin esperar la
+> migración completa a v2. Viven en `command.service.js` + un handler por
+> comando en `src/handlers/commands/`.
 
 ### Compatibilidad durante la transición
 
@@ -359,7 +369,8 @@ Telegram real). Hallazgos que siguen siendo relevantes:
   `movimientos`) — relevante para cuando se arranque la etapa 1 del roadmap
   de negocio (sección 3).
 - **Reportes nuevos del MVP v2** (`/por_profesional`, `/cobros_por_metodo`,
-  `/deudores`, `/egresos_categoria`) todavía no existen.
+  `/deudores`, `/egresos_categoria`): **ya implementados** (sección 4). Falta
+  validación manual extremo a extremo en Telegram real con datos cargados.
 - **Sin QA manual extremo a extremo en Telegram real** asentado — todo lo
   validado fue por código/tests, no por uso real del bot.
 

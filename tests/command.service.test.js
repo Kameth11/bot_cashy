@@ -32,6 +32,91 @@ jest.mock('../src/services/movimiento.service', () => ({
 const state = require('../src/state');
 const commandService = require('../src/services/command.service');
 const movimientoService = require('../src/services/movimiento.service');
+const sheetService = require('../src/services/sheet.service');
+
+describe('reportes de gestión v2', () => {
+  const hoy = new Date();
+  const fechaHoy = `${String(hoy.getDate()).padStart(2, '0')}/${String(hoy.getMonth() + 1).padStart(2, '0')}/${hoy.getFullYear()}`;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function mockDatos(datos) {
+    sheetService.obtenerDatosSheet.mockResolvedValue(datos);
+  }
+
+  test('ejecutarCobrosPorMetodo agrupa ingresos cobrados del mes por método', async () => {
+    mockDatos([
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Cobrado', metodoPago: 'efectivo', montoPesos: 10000 },
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Cobrado', metodoPago: 'efectivo', montoPesos: 5000 },
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Cobrado', metodoPago: 'transferencia', montoPesos: 5000 },
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Pendiente', metodoPago: '', montoPesos: 9999 },
+      { fecha: fechaHoy, tipo: 'Egreso', estado: 'Cobrado', metodoPago: 'efectivo', montoPesos: -1000 },
+    ]);
+
+    const msg = await commandService.ejecutarCobrosPorMetodo(1);
+    expect(msg).toContain('efectivo');
+    expect(msg).toContain('75%');
+    expect(msg).toContain('transferencia');
+    expect(msg).toContain('Total cobrado: $20.000');
+    expect(msg).not.toContain('9.999');
+  });
+
+  test('ejecutarCobrosPorMetodo sin datos devuelve mensaje vacío', async () => {
+    mockDatos([]);
+    expect(await commandService.ejecutarCobrosPorMetodo(1)).toContain('No hay ingresos cobrados');
+  });
+
+  test('ejecutarDeudores agrupa ingresos pendientes por paciente', async () => {
+    mockDatos([
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Pendiente', paciente: 'Juan', montoPesos: 30000, fechaVencimiento: '01/07/2026' },
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Pendiente', paciente: 'Juan', montoPesos: 10000 },
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Cobrado', paciente: 'Marta', montoPesos: 5000 },
+    ]);
+
+    const msg = await commandService.ejecutarDeudores(1);
+    expect(msg).toContain('Juan');
+    expect(msg).toContain('$40.000');
+    expect(msg).toContain('2 pendientes');
+    expect(msg).toContain('vence 01/07/2026');
+    expect(msg).not.toContain('Marta');
+  });
+
+  test('ejecutarDeudores sin pendientes', async () => {
+    mockDatos([{ fecha: fechaHoy, tipo: 'Ingreso', estado: 'Cobrado', montoPesos: 1000 }]);
+    expect(await commandService.ejecutarDeudores(1)).toContain('No hay deudores');
+  });
+
+  test('ejecutarEgresosCategoria agrupa egresos del mes por categoría', async () => {
+    mockDatos([
+      { fecha: fechaHoy, tipo: 'Egreso', categoria: 'insumos', montoPesos: -8000 },
+      { fecha: fechaHoy, tipo: 'Egreso', categoria: 'insumos', montoPesos: -2000 },
+      { fecha: fechaHoy, tipo: 'Egreso', categoria: '', montoPesos: -10000 },
+      { fecha: fechaHoy, tipo: 'Ingreso', categoria: 'consulta', montoPesos: 5000 },
+    ]);
+
+    const msg = await commandService.ejecutarEgresosCategoria(1);
+    expect(msg).toContain('insumos');
+    expect(msg).toContain('sin categoría');
+    expect(msg).toContain('Total egresos: $20.000');
+  });
+
+  test('ejecutarPorProfesional separa cobrado y pendiente por profesional', async () => {
+    mockDatos([
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Cobrado', profesional: 'Dra Lopez', montoPesos: 20000 },
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Pendiente', profesional: 'Dra Lopez', montoPesos: 5000 },
+      { fecha: fechaHoy, tipo: 'Ingreso', estado: 'Cobrado', profesional: '', montoPesos: 1000 },
+    ]);
+
+    const msg = await commandService.ejecutarPorProfesional(1);
+    expect(msg).toContain('Dra Lopez');
+    expect(msg).toContain('cobrado $20.000');
+    expect(msg).toContain('pendiente $5.000');
+    expect(msg).toContain('Sin profesional');
+    expect(msg).toContain('Total cobrado: $21.000');
+  });
+});
 
 describe('registrarMovimientoDesdeNLP', () => {
   beforeEach(() => {

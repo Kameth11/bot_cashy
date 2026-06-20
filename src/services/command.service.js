@@ -282,6 +282,157 @@ async function ejecutarPendientes(userId) {
   return msg;
 }
 
+async function ejecutarCobrosPorMetodo(userId) {
+  const datos = await obtenerDatosSheet(userId);
+  const mes = datos.filter(d => esEsteMes(d.fecha));
+  const cobrados = mes.filter(d => d.tipo === 'Ingreso' && d.estado === 'Cobrado');
+
+  if (cobrados.length === 0) {
+    return '📭 No hay ingresos cobrados este mes.';
+  }
+
+  const porMetodo = {};
+  cobrados.forEach(d => {
+    const metodo = (d.metodoPago && d.metodoPago.trim()) || 'Sin método';
+    if (!porMetodo[metodo]) porMetodo[metodo] = { cantidad: 0, total: 0 };
+    porMetodo[metodo].cantidad++;
+    porMetodo[metodo].total += (d.montoPesos || 0);
+  });
+
+  const total = cobrados.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+
+  let msg = `💳 *COBROS POR MÉTODO (mes)*\n`;
+  msg += `━━━━━━━━━━━━━━━━━\n\n`;
+  Object.keys(porMetodo)
+    .sort((a, b) => porMetodo[b].total - porMetodo[a].total)
+    .forEach(metodo => {
+      const info = porMetodo[metodo];
+      const pct = total > 0 ? Math.round((info.total / total) * 100) : 0;
+      msg += `💰 *${escapeMarkdown(metodo)}*: $${info.total.toLocaleString('es-AR')} (${pct}%)\n`;
+      msg += `   ${info.cantidad} mov\n\n`;
+    });
+  msg += `━━━━━━━━━━━━━━━\n`;
+  msg += `💵 Total cobrado: $${total.toLocaleString('es-AR')}`;
+  return msg;
+}
+
+async function ejecutarDeudores(userId) {
+  const datos = await obtenerDatosSheet(userId);
+  const pendientes = datos.filter(d => d.tipo === 'Ingreso' && d.estado === 'Pendiente');
+
+  if (pendientes.length === 0) {
+    return '✅ No hay deudores. ¡Todo cobrado!';
+  }
+
+  const porPaciente = {};
+  pendientes.forEach(d => {
+    const nombre = (d.paciente && d.paciente.trim()) ||
+      (d.descripcion && d.descripcion.trim()) || 'Sin nombre';
+    if (!porPaciente[nombre]) porPaciente[nombre] = { cantidad: 0, saldo: 0, vencimiento: '' };
+    porPaciente[nombre].cantidad++;
+    porPaciente[nombre].saldo += (d.montoPesos || 0);
+    if (d.fechaVencimiento && !porPaciente[nombre].vencimiento) {
+      porPaciente[nombre].vencimiento = d.fechaVencimiento;
+    }
+  });
+
+  const total = pendientes.reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+  const nombres = Object.keys(porPaciente).sort((a, b) => porPaciente[b].saldo - porPaciente[a].saldo);
+
+  let msg = `🧾 *DEUDORES (saldos pendientes)*\n`;
+  msg += `━━━━━━━━━━━━━━━━━\n\n`;
+  nombres.slice(0, 20).forEach(nombre => {
+    const info = porPaciente[nombre];
+    msg += `👤 *${escapeMarkdown(nombre)}*: $${info.saldo.toLocaleString('es-AR')}\n`;
+    msg += `   ${info.cantidad} pendiente${info.cantidad > 1 ? 's' : ''}`;
+    if (info.vencimiento) msg += ` · vence ${escapeMarkdown(info.vencimiento)}`;
+    msg += `\n\n`;
+  });
+  if (nombres.length > 20) {
+    msg += `... y ${nombres.length - 20} más\n\n`;
+  }
+  msg += `━━━━━━━━━━━━━━━\n`;
+  msg += `💵 Total por cobrar: $${total.toLocaleString('es-AR')}`;
+  return msg;
+}
+
+async function ejecutarEgresosCategoria(userId) {
+  const datos = await obtenerDatosSheet(userId);
+  const mes = datos.filter(d => esEsteMes(d.fecha));
+  const egresos = mes.filter(d => d.tipo === 'Egreso');
+
+  if (egresos.length === 0) {
+    return '📭 No hay egresos este mes.';
+  }
+
+  const porCategoria = {};
+  egresos.forEach(d => {
+    const cat = (d.categoria && d.categoria.trim()) || 'sin categoría';
+    if (!porCategoria[cat]) porCategoria[cat] = { cantidad: 0, total: 0 };
+    porCategoria[cat].cantidad++;
+    porCategoria[cat].total += Math.abs(d.montoPesos || 0);
+  });
+
+  const total = egresos.reduce((sum, d) => sum + Math.abs(d.montoPesos || 0), 0);
+
+  let msg = `📊 *EGRESOS POR CATEGORÍA (mes)*\n`;
+  msg += `━━━━━━━━━━━━━━━━━\n\n`;
+  Object.keys(porCategoria)
+    .sort((a, b) => porCategoria[b].total - porCategoria[a].total)
+    .forEach(cat => {
+      const info = porCategoria[cat];
+      const pct = total > 0 ? Math.round((info.total / total) * 100) : 0;
+      msg += `🔻 *${escapeMarkdown(cat)}*: $${info.total.toLocaleString('es-AR')} (${pct}%)\n`;
+      msg += `   ${info.cantidad} mov\n\n`;
+    });
+  msg += `━━━━━━━━━━━━━━━\n`;
+  msg += `💸 Total egresos: $${total.toLocaleString('es-AR')}`;
+  return msg;
+}
+
+async function ejecutarPorProfesional(userId) {
+  const datos = await obtenerDatosSheet(userId);
+  const mes = datos.filter(d => esEsteMes(d.fecha) && d.tipo === 'Ingreso');
+
+  if (mes.length === 0) {
+    return '📭 No hay ingresos este mes.';
+  }
+
+  const porProf = {};
+  mes.forEach(d => {
+    const prof = (d.profesional && d.profesional.trim()) || 'Sin profesional';
+    if (!porProf[prof]) porProf[prof] = { cantidad: 0, cobrado: 0, pendiente: 0, pendientesCount: 0 };
+    porProf[prof].cantidad++;
+    if (d.estado === 'Pendiente') {
+      porProf[prof].pendiente += (d.montoPesos || 0);
+      porProf[prof].pendientesCount++;
+    } else {
+      porProf[prof].cobrado += (d.montoPesos || 0);
+    }
+  });
+
+  let msg = `👨‍⚕️ *INGRESOS POR PROFESIONAL (mes)*\n`;
+  msg += `━━━━━━━━━━━━━━━━━\n\n`;
+  Object.keys(porProf)
+    .sort((a, b) => porProf[b].cobrado - porProf[a].cobrado)
+    .forEach(prof => {
+      const info = porProf[prof];
+      msg += `👤 *${escapeMarkdown(prof)}*\n`;
+      msg += `   ${info.cantidad} mov · cobrado $${info.cobrado.toLocaleString('es-AR')}\n`;
+      if (info.pendiente > 0) {
+        msg += `   ⏳ pendiente $${info.pendiente.toLocaleString('es-AR')} (${info.pendientesCount})\n`;
+      }
+      msg += `\n`;
+    });
+
+  const totalCobrado = mes
+    .filter(d => d.estado !== 'Pendiente')
+    .reduce((sum, d) => sum + (d.montoPesos || 0), 0);
+  msg += `━━━━━━━━━━━━━━━\n`;
+  msg += `💵 Total cobrado: $${totalCobrado.toLocaleString('es-AR')}`;
+  return msg;
+}
+
 async function ejecutarDolar() {
   if (!state.cotizacionDolar) {
     await obtenerCotizacionDolar();
@@ -612,6 +763,11 @@ function buildHelpMessage() {
     '`/mes` - Balance del mes\n' +
     '`/ingresos` - Solo ingresos\n' +
     '`/egresos` - Solo gastos\n\n' +
+    '📈 *Reportes de gestión:*\n' +
+    '`/cobros_por_metodo` - Cobros del mes por método\n' +
+    '`/egresos_categoria` - Egresos del mes por categoría\n' +
+    '`/por_profesional` - Ingresos del mes por profesional\n' +
+    '`/deudores` - Saldos pendientes por paciente\n\n' +
     '✅ *Cobrar:*\n' +
     '`/cobrar ultimo` - Cobra el último pendiente\n' +
     '`/cobrar [nombre]` - Cobra uno que coincida\n' +
@@ -964,6 +1120,10 @@ module.exports = {
   ejecutarIngresos,
   ejecutarEgresos,
   ejecutarPendientes,
+  ejecutarCobrosPorMetodo,
+  ejecutarDeudores,
+  ejecutarEgresosCategoria,
+  ejecutarPorProfesional,
   ejecutarDolar,
   ejecutarActualizarDolar,
   ejecutarCobrar,
