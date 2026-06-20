@@ -85,10 +85,11 @@ pesos consolidados).
 
 ## 3. Roadmap recomendado (etapas de negocio)
 
-Ninguna de las etapas 0-5 está realmente empezada — son decisiones de
-modelado de negocio que el usuario tiene que cerrar primero (no es algo que
-se pueda planificar técnicamente sin esas respuestas). La etapa 6 (web) ya
-está hecha y superada.
+Las etapas 0-3 y 5 dependen de decisiones de modelado de negocio que el
+usuario tiene que cerrar primero (no es algo que se pueda planificar
+técnicamente sin esas respuestas). La etapa 4 (reportes de gestión) está
+parcialmente arrancada: los 4 reportes base del MVP ya existen. La etapa 6
+(web) ya está hecha y superada.
 
 | Etapa | Objetivo | Estado |
 |---|---|---|
@@ -96,7 +97,7 @@ está hecha y superada.
 | 1 — Normalizar el movimiento financiero | Pasar de texto libre a campos estructurados (ver spec del modelo v2, sección 4) | Parcial — existe el schema draft en Supabase (`movimientos_v2`), el bot sigue escribiendo en v1 |
 | 2 — Temporalidad real | `fecha_prestacion`, `fecha_presentacion`, `fecha_vencimiento`, `fecha_cobro_estimada/real` | Parcial — `fechaPrestacion`/`fechaVencimiento` existen como columnas pero sin reportes/alertas que las usen |
 | 3 — Cuentas por cobrar y pagar | Saldo trazable por paciente/proveedor, eventos de pago en vez de sobrescribir saldo | No iniciada |
-| 4 — Reportes de gestión | Por profesional, por método, por OS, presupuesto vs. real, proyección 30/60/90 | No iniciada (solo hay agregados simples: balance/hoy/semana/mes) |
+| 4 — Reportes de gestión | Por profesional, por método, por OS, presupuesto vs. real, proyección 30/60/90 | Parcial — los 4 reportes base del MVP ya existen (`/por_profesional`, `/cobros_por_metodo`, `/deudores`, `/egresos_categoria`, ver sección 4). Faltan OS, presupuesto vs. real y proyección 30/60/90 |
 | 5 — Configuración y alertas | Saldo mínimo, alertas de vencimiento/mora/OS sin acreditar | No iniciada |
 | 6 — Web MVP | Dashboard de lectura mínimo | **Hecha y superada** — el dashboard actual permite editar/cobrar/eliminar, no solo leer |
 
@@ -113,7 +114,9 @@ así que este último paso ya no aplica como estaba escrito originalmente).
 5. Actualizar schema de Supabase.
 6. Actualizar columnas del Sheet o estrategia de compatibilidad.
 7. Adaptar parser y comandos del bot.
-8. Agregar reportes nuevos.
+8. ~~Agregar reportes nuevos.~~ ✅ Hecho — los 4 reportes base del MVP
+   (`/por_profesional`, `/cobros_por_metodo`, `/deudores`,
+   `/egresos_categoria`) ya están implementados sobre el modelo v1.
 
 ---
 
