@@ -60,8 +60,8 @@ export default function AgendaPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [modalTurno, setModalTurno] = useState(null)
-  const [monto, setMonto] = useState('')
-  const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [montoTotal, setMontoTotal] = useState('')
+  const [pagos, setPagos] = useState([{ metodoPago: 'efectivo', monto: '' }])
   const [guardando, setGuardando] = useState(false)
   const [accionando, setAccionando] = useState(null)
   const [modalEditar, setModalEditar] = useState(null)
@@ -139,20 +139,43 @@ export default function AgendaPage() {
     }
   }
 
+  function agregarLineaPago() {
+    setPagos(prev => [...prev, { metodoPago: 'efectivo', monto: '' }])
+  }
+
+  function quitarLineaPago(idx) {
+    setPagos(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  function actualizarLineaPago(idx, campo, valor) {
+    setPagos(prev => prev.map((p, i) => i === idx ? { ...p, [campo]: valor } : p))
+  }
+
+  const montoPagado = pagos.reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
+  const saldoPendienteModal = Math.max(0, (Number(montoTotal) || 0) - montoPagado)
+
   async function confirmarCobro() {
-    if (!monto || isNaN(Number(monto)) || Number(monto) <= 0) {
-      alert('Ingresá un monto válido')
+    if (!montoTotal || isNaN(Number(montoTotal)) || Number(montoTotal) <= 0) {
+      alert('Ingresá un monto total válido')
+      return
+    }
+    if (pagos.some(p => !p.monto || isNaN(Number(p.monto)) || Number(p.monto) <= 0)) {
+      alert('Completá un monto válido en cada forma de pago')
+      return
+    }
+    if (montoPagado > Number(montoTotal) + 0.01) {
+      alert('La suma de los pagos no puede superar el monto total')
       return
     }
     setGuardando(true)
     try {
-      await api.patch(`/api/agenda/${modalTurno.idTurno}/cobrado`, {
-        monto: Number(monto),
-        metodoPago,
+      const { data } = await api.patch(`/api/agenda/${modalTurno.idTurno}/cobrado`, {
+        montoTotal: Number(montoTotal),
+        pagos: pagos.map(p => ({ monto: Number(p.monto), metodoPago: p.metodoPago })),
         moneda: 'Pesos',
       })
       setTurnos(prev => prev.map(t =>
-        t.idTurno === modalTurno.idTurno ? { ...t, estado: 'Cobrado' } : t
+        t.idTurno === modalTurno.idTurno ? { ...t, estado: data.estadoFinal } : t
       ))
       setModalTurno(null)
     } catch {
@@ -309,7 +332,7 @@ export default function AgendaPage() {
                     <button
                       className="btn-agenda primary"
                       disabled={accionando === turno.idTurno}
-                      onClick={() => { setModalTurno(turno); setMonto(''); setMetodoPago('efectivo') }}
+                      onClick={() => { setModalTurno(turno); setMontoTotal(''); setPagos([{ metodoPago: 'efectivo', monto: '' }]) }}
                     >
                       Cobrar
                     </button>
@@ -385,25 +408,64 @@ export default function AgendaPage() {
             </p>
             <div className="modal-form">
               <div>
-                <label className="form-label">Monto ($)</label>
+                <label className="form-label">Monto total ($)</label>
                 <input
                   className="form-input"
                   type="number"
                   placeholder="15000"
-                  value={monto}
-                  onChange={e => setMonto(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && confirmarCobro()}
+                  value={montoTotal}
+                  onChange={e => setMontoTotal(e.target.value)}
                   autoFocus
                 />
               </div>
-              <div>
-                <label className="form-label">Método de pago</label>
-                <select className="form-input" value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
-                  <option value="efectivo">Efectivo</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="tarjeta">Tarjeta</option>
-                </select>
-              </div>
+
+              {pagos.map((pago, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="form-label">Forma de pago</label>
+                    <select
+                      className="form-input"
+                      value={pago.metodoPago}
+                      onChange={e => actualizarLineaPago(idx, 'metodoPago', e.target.value)}
+                    >
+                      <option value="efectivo">Efectivo</option>
+                      <option value="transferencia">Transferencia</option>
+                      <option value="tarjeta">Tarjeta</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="form-label">Monto</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      placeholder="0"
+                      value={pago.monto}
+                      onChange={e => actualizarLineaPago(idx, 'monto', e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && confirmarCobro()}
+                    />
+                  </div>
+                  {pagos.length > 1 && (
+                    <button
+                      className="action-btn"
+                      title="Quitar"
+                      style={{ color: 'var(--red)', marginBottom: 4 }}
+                      onClick={() => quitarLineaPago(idx)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              <button className="btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={agregarLineaPago}>
+                + Agregar forma de pago
+              </button>
+
+              {Number(montoTotal) > 0 && saldoPendienteModal > 0.01 && (
+                <p style={{ fontSize: 13, color: 'var(--orange, #FF8B00)' }}>
+                  ⚠️ Quedará un saldo pendiente de ${saldoPendienteModal.toLocaleString('es-AR')}
+                </p>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setModalTurno(null)}>Cancelar</button>

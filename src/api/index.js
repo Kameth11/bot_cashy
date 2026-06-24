@@ -531,22 +531,47 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
 app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
   try {
     const { idTurno } = req.params;
-    const { monto, metodoPago, moneda = 'Pesos' } = req.body;
-    if (!monto || Number(monto) <= 0) return res.status(400).json({ error: 'monto requerido' });
+    const { montoTotal, pagos, moneda = 'Pesos' } = req.body;
+
+    if (!montoTotal || Number(montoTotal) <= 0) return res.status(400).json({ error: 'montoTotal requerido' });
+    if (!Array.isArray(pagos) || pagos.length === 0) return res.status(400).json({ error: 'pagos requerido' });
+    if (pagos.some(p => !p.metodoPago || !p.monto || Number(p.monto) <= 0)) {
+      return res.status(400).json({ error: 'cada pago necesita metodoPago y monto' });
+    }
+
+    const montoPagado = pagos.reduce((acc, p) => acc + Number(p.monto), 0);
+    if (montoPagado > Number(montoTotal) + 0.01) {
+      return res.status(400).json({ error: 'la suma de los pagos supera el monto total' });
+    }
+    const saldoPendiente = Math.max(0, Number(montoTotal) - montoPagado);
 
     const turno = await obtenerTurnoPorId(req.user.userId, idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
 
-    await actualizarEstadoTurno(req.user.userId, idTurno, 'Cobrado');
-    await guardarMovimiento(req.user.userId, {
-      descripcion: `${turno.servicio || 'Turno'} - ${turno.cliente || 'Paciente'}`,
-      monto: Number(monto), tipo: 'Ingreso', moneda, metodoPago: metodoPago || '',
-      estado: 'Cobrado', pacienteNombre: turno.cliente || null,
-      profesionalNombre: turno.profesional || null, tratamientoNombre: turno.servicio || null,
-      referenciaId: idTurno, origenCarga: 'dashboard',
-    });
-    logger.audit('movimiento_created', { userId: req.user.userId, monto: Number(monto), tipo: 'Ingreso', idTurno });
-    res.json({ ok: true });
+    const descripcion = `${turno.servicio || 'Turno'} - ${turno.cliente || 'Paciente'}`;
+    for (const pago of pagos) {
+      await guardarMovimiento(req.user.userId, {
+        descripcion, monto: Number(pago.monto), tipo: 'Ingreso', moneda, metodoPago: pago.metodoPago,
+        estado: 'Cobrado', pacienteNombre: turno.cliente || null,
+        profesionalNombre: turno.profesional || null, tratamientoNombre: turno.servicio || null,
+        referenciaId: idTurno, origenCarga: 'dashboard',
+      });
+    }
+    if (saldoPendiente > 0.01) {
+      await guardarMovimiento(req.user.userId, {
+        descripcion, monto: saldoPendiente, tipo: 'Ingreso', moneda, metodoPago: '',
+        estado: 'Pendiente', pacienteNombre: turno.cliente || null,
+        profesionalNombre: turno.profesional || null, tratamientoNombre: turno.servicio || null,
+        referenciaId: idTurno, origenCarga: 'dashboard',
+      });
+    }
+
+    const estadoFinal = saldoPendiente > 0.01 ? 'Llegó' : 'Cobrado';
+    await actualizarEstadoTurno(req.user.userId, idTurno, estadoFinal);
+    invalidarCacheMovimientos(req.user.userId);
+    logger.audit('movimiento_created', { userId: req.user.userId, montoPagado, saldoPendiente, tipo: 'Ingreso', idTurno });
+
+    res.json({ ok: true, estadoFinal, saldoPendiente });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
