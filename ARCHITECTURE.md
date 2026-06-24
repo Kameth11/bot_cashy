@@ -244,6 +244,64 @@ cualquiera de estos:
   como el `write-queue` o las TTLMaps de `state/index.js` — hoy asumen un
   solo proceso).
 
+### Escalabilidad y resiliencia bajo carga
+
+**Hecho (2026-06-24) — optimizaciones que NO requieren cambiar de hosting ni
+infra nueva.** Llevan el techo de "un solo proceso" bastante más arriba
+(decenas de tenants) sin tocar la arquitectura:
+
+- **Logs**: se sacaron los `console.log('[debug]'…)` que imprimían movimientos
+  completos (PII) en cada insert.
+- **Crash recovery**: `uncaughtException` ahora loguea, cierra ordenado y hace
+  `process.exit(1)` para que Railway levante una instancia limpia (antes seguía
+  con estado indefinido).
+- **Rate limit en `/api`**: límite global por IP (120/min) sobre las rutas de
+  datos (excluye `/api/auth/*`, `/api/events` SSE y `/api/cotizacion`). Protege
+  la cuota de Google Sheets de un dashboard con refresh agresivo o de abuso.
+- **Menos llamadas a Sheets por operación**: `getSheetCliente` reusa el
+  documento cacheado (TTL 2h) en vez de rehacer `loadInfo()`, y se quitó
+  `loadCells()` (cargaba toda la grilla) de los caminos de lectura y escritura.
+- **Dual-write a Sheets best-effort**: con Supabase como fuente de verdad, la
+  copia a Google Sheets se hace en background bajo el lock del usuario
+  (`runInBackground` en `src/lib/write-queue.js`), sin demorar la respuesta del
+  bot/dashboard. Si Sheets está lento o sobre cuota, no afecta al usuario.
+- **Lecturas acotadas**: `fetchLegacyRowsForUser` trae como mucho
+  `MAX_MOVIMIENTOS_READ` (20k) filas más recientes en vez de toda la historia,
+  con índice `idx_movimientos_tenant_user_created`
+  (`sql/migrations/004_indexes.sql`). Es un guard contra lecturas desbocadas,
+  no paginación real — cuando un tenant se acerque a ese número, toca paginar.
+- **Concurrencia de Gemini acotada**: semáforo compartido (`src/lib/semaphore.js`,
+  máx 3 en vuelo, cola de 12) para fotos de agenda + transcripción de audio, así
+  N usuarios mandando media a la vez no disparan N llamadas simultáneas a Gemini.
+
+**Pendiente — escalado horizontal real (Fase 2, NO implementado).** El único
+bloqueante que **corrompe datos** al correr 2+ instancias es el write-lock en
+memoria (`withUserWriteLock` en `src/lib/write-queue.js`): dos instancias
+escribiendo el mismo Sheet/fila a la vez. El resto del estado en memoria
+(rate limiters, `_movCache` de `api/index.js`, suscriptores SSE de
+`events.service.js`, TTLMaps de `state/index.js`) es degradable-pero-tolerable
+por instancia un tiempo. Para escalar a réplicas hace falta:
+
+1. **Prerrequisito (acción manual)**: provisionar **Redis** en Railway
+   (add-on) y exponer `REDIS_URL` como variable de entorno. Agregar dependencia
+   `ioredis`.
+2. **Write-lock distribuido en Redis**: reemplazar la implementación de
+   `withUserWriteLock` por un lock en Redis (`SET key NX PX ttl` con release
+   seguro, o `redlock`), keyed por userId, manteniendo la misma interfaz para
+   no tocar los callers. Conviene un fallback automático a la versión en memoria
+   cuando `REDIS_URL` no está, para poder shipear el código dormido.
+3. **`auth_codes`**: ya se persisten en Supabase (`api/index.js`); quitar la
+   dependencia del `Map` global en memoria como fuente.
+4. **SSE entre instancias**: o Redis pub/sub para fan-out de
+   `movimientos_updated`, o activar **sticky sessions** en Railway y mantener
+   SSE por-instancia.
+5. **Activar réplicas**: recién subir a 2+ instancias en Railway cuando 2–4
+   estén listos **y** las optimizaciones de arriba lleven un tiempo estables en
+   producción. No antes.
+
+Mientras tanto, el sistema corre como **una sola instancia** (no subir el
+replica count en Railway hasta hacer la Fase 2).
+
 ### CI/CD
 
 **Hoy**: push directo a `main`, Railway redeploya automático, CI corre pero
@@ -292,3 +350,5 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-06-19 | Migración a modelo v2 sin reprocesar histórico (convive con legacy) | Menor riesgo/esfuerzo que una migración masiva; el roadmap ya lo sugería |
 | 2026-06-19 | Railway como hosting actual, no decisión permanente | Revisar si crece la cantidad de tenants o el costo deja de ser conveniente |
 | 2026-06-19 | Mantener push directo a `main`, planificar PRs + CI bloqueante a futuro | Velocidad de iteración hoy > proceso, pero hay disparadores claros para cambiarlo |
+| 2026-06-24 | Optimizaciones de carga sin infra nueva (rate limit, dual-write async, lecturas acotadas, semáforo Gemini) antes de escalar horizontal | Suben el techo de un solo proceso a decenas de tenants con bajo riesgo; el escalado horizontal (Redis) recién vale la pena después |
+| 2026-06-24 | Escalado horizontal (Fase 2) requiere Redis y se mantiene en **una sola instancia** hasta implementarlo | El write-lock en memoria corrompe datos con 2+ instancias; ver sección 6, "Escalabilidad y resiliencia" |

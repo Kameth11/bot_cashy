@@ -679,7 +679,6 @@ bot.on('text', async (ctx) => {
 
   if (state.pendingEdits.has(ctx.from.id)) {
     const editData = state.pendingEdits.get(ctx.from.id);
-    console.log('DEBUG editar - step:', editData.step, 'texto:', text);
 
     if (editData.step === 'descripcion') {
       if (text === '-' || text === '- -') {

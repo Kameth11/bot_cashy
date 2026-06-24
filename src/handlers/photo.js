@@ -7,6 +7,7 @@ const { resolverProfesional } = require('../services/agenda.service');
 const { confirmButtons } = require('./actions');
 const { MAX_PHOTO_SIZE_BYTES, MAX_TURNOS_POR_IMAGEN } = require('../config');
 const { tieneProcesoPendiente } = require('./guards');
+const { geminiMediaSemaphore } = require('../lib/semaphore');
 
 bot.on('photo', async (ctx) => {
   const userId = ctx.from.id;
@@ -40,7 +41,16 @@ bot.on('photo', async (ctx) => {
       maxBodyLength: MAX_PHOTO_SIZE_BYTES,
     });
     const photoBuffer = Buffer.from(response.data, 'binary');
-    const resultado = await procesarFotoAgenda(photoBuffer, 'image/jpeg');
+
+    let resultado;
+    try {
+      resultado = await geminiMediaSemaphore.run(() => procesarFotoAgenda(photoBuffer, 'image/jpeg'));
+    } catch (e) {
+      if (e.code === 'SEMAPHORE_QUEUE_FULL') {
+        return ctx.reply('⏳ Estoy procesando varias imágenes ahora mismo. Probá de nuevo en unos segundos.');
+      }
+      throw e;
+    }
 
     if (!resultado) {
       return ctx.reply('❌ No pude procesar la imagen. Intenta con otra foto más clara.');

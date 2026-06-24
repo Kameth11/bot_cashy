@@ -6,7 +6,7 @@ const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 const { emitMovimientosUpdated } = require('./events.service');
-const { withUserWriteLock } = require('../lib/write-queue');
+const { withUserWriteLock, runInBackground } = require('../lib/write-queue');
 const { getRowIdUnico, formatDateValue } = require('../utils/sheet-row');
 const {
   buildMovimientoV2Payload,
@@ -17,6 +17,13 @@ const {
   legacyDateToIso,
   normalizeMetodoPago,
 } = require('../utils/movimiento-v2');
+
+// Tope de seguridad para lecturas: evita que una cuenta con años de historia
+// traiga decenas de miles de filas en cada fetch del dashboard. Se traen las
+// más recientes (order created_at desc); el orden final lo rearma sortByKeyAsc
+// aguas abajo. Es un guard contra lecturas desbocadas, no paginación real
+// (cuando un tenant se acerque a este número, toca paginar de verdad).
+const MAX_MOVIMIENTOS_READ = 20000;
 
 const v2CapabilityCache = {
   checked: false,
@@ -274,12 +281,6 @@ async function resolveLegacyCapabilities(supabase) {
     } else if (!isMissingColumnError(camposCheck.error)) {
       console.error('Supabase movimientos campos extendidos check error:', camposCheck.error.message);
     }
-
-    console.log('[debug] resolveLegacyCapabilities:', {
-      extendedMovimientos,
-      extendedCampos,
-      camposCheckError: camposCheck.error ? camposCheck.error.message : null,
-    });
 
     legacyCapabilityCache.checked = true;
     legacyCapabilityCache.extendedMovimientos = extendedMovimientos;
@@ -602,7 +603,8 @@ async function fetchLegacyRowsForUser(supabase, userId, tenantId) {
     .from('movimientos')
     .select('*')
     .eq('user_id', userId)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false })
+    .limit(MAX_MOVIMIENTOS_READ);
 
   if (error) {
     throw error;
@@ -733,11 +735,8 @@ function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
         if (updateError) {
           throw new Error(`Supabase movimientos update failed: ${updateError.message}`);
         }
-        try {
-          await syncRowUpdateToSheet(userId, row.id_unico, updates);
-        } catch (sheetError) {
-          console.error('Sheet sync update error:', sheetError.message);
-        }
+        // Sheet best-effort en background (Supabase ya guardó): no demora la request.
+        runInBackground(userId, () => syncRowUpdateToSheet(userId, row.id_unico, updates), 'sheet-update');
         try {
           await syncLegacyUpdateToV2(supabase2, userId, legacySnapshot, updates);
         } catch (v2Error) {
@@ -757,11 +756,8 @@ function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
       if (deleteError) {
         throw new Error(`Supabase movimientos delete failed: ${deleteError.message}`);
       }
-      try {
-        await syncRowDeleteToSheet(userId, row.id_unico);
-      } catch (sheetError) {
-        console.error('Sheet sync delete error:', sheetError.message);
-      }
+      // Sheet best-effort en background (Supabase ya borró): no demora la request.
+      runInBackground(userId, () => syncRowDeleteToSheet(userId, row.id_unico), 'sheet-delete');
       try {
         await syncLegacyDeleteToV2(supabase2, legacyRowId);
       } catch (v2Error) {
@@ -1072,8 +1068,6 @@ async function doAddRow(userId, rowData, options = {}) {
     return row;
   }
 
-  console.log('[debug] addRow supabaseRow:', supabaseRow);
-
   const { data, error } = await forTenant(tenantId)
     .from('movimientos')
     .insert(supabaseRow)
@@ -1107,17 +1101,17 @@ async function doAddRow(userId, rowData, options = {}) {
     console.error('Supabase movimientos_v2 sync insert error:', v2Error.message);
   }
 
-  // dual-write: also write to sheet as backup
-  try {
+  // dual-write best-effort: Supabase ya es la fuente de verdad, así que el
+  // backup a Google Sheets se hace en background bajo el lock del usuario (para
+  // no pisar otras escrituras del mismo user) sin demorar la respuesta. Si
+  // Sheets está lento o sobre cuota, no afecta al bot/dashboard.
+  runInBackground(userId, async () => {
     const sheet = await getSheetService().getSheetCliente(userId);
-    if (sheet) {
-      await getSheetService().ensureSheetStructure(sheet);
-      const row = await sheet.addRow(rowData, { insert: true });
-      await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
-    }
-  } catch (e) {
-    // sheet write failed, thats OK - supabase is source of truth
-  }
+    if (!sheet) return;
+    await getSheetService().ensureSheetStructure(sheet);
+    const row = await sheet.addRow(rowData, { insert: true });
+    await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+  }, 'sheet-addRow');
 
   emitMovimientosUpdated(userId);
   return data || rowData;

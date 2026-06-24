@@ -54,6 +54,23 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Rate limit global de las rutas de datos: protege la cuota de Google Sheets
+// y la DB de un dashboard con refresh agresivo o de abuso. Se aplica por IP
+// (robusto contra rotación de tokens). Quedan afuera: /api/auth/* (tiene su
+// propio limiter más estricto), /api/events (SSE, conexión larga de una sola
+// request) y /api/cotizacion (pública y barata).
+const apiDataLimiter = createLimiter({ windowMs: 60 * 1000, max: 120 });
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth/') || req.path === '/events' || req.path === '/cotizacion') {
+    return next();
+  }
+  if (!apiDataLimiter(req.ip).allowed) {
+    logger.audit('api_rate_limit_blocked', { route: req.path });
+    return res.status(429).json({ error: 'Demasiadas peticiones. Probá de nuevo en un momento.' });
+  }
+  next();
+});
+
 const PORT = process.env.DASHBOARD_API_PORT || process.env.PORT || 3001;
 const JWT_SECRET = config.JWT_SECRET;
 

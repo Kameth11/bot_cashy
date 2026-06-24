@@ -7,6 +7,7 @@ const { tieneProcesoPendiente } = require('./guards');
 const { validarTextoUsuario } = require('../utils/validation');
 const { escapeMarkdown } = require('../utils/formatter');
 const { procesarTextoConNlp } = require('./text');
+const { geminiMediaSemaphore } = require('../lib/semaphore');
 
 bot.on('voice', async (ctx) => {
   const userId = ctx.from.id;
@@ -44,7 +45,15 @@ bot.on('voice', async (ctx) => {
     });
     const audioBuffer = Buffer.from(response.data, 'binary');
 
-    const transcripcion = await geminiService.transcribirAudio(audioBuffer, 'audio/ogg');
+    let transcripcion;
+    try {
+      transcripcion = await geminiMediaSemaphore.run(() => geminiService.transcribirAudio(audioBuffer, 'audio/ogg'));
+    } catch (e) {
+      if (e.code === 'SEMAPHORE_QUEUE_FULL') {
+        return ctx.reply('⏳ Estoy procesando varios audios ahora mismo. Probá de nuevo en unos segundos.');
+      }
+      throw e;
+    }
 
     if (transcripcion == null) {
       return ctx.reply('⚠️ No pude transcribir el audio. Probá escribiendo el mensaje en texto.');

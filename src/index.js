@@ -56,8 +56,12 @@ require('./handlers/voice');
 require('./handlers/actions');
 require('./handlers/nlp-confirm');
 
-// Start API immediately (does not depend on bot)
-startApi().catch(err => logger.error('PROCESS', 'Error al iniciar API', { err: err.message }));
+// Start API immediately (does not depend on bot). Guardamos el server para
+// poder cerrarlo ordenadamente ante una senal o un error fatal.
+let apiServer = null;
+startApi()
+  .then(server => { apiServer = server; })
+  .catch(err => logger.error('PROCESS', 'Error al iniciar API', { err: err.message }));
 
 // Launch bot independently
 bot.launch().then(async () => {
@@ -78,8 +82,24 @@ process.on('unhandledRejection', (reason) => {
   logger.error('PROCESS', 'Unhandled Rejection', { reason: reason instanceof Error ? reason.message : reason });
 });
 
+// Tras un uncaughtException el proceso queda en estado indefinido: lo correcto
+// es loguear, intentar cerrar todo de forma ordenada y salir para que Railway
+// levante una instancia limpia. El guard evita reentrar si un error ocurre
+// durante el propio shutdown.
+let cerrandoPorError = false;
 process.on('uncaughtException', (err) => {
   logger.error('PROCESS', 'Uncaught Exception', { err: err.message, stack: err.stack });
+  if (cerrandoPorError) return;
+  cerrandoPorError = true;
+
+  try { bot.stop('uncaughtException'); } catch (_) {}
+  if (apiServer) {
+    try { apiServer.close(); } catch (_) {}
+  }
+
+  // Damos un margen corto para que los logs/cierres se vacíen y forzamos salida.
+  const timer = setTimeout(() => process.exit(1), 1000);
+  if (timer.unref) timer.unref();
 });
 
 module.exports = { bot };

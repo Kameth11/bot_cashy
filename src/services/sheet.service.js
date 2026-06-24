@@ -129,11 +129,13 @@ async function getDocCliente(userId, fresh = false) {
 }
 
 async function getSheetCliente(userId) {
-  const docCliente = await getDocCliente(userId, true);
+  // Reusa el documento cacheado (TTL 2h) en vez de rehacer loadInfo() en cada
+  // llamada. No hace falta loadCells(): addRow/getRows y el formateo de color
+  // (aplicarColorMontoEnFila) van directo a la API, no a la grilla en memoria.
+  const docCliente = await getDocCliente(userId, false);
   if (!docCliente) return null;
   const sheet = docCliente.sheetsByIndex[0];
   if (!sheet) return null;
-  await sheet.loadCells();
   return sheet;
 }
 
@@ -146,12 +148,10 @@ async function obtenerDatosSheet(userId) {
     return [];
   }
 
-  invalidateCache(userId);
-  const docCliente = await getDocCliente(userId, true);
+  const docCliente = await getDocCliente(userId, false);
   if (!docCliente) return [];
   const sheet = docCliente.sheetsByIndex[0];
   if (!sheet) return [];
-  await sheet.loadCells();
   const filas = await sheet.getRows();
 
   const datos = filas.map(toMovimiento);
