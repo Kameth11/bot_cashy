@@ -534,7 +534,10 @@ async function doEjecutarCobrar(userId, nombre) {
     }
   }
 
+  const hoy = new Date();
+  const hoyStr = `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}`;
   filaActual.set('Estado', 'Cobrado');
+  filaActual.set('FechaCobro', hoyStr);
   await filaActual.save();
   await aplicarColorMontoEnFila(filaActual, montoActual, 'Cobrado');
 

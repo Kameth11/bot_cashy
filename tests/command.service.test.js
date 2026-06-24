@@ -318,3 +318,48 @@ describe('registrarMovimientoDesdeNLP', () => {
     }));
   });
 });
+
+describe('ejecutarCobrar - stamping de FechaCobro', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // Fila falsa con la misma interfaz get/set/save que usan los wrappers
+  // reales (Sheet row o Supabase row): suficiente para probar la lógica de
+  // doEjecutarCobrar sin tocar Sheets/Supabase de verdad.
+  function fakeRow(initial) {
+    const data = { ...initial };
+    return {
+      get: jest.fn((field) => data[field]),
+      set: jest.fn((field, value) => { data[field] = value; }),
+      save: jest.fn(async () => {}),
+      _data: data,
+    };
+  }
+
+  const dbService = require('../src/services/db.service');
+
+  test('cobro total: stampea FechaCobro con la fecha de hoy', async () => {
+    const row = fakeRow({ Estado: 'Pendiente', Descripcion: 'Consulta Juan', Monto: 5000, Moneda: 'Pesos', ID_Unico: 'mov1' });
+    dbService.getRows.mockResolvedValue([row]);
+
+    const hoy = new Date();
+    const hoyStr = `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}`;
+
+    await commandService.ejecutarCobrar(1, 'ultimo');
+
+    expect(row.set).toHaveBeenCalledWith('Estado', 'Cobrado');
+    expect(row.set).toHaveBeenCalledWith('FechaCobro', hoyStr);
+    expect(row.save).toHaveBeenCalledTimes(1);
+  });
+
+  test('cobro parcial: NO stampea FechaCobro (sigue Pendiente)', async () => {
+    const row = fakeRow({ Estado: 'Pendiente', Descripcion: 'Consulta Juan', Monto: 5000, Moneda: 'Pesos', ID_Unico: 'mov1' });
+    dbService.getRows.mockResolvedValue([row]);
+
+    await commandService.ejecutarCobrar(1, 'Juan 2000');
+
+    expect(row.set).toHaveBeenCalledWith('Estado', 'Pendiente');
+    expect(row.set).not.toHaveBeenCalledWith('FechaCobro', expect.anything());
+  });
+});

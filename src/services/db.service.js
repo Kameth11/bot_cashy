@@ -35,6 +35,7 @@ const legacyCapabilityCache = {
   checked: false,
   extendedMovimientos: false,
   extendedCampos: false,
+  fechaCobro: false,
 };
 
 let v2CapabilityPromise = null;
@@ -240,13 +241,14 @@ function isMissingColumnError(error) {
 
 async function resolveLegacyCapabilities(supabase) {
   if (!USE_SUPABASE || !supabase) {
-    return { extendedMovimientos: false, extendedCampos: false };
+    return { extendedMovimientos: false, extendedCampos: false, fechaCobro: false };
   }
 
   if (legacyCapabilityCache.checked) {
     return {
       extendedMovimientos: legacyCapabilityCache.extendedMovimientos,
       extendedCampos: legacyCapabilityCache.extendedCampos,
+      fechaCobro: legacyCapabilityCache.fechaCobro,
     };
   }
 
@@ -257,6 +259,7 @@ async function resolveLegacyCapabilities(supabase) {
   legacyCapabilityPromise = (async () => {
     let extendedMovimientos = false;
     let extendedCampos = false;
+    let fechaCobro = false;
 
     // tenant-isolation-ignore: solo prueba si existen columnas, no lee datos de usuario
     const check = await supabase
@@ -282,11 +285,29 @@ async function resolveLegacyCapabilities(supabase) {
       console.error('Supabase movimientos campos extendidos check error:', camposCheck.error.message);
     }
 
+    // Capability separada de extendedCampos a propósito: fecha_cobro es una
+    // columna nueva (migración 005) independiente de las que ya existen en
+    // producción. Si fuera parte de extendedCampos, mientras la migración no
+    // corra, paciente/profesional/tratamiento/proveedor (que SÍ existen hoy)
+    // dejarían de escribirse.
+    // tenant-isolation-ignore: solo prueba si existe la columna, no lee datos de usuario
+    const fechaCobroCheck = await supabase
+      .from('movimientos')
+      .select('fecha_cobro')
+      .limit(1);
+
+    if (!fechaCobroCheck.error) {
+      fechaCobro = true;
+    } else if (!isMissingColumnError(fechaCobroCheck.error)) {
+      console.error('Supabase movimientos fecha_cobro check error:', fechaCobroCheck.error.message);
+    }
+
     legacyCapabilityCache.checked = true;
     legacyCapabilityCache.extendedMovimientos = extendedMovimientos;
     legacyCapabilityCache.extendedCampos = extendedCampos;
+    legacyCapabilityCache.fechaCobro = fechaCobro;
     legacyCapabilityPromise = null;
-    return { extendedMovimientos, extendedCampos };
+    return { extendedMovimientos, extendedCampos, fechaCobro };
   })();
 
   return legacyCapabilityPromise;
@@ -305,6 +326,7 @@ function buildLegacySnapshotFromRow(row) {
     metodo_pago: getDbPaymentMethod(row),
     monto_pesos: row.monto_pesos,
     id_unico: row.id_unico,
+    fecha_cobro: row.fecha_cobro,
   };
 }
 
@@ -321,6 +343,7 @@ function buildLegacyRowDataFromSnapshot(snapshot) {
     ID_Unico: snapshot.id_unico || '',
     MontoPesos: snapshot.monto_pesos,
     Pagador: snapshot.pagador || '',
+    FechaCobro: formatLegacyDate(snapshot.fecha_cobro) || '',
   };
 }
 
@@ -574,6 +597,7 @@ function mapLegacyDbRowToPlainData(row, v2Row = null) {
     proveedor: row.proveedor || v2Fields.proveedor,
     fechaPrestacion: formatDateValue(row.fecha_prestacion, '') || v2Fields.fechaPrestacion,
     fechaVencimiento: formatDateValue(row.fecha_vencimiento, '') || v2Fields.fechaVencimiento,
+    fechaCobro: formatDateValue(row.fecha_cobro, ''),
     referenciaId: row.referencia_id || v2Fields.referenciaId,
     _sortKey: row.created_at || null,
   };
@@ -668,6 +692,7 @@ function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
       const legacyEstado = mapDbStateToLegacyDisplay(row.estado);
       const legacyTipo = mapDbTipoToLegacyDisplay(row.tipo);
       const legacyMetodoPago = getDbPaymentMethod(row);
+      const legacyFechaCobro = formatLegacyDate(row.fecha_cobro);
       const map = {
         'Fecha': legacyFecha,
         'fecha': legacyFecha,
@@ -692,6 +717,8 @@ function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
         'MontoPesos': row.monto_pesos,
         'montopesos': row.monto_pesos,
         'ID_Origen': row.id_origen,
+        'FechaCobro': legacyFechaCobro,
+        'fechacobro': legacyFechaCobro,
       };
       return map[field];
     },
@@ -709,6 +736,8 @@ function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
         'metodopago': 'metodo_pago',
         'MontoPesos': 'monto_pesos',
         'montopesos': 'monto_pesos',
+        'FechaCobro': 'fecha_cobro',
+        'fechacobro': 'fecha_cobro',
       };
       if (map[field]) {
         this._updates = this._updates || {};
@@ -724,9 +753,15 @@ function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
         if (updates.metodo_pago !== undefined) {
           updates.medio_pago = normalizeMetodoPago(updates.metodo_pago) || null;
         }
+        if (updates.fecha_cobro !== undefined) {
+          updates.fecha_cobro = toDbDate(updates.fecha_cobro) || null;
+        }
         if (!legacyCapabilities.extendedMovimientos) {
           delete updates.medio_pago;
           delete updates.referencia_id;
+        }
+        if (!legacyCapabilities.fechaCobro) {
+          delete updates.fecha_cobro;
         }
         const { error: updateError } = await forTenant(tenantId)
           .from('movimientos')
@@ -949,11 +984,16 @@ async function syncRowUpdateToSheet(userId, rowIdUnico, updates = {}) {
     id_unico: 'ID_Unico',
     id_origen: 'ID_Origen',
     referencia_id: 'ReferenciaId',
+    fecha_cobro: 'FechaCobro',
   };
 
   for (const [key, value] of Object.entries(updates)) {
     if (fieldMap[key]) {
-      sheetRow.set(fieldMap[key], value);
+      // fecha_cobro llega en ISO (o null) desde el wrapper de Supabase; el
+      // Sheet usa el mismo formato DD/MM/YYYY que el resto de las columnas
+      // de fecha.
+      const sheetValue = key === 'fecha_cobro' ? formatLegacyDate(value) : value;
+      sheetRow.set(fieldMap[key], sheetValue);
     }
   }
 
@@ -1037,6 +1077,10 @@ async function doAddRow(userId, rowData, options = {}) {
     proveedor: rowData.Proveedor || null,
     fecha_prestacion: toDbDate(rowData.FechaPrestacion) || null,
     fecha_vencimiento: toDbDate(rowData.FechaVencimiento) || null,
+    // No se stampea acá: FechaCobro solo se setea en la transición real
+    // Pendiente -> Cobrado (ver doEjecutarCobrar / updateMovimiento). Esto
+    // queda en null salvo que el caller la pase explícitamente.
+    fecha_cobro: toDbDate(rowData.FechaCobro) || null,
   };
 
   if (!legacyCapabilities.extendedMovimientos) {
@@ -1052,6 +1096,10 @@ async function doAddRow(userId, rowData, options = {}) {
     delete supabaseRow.proveedor;
     delete supabaseRow.fecha_prestacion;
     delete supabaseRow.fecha_vencimiento;
+  }
+
+  if (!legacyCapabilities.fechaCobro) {
+    delete supabaseRow.fecha_cobro;
   }
 
   await ensureProfile(userId);
@@ -1238,7 +1286,22 @@ async function updateMovimiento(userId, idUnico, updates) {
       metodoPago:  'MetodoPago',
       metodo_pago: 'MetodoPago',
       montoPesos:  'MontoPesos',
+      fechaCobro:  'FechaCobro',
+      fecha_cobro: 'FechaCobro',
     };
+
+    // Stampear/limpiar FechaCobro solo en la transición real de estado, no en
+    // cualquier edición. Cobrado -> Pendiente limpia la fecha: si no, quedaría
+    // una fecha de cobro fantasma en un movimiento que ya no está cobrado.
+    if (updates.estado !== undefined) {
+      const estadoPrevio = row.get('Estado');
+      if (updates.estado === 'Cobrado' && estadoPrevio === 'Pendiente') {
+        const hoy = new Date();
+        updates = { ...updates, fechaCobro: `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}` };
+      } else if (updates.estado === 'Pendiente' && estadoPrevio === 'Cobrado') {
+        updates = { ...updates, fechaCobro: '' };
+      }
+    }
 
     for (const [key, value] of Object.entries(updates)) {
       const col = fieldMap[key];

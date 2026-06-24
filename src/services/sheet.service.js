@@ -27,6 +27,7 @@ const REQUIRED_SHEET_HEADERS = [
   'FechaVencimiento',
   'SaldoPendiente',
   'ReferenciaId',
+  'FechaCobro',
 ];
 
 function normalizarHeader(header) {
