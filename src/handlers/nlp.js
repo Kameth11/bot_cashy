@@ -228,6 +228,61 @@ const INTENT_HANDLERS = {
       { parse_mode: 'Markdown' }
     );
   },
+
+  // Simétrico a cobro_parcial_con_deuda pero en sentido egreso: el
+  // consultorio le paga una parte a un proveedor/financiera y todavía le
+  // debe el resto. Crea dos movimientos (Egreso/Pagado + Egreso/Pendiente),
+  // igual que el caso de ingreso.
+  pago_parcial_con_deuda: async (ctx, entities) => {
+    const userId = ctx.from.id;
+    const {
+      descripcion,
+      montoPagado, monedaPagada,
+      montoDeuda, monedaDeuda,
+      proveedorNombre,
+      metodo_pago,
+    } = entities;
+
+    if (!montoPagado || !montoDeuda) {
+      return ctx.reply('⚠️ No pude determinar los dos montos. Intentá: `pagamos 30000 a Dental Sur, debemos 30000 más`', { parse_mode: 'Markdown' });
+    }
+
+    const { formatMonto } = require('../utils/formatter');
+
+    // 1. Guardar la parte ya pagada
+    await cmd.guardarMovimiento(userId, {
+      descripcion: descripcion || 'Pago parcial',
+      monto: montoPagado,
+      tipo: 'Egreso',
+      moneda: monedaPagada || 'Pesos',
+      metodo_pago: metodo_pago || null,
+      estado: 'Cobrado',
+      categoria: 'otro_egreso',
+      proveedorNombre: proveedorNombre || null,
+    });
+
+    // 2. Guardar la deuda restante como Pendiente
+    await cmd.guardarMovimiento(userId, {
+      descripcion: descripcion || 'Pago parcial',
+      monto: montoDeuda,
+      tipo: 'Egreso',
+      moneda: monedaDeuda || 'Pesos',
+      metodo_pago: null,
+      estado: 'Pendiente',
+      categoria: 'otro_egreso',
+      proveedorNombre: proveedorNombre || null,
+    });
+
+    const nombreTexto = proveedorNombre ? ` — ${proveedorNombre}` : '';
+
+    return ctx.reply(
+      `✅ *Pago parcial registrado*${nombreTexto}\n\n` +
+      `💸 Pagado: ${formatMonto(montoPagado, monedaPagada || 'Pesos')}${metodo_pago ? ` (${metodo_pago})` : ''}\n` +
+      `⏳ Todavía debemos: ${formatMonto(montoDeuda, monedaDeuda || 'Pesos')}\n\n` +
+      `_Cuando termines de pagar, marcalo desde el dashboard o usá_ \`/cobrar${proveedorNombre ? ` ${proveedorNombre}` : ' ultimo'}\``,
+      { parse_mode: 'Markdown' }
+    );
+  },
 };
 
 async function handleNLPIntent(ctx, nlpResult) {

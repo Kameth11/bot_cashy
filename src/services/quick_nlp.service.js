@@ -276,7 +276,7 @@ function extraerPaciente(rawText, categoria = null, tratamientoNombre = null, pr
     /^([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\s+vino\b/i,
     /^(?:vino|vinieron)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
     /^(?:le\s+pagaron|le\s+abonaron|le\s+depositaron|le\s+transfirieron|me\s+pagaron|me\s+abonaron|me\s+depositaron|me\s+transfirieron)\s+a\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3}?)(?=\s+(?:de|por|en|efectivo|transferencia|tarjeta|contado|cash|\$|u\$s?|usd|\d)|$)/i,
-    /\b(?:de|a|paciente)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
+    new RegExp(`\\b(?:de|a|paciente)\\s+([a-záéíóúñ]+(?:\\s+[a-záéíóúñ]+){0,3}?)(?=${LIMITE_ENTIDAD})`, 'i'),
     /^(?:consulta|anticipo|cuota|saldo(?:\s+final)?|pendiente)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
     /^([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\s+me\s+(?:pag[oó]|transfiri[oó]|deposit[oó]|abon[oó])(?:\s|$)/i,
   ];
@@ -366,7 +366,7 @@ function extraerProveedor(rawText) {
   if (!original) return null;
 
   const patterns = [
-    /\b(?:al?|proveedor)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})\b/i,
+    new RegExp(`\\b(?:al?|proveedor)\\s+([a-záéíóúñ]+(?:\\s+[a-záéíóúñ]+){0,3}?)(?=${LIMITE_ENTIDAD})`, 'i'),
   ];
 
   for (const pattern of patterns) {
@@ -506,7 +506,16 @@ function extraerDescripcionPendienteNombrePrimero(rawText) {
 }
 
 function matchRegistrarEgresoExplicito(rawText, text) {
-  const expensePattern = /^(?:se\s+le\s+pago\s+a(?:l)?|se\s+le\s+pag[oó]\s+a(?:l)?|le\s+pague\s+a(?:l)?|le\s+pagu[eé]\s+a(?:l)?|pague\s+a(?:l)?|pagu[eé]\s+a(?:l)?|abone\s+a(?:l)?|abon[eé]\s+a(?:l)?|le\s+pagamos\s+a(?:l)?|pagamos\s+a(?:l)?)\s+(.+)$/i;
+  // Cubre tanto las formas con "le" (le pagué a, le pagamos a) y sin "le"
+  // (pagué a, pagamos a) como las impersonales/3ra persona (se pagó a, pagó
+  // a, pagaron a, depositamos a, transferimos a...) que antes no estaban
+  // cubiertas y caian en el clasificador generico por palabras clave (que no
+  // distingue "se pagó [la consulta]" de "se pagó A [un tercero]"). El monto
+  // opcional entre el verbo y "a" cubre "se pagó 300 dolares a financiera...".
+  const expensePattern = new RegExp(
+    `^(?:se\\s+)?(?:le\\s+)?(?:${VERBOS_PAGO_A_TERCERO})(?:\\s+.*?)?\\s+a(?:l)?\\s+(.+)$`,
+    'i'
+  );
   const match = String(rawText || '').trim().match(expensePattern);
   if (!match || !match[1]) return null;
 
@@ -612,6 +621,44 @@ const KEYWORD_INTENTS = [
 const INGRESO_WORDS = ['cobre', 'cobro', 'me pagaron', 'me pago', 'le pagaron', 'pagaron', 'se cobro', 'se cobraron', 'se pago', 'se pagaron', 'ingrese', 'ingreso', 'ingresaron', 'cargue', 'cargo', 'facture', 'facturo', 'recibi', 'consulta', 'servicio', 'anticipo', 'adelanto', 'seño', 'seña', 'sena', 'cuota', 'saldo', 'saldo final', 'atendi', 'vino', 'vinieron', 'entro', 'entraron', 'me entro', 'me entraron', 'cobraron', 'cobramos', 'depositaron', 'le depositaron', 'transferieron', 'transfirieron', 'le transfirieron', 'vendi', 'vendio', 'cobraste', 'cobro', 'cayo', 'cayo lo de', 'entró', 'me entró', 'honorarios', 'honorario', 'liquide', 'liquidaron'];
 
 const EGRESO_WORDS = ['gaste', 'gasto', 'se gasto', 'pague', 'costo de', 'compre', 'compra', 'sali', 'salida', 'egrese', 'egreso', 'salio', 'salieron', 'se fue', 'se me fue', 'costo', 'erogo', 'abone', 'aboné', 'puse', 'inverti', 'invertí', 'debite', 'debité', 'pagamos'];
+
+// Verbos de pago dirigido a un tercero ("pagamos/pagó/pagué a X") — distinto
+// de los verbos de cobro (cobré/cobramos), que implican la dirección opuesta
+// del dinero. Se usan para detectar pagos a proveedores/financieras sin
+// depender de listas de palabras clave por entidad (ver matchPagoParcialATercero
+// y matchRegistrarEgresoExplicito).
+//
+// A proposito NO incluye las formas de 3ra persona PLURAL (pagaron, abonaron,
+// depositaron, transfirieron): esas ya estan tomadas por la convencion
+// existente "le VERBOPLURAL a [nombre]" = ingreso, donde [nombre] es el
+// paciente (ver matchRegistrarIngresoExplicito y extraerPaciente patron 2).
+// Solo se incluyen formas sin ambiguedad de direccion: 1ra persona (pagué/
+// pagamos = "yo/nosotros pagamos", siempre egreso) y 3ra singular/impersonal
+// (pagó/pago, sin "le" plural de por medio).
+const VERBOS_PAGO_A_TERCERO = 'pag[oó]|pagu[eé]|pagamos|abon[oó]|abon[eé]|abonamos|deposit[oó]|depositamos|transfiri[oó]|transferimos';
+
+// Verbos/frases que introducen una deuda restante ("debemos 300 más", "deben
+// 300", "le falta 300"). Incluye formas de 1ra persona plural (debemos,
+// adeudamos) ademas de 3ra persona (debe/deben) — antes solo cubria 3ra
+// persona, lo que hacia que frases como "pagamos X, debemos Y mas" (donde
+// "nosotros" es el sujeto que debe) no se reconocieran como deuda.
+const VERBOS_DEUDA = 'debe|deben|debemos|adeuda[n]?|adeudamos|queda[n]?\\s*(?:debiendo)?|quedamos\\s*(?:debiendo)?|siguen?\\s+debiendo|resta[n]?|restamos|le\\s+queda[n]?|le\\s+falta[n]?|falta[n]?(?:\\s+(?:abonar|cobrar|pagar))?|est[aá]n?\\s+pendiente[s]?|hay\\s+pendiente[s]?|por\\s+cobrar|por\\s+pagar';
+
+// Limite que detiene la captura de un nombre de entidad antes de que "se
+// trague" la clausula siguiente (deuda, conjuncion, monto). Sin esto, "a
+// financiera juan carlos debemos 300" capturaba "financiera juan carlos
+// debemos" como si "debemos" fuera parte del nombre. Reusado por
+// extraerPaciente (patron de "a/de [nombre]") y extraerProveedor.
+// No incluye preposiciones genericas (de/por/para/con/en) ni palabras de
+// metodo de pago a proposito: ya las limpia el post-procesado de cada
+// funcion despues de capturar, y "de" en particular puede repetirse dentro
+// de la propia frase (ej. "cuota de ortodoncia de Sofia") sin que sea un
+// limite real de la entidad.
+const LIMITE_ENTIDAD_PALABRAS = `(?:\\$|u\\$s?|usd|y|pero|aunque|${VERBOS_DEUDA})`;
+// Lookahead completo: para el chequeo de digito NO se exige \b despues,
+// porque montos abreviados como "75k"/"80k" pegan la letra al numero sin
+// espacio (75k), asi que no hay limite de palabra entre "5" y "k".
+const LIMITE_ENTIDAD = `(?:\\s+\\d|\\s+${LIMITE_ENTIDAD_PALABRAS}\\b|$)`;
 
 function matchKeywordIntent(text) {
   let bestMatch = null;
@@ -745,8 +792,8 @@ function matchCobroParcialConDeuda(rawText, text) {
   // Verbos de cobro que inician el patrón
   const VERBOS_COBRO = 'pag[oó]|pagaron|abon[oó]|abonaron|deposit[oó]|depositaron|transfirio|transfiri[oó]|transfirieron|cobr[eé]|cobramos|entregaron?|dio|dieron?';
 
-  // Verbos/frases que introducen la deuda restante
-  const VERBOS_DEUDA = 'debe[n]?|queda[n]?\\s*(?:debiendo)?|queda\\s+debiendo|siguen?\\s+debiendo|resta[n]?|le\\s+queda[n]?|le\\s+falta[n]?|falta[n]?(?:\\s+(?:abonar|cobrar|pagar))?|adeuda[n]?|est[aá]n?\\s+pendiente[s]?|hay\\s+pendiente[s]?|por\\s+cobrar|por\\s+pagar';
+  // VERBOS_DEUDA es de modulo (ver mas arriba) — incluye formas de 1ra
+  // persona plural (debemos/adeudamos) ademas de 3ra persona.
 
   // Patrón 1: con conector explícito (y/pero/aunque)
   // "pagaron 300 y faltan 200", "cobré 50 pero deben 150"
@@ -804,6 +851,62 @@ function matchCobroParcialConDeuda(rawText, text) {
       pacienteNombre: nombre || null,
       profesionalNombre,
       tratamientoNombre,
+      metodo_pago,
+    }
+  };
+}
+
+// ── Pago a un tercero con deuda residual ──────────────────────────────────────
+// Cubre el caso simétrico a matchCobroParcialConDeuda pero en sentido egreso:
+// el consultorio le paga una parte a un proveedor/financiera y todavía le debe
+// el resto. Ej: "Se pago 300 dolares a financiera juan carlos debemos todavia
+// 300 dolares mas", "pagamos 500 a Dental Sur, quedamos debiendo 200".
+//
+// Requiere la estructura "[verbo de pago] ... a [tercero] ... [verbo de deuda]
+// ..." — el "a [tercero]" es lo que ancla la dirección como egreso (a
+// diferencia de matchCobroParcialConDeuda, donde el dinero entra).
+function matchPagoParcialATercero(rawText, text) {
+  const original = String(rawText || '').trim();
+
+  const patron = new RegExp(
+    `^(?:se\\s+)?(?:${VERBOS_PAGO_A_TERCERO})\\s+(.+?)\\s+a(?:l)?\\s+(.+?)\\s*(?:,|;)?\\s*(?:y\\s+|pero\\s+|aunque\\s+)?(?:todav[ií]a\\s+)?(?:${VERBOS_DEUDA})\\s+(.+)$`,
+    'i'
+  );
+
+  const match = original.match(patron);
+  if (!match) return null;
+
+  const partePagada = match[1].trim();
+  const entidadRaw = match[2].trim();
+  const parteDeuda = match[3].trim()
+    .replace(/\s+(?:restantes?|m[aá]s|mas|pendientes?|aun|aún|por\s+pagar)$/i, '')
+    .trim();
+
+  const montoPagado = extraerMonto(partePagada);
+  const montoDeuda = extraerMonto(parteDeuda);
+  if (!montoPagado || !montoDeuda) return null;
+
+  // Inferir moneda de la deuda si no tiene marcador explícito pero el pago sí
+  const tieneMonedaExplicitaDeuda = /€|euros?|u\$s?|usd|d[oó]lares?|\$/i.test(parteDeuda);
+  if (!tieneMonedaExplicitaDeuda && montoPagado.moneda !== 'Pesos') {
+    montoDeuda.moneda = montoPagado.moneda;
+  }
+
+  const proveedorNombre = limpiarEntidad(entidadRaw);
+  if (!proveedorNombre) return null;
+
+  const metodo_pago = extraerMetodo(text);
+  const descripcionBase = proveedorNombre || 'Pago a proveedor';
+
+  return {
+    intent: 'pago_parcial_con_deuda',
+    entities: {
+      montoPagado: montoPagado.monto,
+      monedaPagada: montoPagado.moneda,
+      montoDeuda: montoDeuda.monto,
+      monedaDeuda: montoDeuda.moneda,
+      descripcion: descripcionBase,
+      proveedorNombre,
       metodo_pago,
     }
   };
@@ -889,8 +992,16 @@ function quickParse(rawText) {
 
   if (/^(?:si|no|s|n|yes|y|ok|dale|bueno|vale)$/i.test(text)) return null;
 
-  // Cobro parcial con deuda residual va primero porque contiene dos montos
-  // y los matchers generales lo partirían mal
+  // Pago parcial a un TERCERO ("pagamos X a Dental Sur, debemos Y más") va
+  // antes que el cobro parcial genérico porque es más específico (exige la
+  // estructura "a [tercero]"): si no, matchCobroParcialConDeuda — que no
+  // distingue dirección — se queda con el match y lo interpreta como
+  // ingreso aunque el dinero haya salido del consultorio.
+  const pagoParcialATercero = matchPagoParcialATercero(rawText, text);
+  if (pagoParcialATercero) return pagoParcialATercero;
+
+  // Cobro parcial con deuda residual: contiene dos montos y los matchers
+  // generales lo partirían mal.
   const cobroParcial = matchCobroParcialConDeuda(rawText, text);
   if (cobroParcial) return cobroParcial;
 
