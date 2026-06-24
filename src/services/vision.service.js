@@ -123,7 +123,7 @@ async function preprocessPhoto(photoBuffer) {
       .png({ compressionLevel: 7 })
       .toBuffer();
   } catch (error) {
-    console.log(`Vision: preprocess fallo, usando original: ${error.message.substring(0, 120)}`);
+    console.log(`Vision: preprocess fallo, usando original: ${error.message}`);
     return photoBuffer;
   }
 }
@@ -239,7 +239,11 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
 
       return { turnos: normalizarTurnos(parsed.turnos.map(completarTurno)) };
     } catch (error) {
-      console.log(`Vision: modelo ${modelName} no disponible: ${error.message.substring(0, 120)}`);
+      const detalle = error.status ? `[${error.status}] ${error.message}` : error.message;
+      console.log(`Vision: modelo ${modelName} no disponible: ${detalle}`);
+      if (error.cause) {
+        console.log(`Vision: causa subyacente: ${error.cause}`);
+      }
     }
   }
 
