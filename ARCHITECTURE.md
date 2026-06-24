@@ -93,15 +93,40 @@ otra.
   100% de que cada desarrollador recuerde filtrar bien en cada función.
 - Esto es lo que de verdad separa "un cliente" de "SaaS multi-tenant".
 
-**Estado de implementación (2026-06-24):** en progreso, ver plan completo
-y wrapper en `src/lib/tenant-db.js`. Confirmado contra producción que las
-tablas `movimientos_v2`, `movimiento_eventos_v2`, `obras_sociales` y
-`prestaciones` de `schema_v2_draft.sql`/`schema_mvp_odontologia.sql`
-**nunca se crearon** — solo existen `profiles`, `movimientos` y
-`profesionales`. La migración de `tenant_id` (PR 1) solo tocó esas tres.
-**TODO:** si/cuando se activen las tablas v2/draft, sumarles `tenant_id`
-e incluirlas en `SCOPED_TABLES` de `tenant-db.js` en ese momento, no
-antes (evitar trabajo especulativo sobre esquemas sin uso real).
+**Estado de implementación (2026-06-24): completa** para las tablas
+reales (`profiles`, `movimientos`, `profesionales`). Se optó por el
+camino de filtrado server-side centralizado y auditado (no Supabase
+Auth/RLS por `auth.uid()` — el bot de Telegram no tiene login
+tradicional, hubiera significado rehacer auth desde cero). Implementado:
+- `tenants` + `tenant_id NOT NULL` en las 3 tablas, con 2 tenants reales
+  hoy (consultorio principal + invitado, y un segundo cliente).
+- `src/lib/tenant-db.js` (`forTenant(tenantId)`): única forma permitida
+  de tocar tablas de negocio. `scripts/check-tenant-isolation.js` corre en
+  CI y falla el build si aparece una query fuera de ese wrapper.
+- `src/services/tenant.service.js` (`resolveTenantId`): resuelve
+  `tenantId` desde un Telegram ID (owner o invitado), con cache en
+  memoria.
+- `ensureProfile` (`db.service.js`) crea/hereda el tenant correcto al
+  onboardear un perfil nuevo (agrupando por `sheet_id`), así que clientes
+  futuros no necesitan backfill manual.
+- RLS en `profiles`/`movimientos`/`profesionales`: policy que solo
+  permite `service_role` (no filtra por tenant a nivel de Postgres —
+  ver más abajo). Cierra el acceso directo con `anon_key`, no protege
+  contra un bug en el wrapper de aplicación.
+- Se cerró una fuga cross-tenant real que existía antes de esto:
+  `profesional.service.js` buscaba profesionales por nombre sin filtrar
+  por consultorio.
+
+**TODO:** si/cuando se activen `movimientos_v2`/`movimiento_eventos_v2`/
+`obras_sociales`/`prestaciones` (hoy son esquemas draft que nunca se
+crearon en producción), sumarles `tenant_id` e incluirlas en
+`SCOPED_TABLES` de `tenant-db.js` en ese momento, no antes.
+
+**No implementado a propósito (documentado como Fase 2.6/3 a futuro):**
+RLS real con `auth.uid()`/claims propios vía `set_config` por
+transacción — solo vale la pena con más de un desarrollador tocando el
+código o un volumen de tenants donde un bug de aislamiento sea
+catastrófico, no para vender al segundo/tercer cliente.
 
 **Fase 3 — Onboarding automático**
 - Dado que la decisión es mantener Sheets para siempre como respaldo, esta
