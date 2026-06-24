@@ -4,13 +4,14 @@ const { getSupabase } = require('./supabase');
 // query que no pase por aca corre el riesgo de filtrar datos entre tenants
 // (ver ARCHITECTURE.md seccion 3, Fase 2). scripts/check-tenant-isolation.js
 // falla el build si aparece getSupabase().from(...) fuera de este archivo.
+//
+// Solo incluye tablas que existen de verdad en produccion. movimientos_v2,
+// movimiento_eventos_v2, obras_sociales y prestaciones son esquemas draft
+// (schema_v2_draft.sql / schema_mvp_odontologia.sql) que nunca se crearon
+// — agregarlas aca cuando se activen, no antes.
 const SCOPED_TABLES = new Set([
   'movimientos',
-  'movimientos_v2',
-  'movimiento_eventos_v2',
   'profesionales',
-  'obras_sociales',
-  'prestaciones',
 ]);
 
 function wrapBuilder(builder, tenantId) {

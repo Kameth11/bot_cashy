@@ -93,6 +93,16 @@ otra.
   100% de que cada desarrollador recuerde filtrar bien en cada función.
 - Esto es lo que de verdad separa "un cliente" de "SaaS multi-tenant".
 
+**Estado de implementación (2026-06-24):** en progreso, ver plan completo
+y wrapper en `src/lib/tenant-db.js`. Confirmado contra producción que las
+tablas `movimientos_v2`, `movimiento_eventos_v2`, `obras_sociales` y
+`prestaciones` de `schema_v2_draft.sql`/`schema_mvp_odontologia.sql`
+**nunca se crearon** — solo existen `profiles`, `movimientos` y
+`profesionales`. La migración de `tenant_id` (PR 1) solo tocó esas tres.
+**TODO:** si/cuando se activen las tablas v2/draft, sumarles `tenant_id`
+e incluirlas en `SCOPED_TABLES` de `tenant-db.js` en ese momento, no
+antes (evitar trabajo especulativo sobre esquemas sin uso real).
+
 **Fase 3 — Onboarding automático**
 - Dado que la decisión es mantener Sheets para siempre como respaldo, esta
   fase es la que más esfuerzo concentra: automatizar la creación del Sheet
