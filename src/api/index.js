@@ -512,22 +512,11 @@ app.patch('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
 app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
   try {
     const { idTurno } = req.params;
-    const { monto, metodoPago, moneda = 'Pesos' } = req.body;
-    if (!monto || Number(monto) <= 0) return res.status(400).json({ error: 'monto requerido' });
 
     const turno = await obtenerTurnoPorId(req.user.userId, idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
 
-    await actualizarEstadoTurno(req.user.userId, idTurno, 'Cobrado');
-    await guardarMovimiento(req.user.userId, {
-      descripcion: `${turno.servicio || 'Turno'} - ${turno.cliente || 'Paciente'}`,
-      monto: Number(monto), tipo: 'Ingreso', moneda, metodoPago: metodoPago || '',
-      estado: 'Cobrado', pacienteNombre: turno.cliente || null,
-      profesionalNombre: turno.profesional || null, tratamientoNombre: turno.servicio || null,
-      referenciaId: idTurno, origenCarga: 'dashboard',
-    });
-    invalidarCacheMovimientos(req.user.userId);
-    logger.audit('movimiento_created', { userId: req.user.userId, monto: Number(monto), tipo: 'Ingreso', idTurno });
+    await actualizarEstadoTurno(req.user.userId, idTurno, 'Llegó');
 
     if (turno.profesional) {
       notificarLlegadaPaciente(turno.profesional, turno.cliente, turno.hora, turno.servicio).catch(() => {});
