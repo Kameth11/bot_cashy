@@ -2,6 +2,14 @@
 // Es la red de seguridad de la Fase 2 de multi-tenancy (ver ARCHITECTURE.md
 // seccion 3): toda query a tablas de negocio debe pasar por
 // src/lib/tenant-db.js para no filtrar datos entre tenants.
+//
+// Este script solo hace analisis estatico de texto, no toca Supabase real,
+// pero igual arrastra src/config/index.js (via tenant-db -> supabase) que
+// hace process.exit(1) si faltan las env vars de la app. En CI no hay .env,
+// asi que sin esto el script muere antes de poder analizar nada. Reusa los
+// valores dummy que ya usan los tests (no pisa env vars reales si existen).
+require('../tests/setup-env');
+
 const fs = require('fs');
 const path = require('path');
 const { SCOPED_TABLES } = require('../src/lib/tenant-db');
