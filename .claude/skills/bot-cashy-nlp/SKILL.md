@@ -59,7 +59,33 @@ etc.) gastando lo mínimo posible en llamadas a Gemini.
 
 `state.processingNlp` (Set) evita procesar dos mensajes del mismo usuario en
 paralelo — si ya hay uno en vuelo, responde "Espera, todavía estoy
-procesando...".
+procesando...". Test de regresión en `tests/handlers.processing-nlp.test.js`.
+
+## Intents especiales de dos movimientos (parcial con deuda)
+
+`quickParse` reconoce dos frases que generan **dos movimientos de una sola
+vez** (la parte saldada + el saldo restante como Pendiente). Van primero en
+el dispatch de `quickParse` porque contienen dos montos y los matchers
+generales los partirían mal:
+
+- `cobro_parcial_con_deuda` — un paciente paga una parte y debe el resto
+  ("cobré 300 y deben 200"). Genera Ingreso/Cobrado + Ingreso/Pendiente.
+  `matchCobroParcialConDeuda`.
+- `pago_parcial_con_deuda` — el consultorio le paga una parte a un
+  proveedor/financiera y todavía le debe ("pagamos 500 a Dental Sur, debemos
+  200"). Genera Egreso/Cobrado + Egreso/Pendiente. `matchPagoParcialATercero`,
+  va ANTES de `matchCobroParcialConDeuda` por ser más específico (exige
+  "a [tercero]"). Handlers en `handlers/nlp.js`.
+
+**Dirección del dinero (ingreso vs egreso)**: el bug clásico es confundir "se
+pagó [la consulta]" (ingreso que cobramos) con "se pagó A [un tercero]"
+(egreso). `quick_nlp.service.js` distingue con `VERBOS_PAGO_A_TERCERO`
+(pagué/pagamos/pagó/abonó… **sin** las formas de 3ª persona plural como
+"pagaron/transfirieron", que ya están tomadas por la convención "le
+transfirieron a X" = X paciente). `VERBOS_DEUDA` reconoce el saldo restante
+(debe/deben/debemos/quedamos debiendo/falta…). `LIMITE_ENTIDAD` frena la
+captura del nombre antes de tragarse la cláusula de deuda. Tests en
+`tests/quick-nlp.service.test.js`.
 
 ## gemini.service.js — detalles operativos
 
@@ -85,6 +111,13 @@ procesando...".
   mantenerse sincronizada si se agregan categorías).
 - **Generation config**: `temperature: 0.1`, `responseMimeType:
   "application/json"`, con `SYSTEM_PROMPT` como `systemInstruction`.
+- **Media (foto/voz) con semáforo**: las llamadas a Gemini Vision
+  (`procesarFotoAgenda` en `handlers/photo.js`) y de transcripción de audio
+  (`geminiService.transcribirAudio` en `handlers/voice.js`) se envuelven con
+  `geminiMediaSemaphore.run(...)` (`src/lib/semaphore.js`, máx 3 en vuelo,
+  cola de 12) para que N usuarios mandando media a la vez no disparen N
+  llamadas simultáneas + N imágenes en RAM. No quitar ese wrapper (guard en
+  `tests/handlers.gemini-semaphore.test.js`).
 
 ## Después de resolver el intent: confirmación
 

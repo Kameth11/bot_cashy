@@ -1351,4 +1351,7 @@ module.exports = {
   deleteMovimientoByKey,
   getProfile,
   upsertProfile,
+  // Exportados para tests de regresion (guarda de lectura acotada).
+  MAX_MOVIMIENTOS_READ,
+  fetchLegacyRowsForUser,
 };

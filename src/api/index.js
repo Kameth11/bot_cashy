@@ -1,4 +1,5 @@
 const express = require('express');
+const helmet = require('helmet');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -38,6 +39,12 @@ const logger = require('../lib/logger');
 const { createLimiter } = require('../lib/rate-limiter');
 
 const app = express();
+
+// Headers de seguridad estándar (HSTS, X-Content-Type-Options, X-Frame-Options,
+// etc.). Se desactiva la Content-Security-Policy: el mismo Express sirve el
+// build estático del dashboard (SPA de Vite) y la CSP por defecto de helmet lo
+// rompería. El resto de los headers no afecta al SPA.
+app.use(helmet({ contentSecurityPolicy: false }));
 
 const ALLOWED_ORIGINS = [
   ...(process.env.DASHBOARD_ORIGINS || 'http://localhost:5173').split(',').map(o => o.trim()),

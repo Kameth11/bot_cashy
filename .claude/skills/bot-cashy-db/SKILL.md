@@ -3,9 +3,11 @@ name: bot-cashy-db
 description: >-
   Capa de datos de bot_cashy: columnas de Google Sheets, schema Supabase v1
   (legacy `movimientos`) y v2 (`movimientos_v2` + `movimiento_eventos_v2`),
-  detección de capacidades, dual-write y mapeo legacy↔v2. Usar cuando se
+  aislamiento multi-tenant (`tenant_id` + `forTenant`), detección de
+  capacidades, dual-write best-effort y mapeo legacy↔v2. Usar cuando se
   trabaje en src/services/db.service.js, src/services/sheet.service.js,
-  src/utils/movimiento-v2.js, o en cualquier archivo sql/.
+  src/utils/movimiento-v2.js, src/lib/tenant-db.js,
+  src/services/tenant.service.js, o en cualquier archivo sql/.
 ---
 
 # bot_cashy — Capa de datos
@@ -26,6 +28,34 @@ movimientos) **nunca** debería hablar directo con Google Sheets o Supabase.
 - Si Supabase falla en cualquier punto, todo cae con fallback a Sheets
   (`getSheetService().getSheetCliente(userId)` / `addRow`).
 
+## Aislamiento multi-tenant (Fase 2 — OBLIGATORIO)
+
+Cada consultorio es un **tenant**. Las tablas de negocio tienen `tenant_id`
+(tabla `tenants`, migraciones `sql/migrations/001..003`). **Toda query a una
+tabla de negocio (`movimientos`, `profesionales`) DEBE pasar por
+`forTenant(tenantId).from(tabla)` de `src/lib/tenant-db.js`** — nunca
+`getSupabase().from('movimientos')` directo.
+
+- `forTenant(tenantId)` inyecta `.eq('tenant_id', tenantId)` automáticamente en
+  select/update/delete y agrega `tenant_id` en insert/upsert. Lanza si
+  `tenantId` es falsy o si la tabla no está en `SCOPED_TABLES`
+  (`{'movimientos','profesionales'}`). Un `.eq('tenant_id')` olvidado = fuga de
+  datos entre consultorios.
+- `resolveTenantId(userId)` (`src/services/tenant.service.js`) mapea el Telegram
+  userId → `tenant_id` (resolviendo el ownerId si es un usuario invitado),
+  cacheado en memoria. `invalidateTenantCache(userId)` lo limpia.
+- `profiles` y `tenants` quedan **fuera** de `forTenant` a propósito: son las
+  tablas que definen el mapeo userId→tenantId, se consultan con `getSupabase()`
+  directo antes de tener el tenant resuelto.
+- Red de seguridad: `scripts/check-tenant-isolation.js` (step de CI
+  `npm run check:tenant`) falla el build si aparece `.from('movimientos'|
+  'profesionales')` fuera de `tenant-db.js`. Excepción: comentario
+  `// tenant-isolation-ignore` para probes de capability (no leen datos de
+  usuario). Tests de runtime del wrapper en `tests/lib.tenant-db.test.js`.
+- RLS en Supabase es **defensiva** (policy `solo_service_role`): cierra la
+  puerta a la `anon_key`, NO filtra por tenant a nivel Postgres. El filtrado
+  real es server-side vía `forTenant`. Ver `ARCHITECTURE.md` sección 3.
+
 ## Modelo Sheets (v1 / legacy)
 
 Columnas (`REQUIRED_SHEET_HEADERS` en `sheet.service.js`):
@@ -34,8 +64,16 @@ Columnas (`REQUIRED_SHEET_HEADERS` en `sheet.service.js`):
 Fecha | Hora | Descripcion | Monto | Estado | Tipo | Moneda | MetodoPago |
 ID_Unico | MontoPesos | ID_Origen | Categoria | Paciente | Pagador |
 Profesional | Tratamiento | Proveedor | FechaPrestacion | FechaVencimiento |
-SaldoPendiente | ReferenciaId
+SaldoPendiente | ReferenciaId | FechaCobro
 ```
+
+- `FechaCobro` (Supabase: `fecha_cobro`, migración `sql/migrations/005_fecha_cobro.sql`)
+  registra **cuándo se cobró realmente** un pendiente, distinto de la `Fecha`
+  original del movimiento. Se stampea SOLO en la transición real
+  Pendiente→Cobrado (`doEjecutarCobrar` en `command.service.js` y
+  `updateMovimiento` en `db.service.js`), no al crear algo directamente
+  Cobrado ni en cobros parciales. Volver a Pendiente la limpia. El dashboard
+  ordena los cobrados por esta fecha y muestra "(cobrado DD/MM)".
 
 - `ensureSheetStructure(sheet)` agrega headers faltantes automáticamente
   (no se rompe si un sheet viejo no tiene todas las columnas nuevas).
@@ -54,10 +92,16 @@ SaldoPendiente | ReferenciaId
   - `schema_mvp_odontologia.sql` le agrega columnas extendidas:
     `categoria`, `medio_pago`, `referencia_id` (CHECK constraints,
     `fecha` pasa de TEXT a DATE).
-  - `db.service.resolveLegacyCapabilities()` detecta en runtime si estas
-    columnas extendidas existen (`legacyCapabilityCache`, cacheado en
-    memoria por proceso). Si no existen, `addRow` borra
-    `categoria`/`medio_pago`/`referencia_id` del payload antes de insertar.
+  - `db.service.resolveLegacyCapabilities()` detecta en runtime qué columnas
+    existen (`legacyCapabilityCache`, cacheado por proceso) en **tres flags
+    independientes**: `extendedMovimientos`
+    (`categoria`/`medio_pago`/`referencia_id`), `extendedCampos`
+    (`paciente`/`profesional`/`tratamiento`/`proveedor`/`fecha_prestacion`/
+    `fecha_vencimiento`) y `fechaCobro` (`fecha_cobro`, migración 005). Cada
+    flag controla qué campos borra `addRow` del payload si esa columna aún no
+    existe. **Importante**: `fechaCobro` es un flag SEPARADO a propósito —
+    agruparlo con `extendedCampos` haría que, hasta correr la migración 005,
+    los campos que SÍ existen dejaran de escribirse.
 - También define `profesionales`, `obras_sociales`, `prestaciones` con RLS
   (`web_user_id = auth.uid()`).
 - **Atención**: `sql/profesionales.sql` (13 líneas, `telegram_user_id TEXT
@@ -98,16 +142,25 @@ SaldoPendiente | ReferenciaId
      con `buildMovimientoV2Payload` (infiere `categoria`, `estado_pago`,
      `saldo_pendiente`, fechas) e inserta en `movimientos_v2` + evento
      `creacion` en `movimiento_eventos_v2` (si las tablas existen).
-   - **Dual-write**: además escribe la misma fila en el Google Sheet como
-     backup (errores acá se ignoran — Supabase es la fuente de verdad).
+   - **Dual-write best-effort en background**: la escritura al Google Sheet se
+     dispara con `runInBackground(userId, fn)` (`src/lib/write-queue.js`) — corre
+     bajo el lock del usuario pero SIN bloquear la respuesta. Supabase es la
+     fuente de verdad; si Sheets está lento o sobre cuota, no afecta al bot/
+     dashboard. Lo mismo para update/delete (`syncRowUpdateToSheet`/
+     `syncRowDeleteToSheet` van en background). No poner `await` sobre esto.
 
 ## Flujo de lectura (`getRows` / `obtenerDatosSheet`)
 
 - Sin Supabase: lee directo del Sheet.
-- Con Supabase: `resolveReadModelRows()` trae `movimientos` (legacy) +
-  `movimientos_v2` filtrando los v2 que YA tienen `legacy_row_id`
-  correspondiente a un row legacy (para no duplicar). El resultado combinado
-  se ordena por fecha/hora de carga.
+- Con Supabase: `resolveReadModelRows()` trae `movimientos` (legacy, vía
+  `fetchLegacyRowsForUser` que usa `forTenant`) + `movimientos_v2` filtrando
+  los v2 que YA tienen `legacy_row_id` correspondiente a un row legacy (para
+  no duplicar). El resultado combinado se ordena por fecha/hora de carga.
+- **Lectura acotada (escalabilidad)**: `fetchLegacyRowsForUser` trae como
+  mucho `MAX_MOVIMIENTOS_READ` (20000) filas, `order('created_at', desc)` —
+  guard contra que un tenant con años de historia traiga todo en cada fetch.
+  No es paginación real; cuando un tenant se acerque a ese número, toca paginar.
+  Hay test de regresión en `tests/db.service.boundedRead.test.js`.
 - Cada fila legacy se envuelve con `buildLegacySupabaseRowWrapper` y cada
   fila v2-only con `buildV2SupabaseRowWrapper` — ambos exponen
   `.get(field)` / `.set(field, value)` / `.save()` / `.delete()` con los

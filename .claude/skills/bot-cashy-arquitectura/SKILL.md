@@ -1,10 +1,12 @@
 ---
 name: bot-cashy-arquitectura
 description: >-
-  Bootstrap, registro de handlers/comandos, routing de callbacks y estados
-  conversacionales (TTLMaps) de bot_cashy. Usar cuando se trabaje en
-  src/index.js, src/handlers/ (incluyendo commands/), src/state/index.js,
-  src/auth/index.js, o para entender qué comando/handler dispara qué código.
+  Bootstrap, registro de handlers/comandos, routing de callbacks, estados
+  conversacionales (TTLMaps), y las salvaguardas de resiliencia/escalabilidad
+  (rate limit, write-lock, semáforo, manejo de uncaughtException) de bot_cashy.
+  Usar cuando se trabaje en src/index.js, src/handlers/ (incluyendo commands/),
+  src/state/index.js, src/auth/index.js, src/lib/write-queue.js,
+  src/lib/semaphore.js, o para entender qué comando/handler dispara qué código.
 ---
 
 # bot_cashy — Arquitectura general y routing
@@ -18,14 +20,22 @@ handlers en `bot` de Telegraf vía `src/lib/telegraf.js`):
 2. ~30 comandos en `src/handlers/commands/*.js` (uno por archivo, ver tabla).
 3. `require('./handlers/text')` — handler de texto libre (NLP, ver skill
    `bot-cashy-nlp`).
-4. `require('./handlers/photo')` — fotos de agenda (Gemini Vision).
+4. `require('./handlers/photo')` y `require('./handlers/voice')` — fotos de
+   agenda (Gemini Vision) y notas de voz (transcripción Gemini), ambas
+   limitadas por `geminiMediaSemaphore` (ver skill `bot-cashy-nlp`).
 5. `require('./handlers/actions')` y `require('./handlers/nlp-confirm')` —
    callbacks de botones inline.
-6. `startApi()` — levanta la API del dashboard, **independiente** del bot
-   (no bloquea ni depende de `bot.launch()`).
+6. `startApi()` — levanta la API del dashboard (Express), **independiente** del
+   bot (no bloquea ni depende de `bot.launch()`). El server se guarda en
+   `apiServer` para cerrarlo ordenado en el shutdown.
 7. `bot.launch()` → luego `initModel()` (Gemini) y
    `obtenerCotizacionDolar()` (inicial + cada 3h, timer `unref()`d para no
    bloquear el shutdown).
+8. **Manejo de fallos del proceso**: `SIGINT`/`SIGTERM` → `bot.stop()`.
+   `unhandledRejection` → log. `uncaughtException` → log + cierre ordenado
+   (`bot.stop()` + `apiServer.close()`) + `process.exit(1)` con guard
+   anti-reentrada, para que Railway levante una instancia limpia (tras un
+   uncaught el proceso queda en estado indefinido).
 
 ## Comandos (`src/handlers/commands/`)
 
@@ -71,7 +81,10 @@ handlers en `bot` de Telegraf vía `src/lib/telegraf.js`):
   Ver skill `bot-cashy-nlp` para el detalle del parsing.
 - `handlers/photo.js` — fotos de agenda → Gemini Vision
   (`GEMINI_VISION_MODEL`) → extrae turnos → confirmación
-  (`pendingAgendaConfirm`).
+  (`pendingAgendaConfirm`). La llamada a Gemini va dentro de
+  `geminiMediaSemaphore.run(...)`.
+- `handlers/voice.js` — notas de voz → transcripción con Gemini (también bajo
+  el semáforo) → se re-procesa el texto con `procesarTextoConNlp`.
 - `handlers/actions.js` — callbacks genéricos de botones inline
   (`confirmButtons`, `discardButtons`, confirmar/cancelar ediciones,
   borrados, reinicios, etc.).
@@ -126,9 +139,45 @@ TTL default 30 min salvo donde se indica:
   cola (`encolarEscritura`) para serializar accesos concurrentes y evitar
   que dos registros simultáneos pisen el archivo.
 
+## Multi-tenancy (Fase 2)
+
+Cada consultorio es un **tenant** (`tenant_id`). Toda query a tablas de negocio
+(`movimientos`, `profesionales`) pasa obligatoriamente por
+`forTenant(tenantId)` de `src/lib/tenant-db.js`; el CI lo verifica
+(`npm run check:tenant`). El detalle de datos vive en el skill `bot-cashy-db`
+y en `ARCHITECTURE.md` sección 3. Hoy el sistema corre como **una sola
+instancia** (el escalado horizontal real necesita Redis para el write-lock —
+ver `ARCHITECTURE.md` sección 6).
+
+## Resiliencia y escalabilidad (carga)
+
+Optimizaciones para aguantar muchos usuarios/peticiones sin caerse (detalle en
+`ARCHITECTURE.md` sección 6, "Escalabilidad y resiliencia"):
+
+- **Rate limit del bot**: `handlers/middleware.js` (`state.userRateLimits`).
+- **Rate limit de la API**: middleware global por IP en `/api` de datos
+  (`src/api/index.js`, `createLimiter` de `src/lib/rate-limiter.js`, 120/min),
+  excluye `/api/auth/*`, `/api/events` (SSE) y `/api/cotizacion`. Guard:
+  `tests/api.rate-limit.test.js`.
+- **Write-lock por usuario**: `withUserWriteLock(userId, fn)`
+  (`src/lib/write-queue.js`) serializa escrituras del mismo usuario (cobros,
+  ediciones, addRow). `runInBackground(userId, fn)` corre trabajo best-effort
+  bajo el lock sin bloquear al caller (dual-write a Sheets, sync de Agenda).
+- **Semáforo de Gemini**: `geminiMediaSemaphore` (`src/lib/semaphore.js`, máx
+  3) acota la concurrencia de foto/voz.
+- **Lecturas acotadas**: `MAX_MOVIMIENTOS_READ` en `db.service.js`.
+- **Cache de doc de Sheets**: `docsCache` (TTL 2h) en `state`, reusado por
+  `getSheetCliente` (no rehace `loadInfo()`/`loadCells()` en cada llamada).
+
+> Casi todo el estado vive en memoria de un solo proceso (TTLMaps, locks,
+> caches, suscriptores SSE de `events.service.js`). Por eso NO se puede subir
+> el replica count en Railway hasta hacer la Fase 2 de escalado (Redis).
+
 ## Dónde mirar el código fuente
 
 - `src/index.js` — orden de bootstrap.
+- `src/api/index.js` — API del dashboard (auth JWT, rate limit, SSE, rutas).
+- `src/lib/write-queue.js`, `src/lib/semaphore.js` — locks y concurrencia.
 - `src/handlers/middleware.js`, `src/handlers/actions.js` — cross-cutting.
 - `src/auth/index.js`, `src/services/invite.service.js`,
   `src/services/cliente.service.js` — auth/multiusuario.
