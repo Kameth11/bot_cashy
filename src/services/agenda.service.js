@@ -1,5 +1,6 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
+const { runInBackground } = require('../lib/write-queue');
 
 // Normaliza variantes como "Consultorio N° 1", "Consultorio Nro. 1",
 // "CONSULTORIO #1" a la forma "consultorio 1" que usa CONSULTORIO_MAP.
@@ -159,6 +160,7 @@ async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
   if (!row) throw new Error(`Turno ${idTurno} no encontrado`);
   row.set('Estado', nuevoEstado);
   await row.save();
+  sincronizarAgenda(userId, row.get('Fecha'));
 }
 
 async function eliminarTurno(userId, idTurno) {
@@ -167,7 +169,9 @@ async function eliminarTurno(userId, idTurno) {
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
   if (!row) throw new Error('turno_no_encontrado');
+  const fecha = row.get('Fecha');
   await row.delete();
+  sincronizarAgenda(userId, fecha);
 }
 
 async function actualizarDatosTurno(userId, idTurno, datos) {
@@ -181,6 +185,7 @@ async function actualizarDatosTurno(userId, idTurno, datos) {
     if (val !== undefined) row.set(col, val);
   }
   await row.save();
+  sincronizarAgenda(userId, row.get('Fecha'));
 }
 
 const BLOCK_WIDTH = 5;
@@ -336,6 +341,92 @@ async function guardarTurnosAgenda(userId, turnos) {
   };
 }
 
+// Reescribe la sección visual de la tab "Agenda" para una fecha, tomando los
+// turnos desde la tab "Turnos" (la fuente de verdad que usa el dashboard). La
+// Agenda es solo una vista linda; nadie la lee de vuelta. Sin esto, queda
+// congelada con lo que se importó de la foto mientras Turnos sigue cambiando
+// (Llegó/Cobrado/editar/borrar), y las dos hojas se ven distintas.
+async function escribirSeccionAgenda(userId, fechaStr, turnos) {
+  const agendaSheet = await crearTabAgendaSiNoExiste(userId);
+  if (!agendaSheet) throw new Error('No se pudo acceder a la tab Agenda');
+
+  await asegurarTamanoSheet(agendaSheet, Math.max(agendaSheet.columnCount, 60), Math.max(agendaSheet.rowCount, 500));
+  await agendaSheet.loadCells();
+  renderizarSeccionFecha(agendaSheet, fechaStr, turnos);
+  await agendaSheet.saveUpdatedCells();
+  invalidateCache(userId);
+}
+
+// Parte pura (sin I/O) de la sincronización: sobre una grilla ya cargada,
+// limpia la sección de `fechaStr` si existe y reescribe sus bloques desde
+// `turnos`. Se exporta para poder testear el cálculo de celdas, que es donde
+// es fácil equivocarse en silencio.
+function renderizarSeccionFecha(sheet, fechaStr, turnos) {
+  // 1. Localizar la sección existente para esta fecha: filas donde aparece
+  //    fechaStr en la columna Fecha de algún bloque (cada bloque ocupa
+  //    BLOCK_WIDTH+BLOCK_SPACING columnas; la Fecha está en el offset 4).
+  let minDataRow = Infinity;
+  let maxDataRow = -1;
+  for (let r = 0; r < sheet.rowCount; r++) {
+    for (let c = BLOCK_HEADERS.length - 1; c < sheet.columnCount; c += BLOCK_WIDTH + BLOCK_SPACING) {
+      if (sheet.getCell(r, c).value === fechaStr) {
+        if (r < minDataRow) minDataRow = r;
+        if (r > maxDataRow) maxDataRow = r;
+      }
+    }
+  }
+
+  let startRow;
+  if (minDataRow !== Infinity) {
+    // Ya existe: limpiar toda la banda de filas de la sección (título 2 filas
+    // arriba del primer dato, headers, y datos) en todas las columnas, para
+    // reescribirla desde cero en el mismo lugar. El margen cubre el caso de
+    // que un bloque crezca al reagrupar (los turnos para una fecha nunca
+    // aumentan en estas operaciones, así que no pisa la fecha de abajo).
+    const titleRow = Math.max(0, minDataRow - 2);
+    const lastRow = Math.min(sheet.rowCount - 1, Math.max(maxDataRow, minDataRow + turnos.length) + 1);
+    for (let r = titleRow; r <= lastRow; r++) {
+      for (let c = 0; c < sheet.columnCount; c++) {
+        const cell = sheet.getCell(r, c);
+        if (cell.value !== null && cell.value !== '') cell.value = '';
+      }
+    }
+    startRow = minDataRow - 1;
+  } else {
+    // Fecha nueva: primera fila libre debajo del contenido existente.
+    let lastUsedRow = 0;
+    for (let r = 0; r < sheet.rowCount; r++) {
+      for (let c = 0; c < sheet.columnCount; c++) {
+        const v = sheet.getCell(r, c).value;
+        if (v !== null && v !== '') { lastUsedRow = r + 1; break; }
+      }
+    }
+    startRow = lastUsedRow === 0 ? 1 : lastUsedRow + 2;
+  }
+
+  // 2. Escribir los bloques desde la columna 0 (si quedaron turnos; si se
+  //    borraron todos, la sección queda limpia y no se escribe nada).
+  if (turnos.length > 0) {
+    const groups = agruparTurnos(turnos);
+    groups.forEach((group, groupIndex) => {
+      const startColumn = groupIndex * (BLOCK_WIDTH + BLOCK_SPACING);
+      escribirBloque(sheet, startRow, startColumn, group, fechaStr);
+    });
+  }
+}
+
+// Dispara la sincronización de la Agenda para una fecha en background y
+// best-effort: la Agenda es secundaria, no debe demorar ni romper la operación
+// principal sobre Turnos. Corre bajo el lock del usuario para no pisar otras
+// escrituras del mismo sheet.
+function sincronizarAgenda(userId, fechaStr) {
+  if (!fechaStr) return;
+  runInBackground(userId, async () => {
+    const turnos = await obtenerTurnosPorFecha(userId, fechaStr);
+    await escribirSeccionAgenda(userId, fechaStr, turnos);
+  }, 'agenda-sync');
+}
+
 module.exports = {
   crearTabAgendaSiNoExiste,
   guardarTurnosAgenda,
@@ -345,6 +436,9 @@ module.exports = {
   actualizarEstadoTurno,
   actualizarDatosTurno,
   eliminarTurno,
+  escribirSeccionAgenda,
+  renderizarSeccionFecha,
+  sincronizarAgenda,
   fechaHoyStr,
   resolverProfesional,
 };
