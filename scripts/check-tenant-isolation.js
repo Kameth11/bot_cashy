@@ -39,9 +39,16 @@ function main() {
     const content = fs.readFileSync(file, 'utf8');
     const lines = content.split('\n');
     lines.forEach((line, idx) => {
-      if (FROM_PATTERN.test(line)) {
-        offenders.push(`${path.relative(process.cwd(), file)}:${idx + 1}: ${line.trim()}`);
-      }
+      if (!FROM_PATTERN.test(line)) return;
+
+      // El .from(tabla) suele venir varias lineas despues de donde se
+      // obtuvo el cliente (forTenant(tenantId)\n  .from(...) o un
+      // comentario de excepcion). Se mira una ventana de lineas previas
+      // en vez de solo la linea anterior.
+      const ventana = lines.slice(Math.max(0, idx - 4), idx + 1).join('\n');
+      if (ventana.includes('forTenant(') || ventana.includes('tenant-isolation-ignore')) return;
+
+      offenders.push(`${path.relative(process.cwd(), file)}:${idx + 1}: ${line.trim()}`);
     });
   }
 

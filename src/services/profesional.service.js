@@ -1,17 +1,20 @@
-const { getSupabase, isAvailable } = require('../lib/supabase');
+const { isAvailable } = require('../lib/supabase');
+const { forTenant } = require('../lib/tenant-db');
 
-async function registrarProfesional(telegramUserId, nombre) {
+async function registrarProfesional(tenantId, telegramUserId, nombre) {
   if (!isAvailable()) return { ok: false, error: 'supabase_no_disponible' };
-  const { error } = await getSupabase()
+  if (!tenantId) return { ok: false, error: 'tenant_no_resuelto' };
+
+  const { error } = await forTenant(tenantId)
     .from('profesionales')
     .upsert({ telegram_user_id: String(telegramUserId), nombre, activo: true }, { onConflict: 'telegram_user_id' });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
 
-async function buscarProfesionalPorNombre(nombre) {
-  if (!isAvailable() || !nombre) return null;
-  const { data } = await getSupabase()
+async function buscarProfesionalPorNombre(tenantId, nombre) {
+  if (!isAvailable() || !nombre || !tenantId) return null;
+  const { data } = await forTenant(tenantId)
     .from('profesionales')
     .select('telegram_user_id, nombre')
     .eq('activo', true);
@@ -24,8 +27,8 @@ async function buscarProfesionalPorNombre(nombre) {
   }) || null;
 }
 
-async function notificarLlegadaPaciente(nombreProfesional, paciente, hora, servicio) {
-  const profesional = await buscarProfesionalPorNombre(nombreProfesional);
+async function notificarLlegadaPaciente(tenantId, nombreProfesional, paciente, hora, servicio) {
+  const profesional = await buscarProfesionalPorNombre(tenantId, nombreProfesional);
   if (!profesional) return { ok: false, error: 'profesional_no_encontrado' };
 
   try {

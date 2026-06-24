@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('../config');
 const { notificarLlegadaPaciente } = require('../services/profesional.service');
+const { resolveTenantId } = require('../services/tenant.service');
 const { getSupabase, isAvailable } = require('../lib/supabase');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { obtenerDatosSheet } = require('../services/sheet.service');
@@ -519,7 +520,9 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
     await actualizarEstadoTurno(req.user.userId, idTurno, 'Llegó');
 
     if (turno.profesional) {
-      notificarLlegadaPaciente(turno.profesional, turno.cliente, turno.hora, turno.servicio).catch(() => {});
+      resolveTenantId(req.user.userId)
+        .then(tenantId => notificarLlegadaPaciente(tenantId, turno.profesional, turno.cliente, turno.hora, turno.servicio))
+        .catch(() => {});
     }
 
     res.json({ ok: true });

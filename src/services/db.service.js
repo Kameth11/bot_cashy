@@ -1,4 +1,6 @@
 const { getSupabase, isAvailable } = require('../lib/supabase');
+const { forTenant } = require('../lib/tenant-db');
+const { resolveTenantId, invalidateTenantCache } = require('./tenant.service');
 const { USE_SUPABASE, SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
@@ -89,6 +91,36 @@ function invalidateCache(userId) {
   getSheetService().invalidateCache(userId);
 }
 
+// Resuelve el tenant de un sheet_id (otro profile ya creado con el mismo
+// sheet, ej: el owner cuando este perfil es de un usuario invitado) o crea
+// un tenant nuevo. profiles/tenants quedan fuera de tenant-db.js a
+// proposito: son las tablas que definen el mapeo userId -> tenantId, no
+// tiene sentido pedirles el tenantId a si mismas (ver tenant.service.js).
+async function resolveOrCreateTenantId(supabase, sheetId) {
+  if (sheetId) {
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('tenant_id')
+      .eq('sheet_id', sheetId)
+      .not('tenant_id', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    if (existing?.tenant_id) return existing.tenant_id;
+  }
+
+  const { data: tenant, error } = await supabase
+    .from('tenants')
+    .insert({ nombre: sheetId ? `Consultorio ${sheetId.slice(0, 8)}` : 'Consultorio sin sheet' })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('Supabase resolveOrCreateTenantId error:', error.message);
+    return null;
+  }
+  return tenant.id;
+}
+
 async function ensureProfile(userId) {
   if (!USE_SUPABASE) return;
 
@@ -97,7 +129,7 @@ async function ensureProfile(userId) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id')
+    .select('id, tenant_id')
     .eq('id', userId)
     .maybeSingle();
 
@@ -106,15 +138,29 @@ async function ensureProfile(userId) {
     return;
   }
 
-  if (data) return;
-
   const cliente = obtenerClientePorUserId(userId);
+  const sheetId = cliente?.sheetId || (esAdminOriginal(userId) ? SPREADSHEET_ID : null);
+
+  if (data) {
+    // Perfil viejo de antes de la Fase 2 sin tenant_id - se completa al vuelo.
+    if (!data.tenant_id) {
+      const tenantId = await resolveOrCreateTenantId(supabase, sheetId);
+      if (tenantId) {
+        await supabase.from('profiles').update({ tenant_id: tenantId }).eq('id', userId);
+        invalidateTenantCache(userId);
+      }
+    }
+    return;
+  }
+
+  const tenantId = await resolveOrCreateTenantId(supabase, sheetId);
   const profileRow = {
     id: userId,
     email: cliente?.email || null,
     display_name: cliente?.email ? cliente.email.split('@')[0] : null,
-    sheet_id: cliente?.sheetId || (esAdminOriginal(userId) ? SPREADSHEET_ID : null),
+    sheet_id: sheetId,
     usuarios: Array.isArray(cliente?.usuarios) ? cliente.usuarios : [],
+    tenant_id: tenantId,
   };
 
   const { error: upsertError } = await supabase
@@ -205,6 +251,7 @@ async function resolveLegacyCapabilities(supabase) {
     let extendedMovimientos = false;
     let extendedCampos = false;
 
+    // tenant-isolation-ignore: solo prueba si existen columnas, no lee datos de usuario
     const check = await supabase
       .from('movimientos')
       .select('categoria,medio_pago,referencia_id')
@@ -216,6 +263,7 @@ async function resolveLegacyCapabilities(supabase) {
       console.error('Supabase movimientos extended schema check error:', check.error.message);
     }
 
+    // tenant-isolation-ignore: solo prueba si existen columnas, no lee datos de usuario
     const camposCheck = await supabase
       .from('movimientos')
       .select('paciente,profesional,tratamiento,proveedor,fecha_prestacion,fecha_vencimiento')
@@ -549,8 +597,8 @@ function mapV2RowToPlainData(row) {
   };
 }
 
-async function fetchLegacyRowsForUser(supabase, userId) {
-  const { data, error } = await supabase
+async function fetchLegacyRowsForUser(supabase, userId, tenantId) {
+  const { data, error } = await forTenant(tenantId)
     .from('movimientos')
     .select('*')
     .eq('user_id', userId)
@@ -580,8 +628,8 @@ async function fetchV2RowsForUser(supabase, userId) {
   return data || [];
 }
 
-async function resolveReadModelRows(supabase, userId) {
-  const legacyRows = await fetchLegacyRowsForUser(supabase, userId);
+async function resolveReadModelRows(supabase, userId, tenantId) {
+  const legacyRows = await fetchLegacyRowsForUser(supabase, userId, tenantId);
   const v2Rows = await fetchV2RowsForUser(supabase, userId);
   const legacyIds = new Set(legacyRows.map(row => String(row.id)));
   const v2OnlyRows = v2Rows.filter(row => !row.legacy_row_id || !legacyIds.has(String(row.legacy_row_id)));
@@ -608,7 +656,7 @@ function sortByKeyAsc(items, getKey) {
   });
 }
 
-function buildLegacySupabaseRowWrapper(userId, row) {
+function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
   return {
     _supabase: true,
     id: row.id,
@@ -678,7 +726,7 @@ function buildLegacySupabaseRowWrapper(userId, row) {
           delete updates.medio_pago;
           delete updates.referencia_id;
         }
-        const { error: updateError } = await supabase2
+        const { error: updateError } = await forTenant(tenantId)
           .from('movimientos')
           .update(updates)
           .eq('id', this.id);
@@ -702,7 +750,7 @@ function buildLegacySupabaseRowWrapper(userId, row) {
     async delete() {
       const supabase2 = getSupabase();
       const legacyRowId = row.id;
-      const { error: deleteError } = await supabase2
+      const { error: deleteError } = await forTenant(tenantId)
         .from('movimientos')
         .delete()
         .eq('id', this.id);
@@ -851,8 +899,13 @@ async function obtenerDatosSheet(userId) {
     return getSheetService().obtenerDatosSheet(userId);
   }
 
+  const tenantId = await resolveTenantId(userId);
+  if (!tenantId) {
+    return getSheetService().obtenerDatosSheet(userId);
+  }
+
   try {
-    const { legacyRows, v2OnlyRows, v2ByLegacyId } = await resolveReadModelRows(supabase, userId);
+    const { legacyRows, v2OnlyRows, v2ByLegacyId } = await resolveReadModelRows(supabase, userId, tenantId);
     const combined = [
       ...legacyRows.map(row => mapLegacyDbRowToPlainData(row, v2ByLegacyId.get(String(row.id)) || null)),
       ...v2OnlyRows.map(mapV2RowToPlainData),
@@ -1007,9 +1060,21 @@ async function doAddRow(userId, rowData, options = {}) {
 
   await ensureProfile(userId);
 
+  const tenantId = await resolveTenantId(userId);
+  if (!tenantId) {
+    console.error('Supabase addRow: no se pudo resolver tenantId, usando solo Sheet para', userId);
+    const sheet = await getSheetService().getSheetCliente(userId);
+    if (!sheet) return null;
+    await getSheetService().ensureSheetStructure(sheet);
+    const row = await sheet.addRow(rowData, { insert: true });
+    await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+    emitMovimientosUpdated(userId);
+    return row;
+  }
+
   console.log('[debug] addRow supabaseRow:', supabaseRow);
 
-  const { data, error } = await supabase
+  const { data, error } = await forTenant(tenantId)
     .from('movimientos')
     .insert(supabaseRow)
     .select()
@@ -1072,10 +1137,17 @@ async function getRows(userId) {
     return sheet.getRows();
   }
 
+  const tenantId = await resolveTenantId(userId);
+  if (!tenantId) {
+    const sheet = await getSheetService().getSheetCliente(userId);
+    if (!sheet) return [];
+    return sheet.getRows();
+  }
+
   try {
-    const { legacyRows, v2OnlyRows } = await resolveReadModelRows(supabase, userId);
+    const { legacyRows, v2OnlyRows } = await resolveReadModelRows(supabase, userId, tenantId);
     const combined = [
-      ...legacyRows.map(row => buildLegacySupabaseRowWrapper(userId, row)),
+      ...legacyRows.map(row => buildLegacySupabaseRowWrapper(userId, tenantId, row)),
       ...v2OnlyRows.map(row => buildV2SupabaseRowWrapper(userId, row)),
     ];
 

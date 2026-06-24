@@ -17,6 +17,8 @@ jobs:
           node-version: '18'
           cache: 'npm'
       - run: npm ci
+      - name: Check tenant isolation
+        run: npm run check:tenant
       - name: Run tests
         id: test
         run: |
