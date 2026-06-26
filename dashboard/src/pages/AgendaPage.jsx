@@ -52,6 +52,7 @@ const ESTADOS = {
   'Llegó':   { label: 'Llegó',    bg: '#DEEBFF', color: '#0747A6',  bar: '#0747A6'  },
   Cobrado:   { label: 'Cobrado',  bg: '#E3FCEF', color: '#006644',  bar: '#006644'  },
   Cancelado: { label: 'Cancelado',bg: '#FFEBE6', color: '#BF2600',  bar: '#BF2600'  },
+  'No vino': { label: 'No vino',  bg: '#F4F5F7', color: '#5E6C84',  bar: '#5E6C84'  },
 }
 
 
@@ -71,6 +72,7 @@ export default function AgendaPage() {
   const [eliminando, setEliminando] = useState(false)
   const [filtroProfesional, setFiltroProfesional] = useState(null)
   const [fecha, setFecha] = useState(hoyMedianoche)
+  const [dropdownAbierto, setDropdownAbierto] = useState(null)
 
   function shiftFecha(deltaDias) {
     setFecha(f => { const d = new Date(f); d.setDate(d.getDate() + deltaDias); return d })
@@ -101,6 +103,32 @@ export default function AgendaPage() {
       ))
     } catch {
       alert('Error al registrar llegada')
+    } finally {
+      setAccionando(null)
+    }
+  }
+
+  async function handleCancelar(turno) {
+    setAccionando(turno.idTurno)
+    setDropdownAbierto(null)
+    try {
+      await api.post(`/api/agenda/${turno.idTurno}/cancelar`)
+      setTurnos(prev => prev.map(t => t.idTurno === turno.idTurno ? { ...t, estado: 'Cancelado' } : t))
+    } catch {
+      alert('Error al cancelar el turno')
+    } finally {
+      setAccionando(null)
+    }
+  }
+
+  async function handleNoVino(turno) {
+    setAccionando(turno.idTurno)
+    setDropdownAbierto(null)
+    try {
+      await api.post(`/api/agenda/${turno.idTurno}/novino`)
+      setTurnos(prev => prev.map(t => t.idTurno === turno.idTurno ? { ...t, estado: 'No vino' } : t))
+    } catch {
+      alert('Error al registrar ausencia')
     } finally {
       setAccionando(null)
     }
@@ -198,7 +226,7 @@ export default function AgendaPage() {
     ? turnos.filter(t => resolverProfesional(t.profesional, t.consultorio) === filtroProfesional)
     : turnos
 
-  const turnosConTurno = turnosFiltrados.filter(t => t.estado !== 'Cancelado')
+  const turnosConTurno = turnosFiltrados.filter(t => t.estado !== 'Cancelado' && t.estado !== 'No vino')
   const cobrados   = turnosConTurno.filter(t => t.estado === 'Cobrado').length
   const llegaron   = turnosConTurno.filter(t => t.estado === 'Llegó').length
   const pendientes = turnosConTurno.filter(t => t.estado === 'Pendiente').length
@@ -295,7 +323,7 @@ export default function AgendaPage() {
 
         {!loading && turnosList.map((turno, i) => {
           const e = ESTADOS[turno.estado] || ESTADOS.Pendiente
-          const puedeAccion = turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado'
+          const puedeAccion = turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado' && turno.estado !== 'No vino'
           return (
             <div key={turno.idTurno || i} className="agenda-appt">
               <span className="agenda-time">{turno.hora || '–'}</span>
@@ -336,6 +364,36 @@ export default function AgendaPage() {
                     >
                       Cobrar
                     </button>
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        className="action-btn"
+                        title="Más opciones"
+                        disabled={accionando === turno.idTurno}
+                        onClick={e => { e.stopPropagation(); setDropdownAbierto(d => d === turno.idTurno ? null : turno.idTurno) }}
+                        style={{ fontSize: 16, fontWeight: 700, padding: '0 6px' }}
+                      >
+                        ⋮
+                      </button>
+                      {dropdownAbierto === turno.idTurno && (
+                        <>
+                          <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setDropdownAbierto(null)} />
+                          <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(9,30,66,.15)', zIndex: 100, minWidth: 130, overflow: 'hidden' }}>
+                            <button
+                              style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}
+                              onClick={() => handleCancelar(turno)}
+                            >
+                              Canceló
+                            </button>
+                            <button
+                              style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}
+                              onClick={() => handleNoVino(turno)}
+                            >
+                              No vino
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </>
                 )}
               </div>

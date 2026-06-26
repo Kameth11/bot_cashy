@@ -604,6 +604,28 @@ app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
   }
 });
 
+app.post('/api/agenda/:idTurno/cancelar', authMiddleware, async (req, res) => {
+  try {
+    const turno = await obtenerTurnoPorId(req.user.userId, req.params.idTurno);
+    if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
+    await actualizarEstadoTurno(req.user.userId, req.params.idTurno, 'Cancelado');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/agenda/:idTurno/novino', authMiddleware, async (req, res) => {
+  try {
+    const turno = await obtenerTurnoPorId(req.user.userId, req.params.idTurno);
+    if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
+    await actualizarEstadoTurno(req.user.userId, req.params.idTurno, 'No vino');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Cotizacion (publica) ──
 app.get('/api/cotizacion', (req, res) => {
   res.json({ dolar: state.cotizacionDolar, euro: state.cotizacionEuro, fecha: state.cotizacionFecha });
