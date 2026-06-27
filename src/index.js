@@ -55,6 +55,7 @@ require('./handlers/voice');
 // Load callback action handlers (for inline buttons)
 require('./handlers/actions');
 require('./handlers/nlp-confirm');
+require('./handlers/cobrar-confirm');
 
 // Start API immediately (does not depend on bot). Guardamos el server para
 // poder cerrarlo ordenadamente ante una senal o un error fatal.

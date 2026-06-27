@@ -468,6 +468,84 @@ async function ejecutarActualizarDolar() {
   return '❌ No se pudo actualizar la cotización.';
 }
 
+async function buscarCandidatosCobrar(userId, nombre) {
+  const filas = await db.getRows(userId);
+  const pendientes = filas.filter(f => getRowEstado(f) === 'Pendiente');
+
+  if (pendientes.length === 0) return { tipo: 'empty' };
+
+  let montoCobrado = null;
+  if (nombre) {
+    const matchMonto = String(nombre).trim().match(/^(.*?)(?:\s+(\d+(?:[.,]\d{1,2})?))$/);
+    if (matchMonto && matchMonto[1] && matchMonto[2]) {
+      const montoParsed = parseFloat(matchMonto[2].replace(',', '.'));
+      if (!Number.isNaN(montoParsed) && montoParsed > 0) {
+        nombre = matchMonto[1].trim();
+        montoCobrado = montoParsed;
+      }
+    }
+  }
+
+  if (nombre && nombre.toLowerCase() === 'ultimo') {
+    return { tipo: 'single', fila: pendientes[pendientes.length - 1], montoCobrado };
+  }
+
+  if (nombre) {
+    const nombreLimpio = nombre.replace(/^(?:la|el|lo|las|los|una|un)\s+/i, '').trim();
+    const coincidencias = pendientes.filter(f =>
+      matchPalabraCompleta(getRowDescripcion(f, ''), nombreLimpio)
+    );
+    if (coincidencias.length === 1) {
+      return { tipo: 'single', fila: coincidencias[0], montoCobrado };
+    }
+    const porId = pendientes.find(f => getRowIdUnico(f, '').toLowerCase() === nombre.toLowerCase());
+    if (porId) {
+      return { tipo: 'single', fila: porId, montoCobrado };
+    }
+  }
+
+  return { tipo: 'picker', filas: pendientes, montoCobrado };
+}
+
+async function ejecutarCobrarFila(userId, fila, montoCobrado) {
+  return withUserWriteLock(userId, async () => {
+    const montoActual = getRowMonto(fila, 0);
+    const saldoActual = Math.abs(montoActual);
+
+    if (montoCobrado !== null && montoCobrado !== undefined) {
+      if (montoCobrado > saldoActual) {
+        return `⚠️ El cobro parcial supera el pendiente actual (${formatMonto(montoActual, getRowMoneda(fila, 'Pesos'))}).`;
+      }
+      if (montoCobrado < saldoActual) {
+        const signo = montoActual < 0 ? -1 : 1;
+        const nuevoSaldo = Math.round((saldoActual - montoCobrado) * 100) / 100;
+        fila.set('Monto', signo * nuevoSaldo);
+        fila.set('Estado', 'Pendiente');
+        await fila.save();
+        await aplicarColorMontoEnFila(fila, signo * nuevoSaldo, 'Pendiente');
+        return (
+          `🧾 *Cobro parcial registrado*\n\n` +
+          `📝 ${escapeMarkdown(getRowDescripcion(fila, ''))}\n` +
+          `💸 Cobrado ahora: ${formatMonto(montoCobrado, getRowMoneda(fila, 'Pesos'))}\n` +
+          `⏳ Saldo pendiente: ${formatMonto(signo * nuevoSaldo, getRowMoneda(fila, 'Pesos'))}`
+        );
+      }
+    }
+
+    const hoy = new Date();
+    const hoyStr = `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}`;
+    fila.set('Estado', 'Cobrado');
+    fila.set('FechaCobro', hoyStr);
+    await fila.save();
+    await aplicarColorMontoEnFila(fila, montoActual, 'Cobrado');
+
+    return (
+      `✅ *¡Marcado como cobrado!*\n\n` +
+      `📝 ${escapeMarkdown(getRowDescripcion(fila, ''))}`
+    );
+  });
+}
+
 async function ejecutarCobrar(userId, nombre) {
   return withUserWriteLock(userId, () => doEjecutarCobrar(userId, nombre));
 }
@@ -1155,6 +1233,8 @@ module.exports = {
   ejecutarDolar,
   ejecutarActualizarDolar,
   ejecutarCobrar,
+  buscarCandidatosCobrar,
+  ejecutarCobrarFila,
   ejecutarEditar,
   ejecutarEliminar,
   ejecutarListar,

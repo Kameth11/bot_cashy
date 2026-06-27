@@ -4,6 +4,7 @@ const state = require('../state');
 const { handleSheetCommand } = require('./commands/sheet');
 const { confirmButtons } = require('./actions');
 const { mostrarConfirmacion } = require('./nlp-confirm');
+const { mostrarCobrar } = require('./cobrar-confirm');
 const { DASHBOARD_URL } = require('../config');
 
 function replyWithDashboard(ctx, msg) {
@@ -109,8 +110,8 @@ const INTENT_HANDLERS = {
 
   cobrar_movimiento: async (ctx, entities) => {
     const nombre = entities.nombre || null;
-    const msg = await cmd.ejecutarCobrar(ctx.from.id, nombre);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    const resultado = await cmd.buscarCandidatosCobrar(ctx.from.id, nombre);
+    return mostrarCobrar(ctx, resultado);
   },
 
   editar_movimiento: async (ctx, entities) => {
