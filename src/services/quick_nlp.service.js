@@ -685,7 +685,7 @@ function matchKeywordIntent(text) {
 }
 
 const ENTITY_INTENTS = [
-  { intent: 'cobrar_movimiento', patterns: [/^(?:cobrar|cobro|ya me pago|ya me pagaron|ya cobro|marcar cobrado|marcar como cobrado|ya cobre|ya pago|cobrale|cobra|me pago|me pag[oó]|ya entro lo de|entro lo de|entr[oó] lo de|me transfirio|me transfiri[oó]|me deposito|me deposit[oó]|cayo lo de|cay[oó] lo de|liquidaron|me abonaron)\s+(.+)$/i, /^(.+?)\s+(?:me pago|me pag[oó]|me transfirio|me transfiri[oó]|me deposito|me deposit[oó]|me abon[oó])$/i], entityKey: 'nombre' },
+  { intent: 'cobrar_movimiento', patterns: [/^(?:cobrar|cobro|ya me pago|ya me pagaron|ya cobro|marcar cobrado|marcar como cobrado|ya cobre|ya pago|cobrale|cobra|me pago|me pag[oó]|ya entro lo de|entro lo de|entr[oó] lo de|me transfirio|me transfiri[oó]|me deposito|me deposit[oó]|cayo lo de|cay[oó] lo de|liquidaron|me abonaron)\s+(.+)$/i, /^(.+?)\s+(?:me pago|me pag[oó]|me transfirio|me transfiri[oó]|me deposito|me deposit[oó]|me abon[oó])$/i, /^(.+?)\s+que\s+est[aá]\s+pendiente\s+(?:ya\s+)?pag[aoó]$/i, /^(.+?)\s+(?:ya\s+)?est[aá]\s+(?:pag[aoó]|pagad[ao]|saldad[ao]|cobrad[ao])$/i, /^(?:el\s+|la\s+)?pendiente\s+de\s+(.+?)\s+(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:pag[aoó]|pagad[ao]|saldad[ao])$/i], entityKey: 'nombre' },
   { intent: 'editar_movimiento', patterns: [/^(?:editar|modificar|cambiar|corregir|edita|cambio)\s+(.+)$/i], entityKey: 'nombre' },
   { intent: 'eliminar_movimiento', patterns: [/^(?:eliminar|borrar|borra|quitar|elimina|borrame|borro|elimino|borralo|borrarlo|eliminarlo|eliminame)\s+(.+)$/i], entityKey: 'nombre' },
 ];

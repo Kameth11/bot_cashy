@@ -26,6 +26,16 @@ const {
   getRowMetodoPago,
 } = require('../utils/sheet-row');
 
+function normalizarParaMatch(str) {
+  return String(str).toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+function matchPalabraCompleta(haystack, needle) {
+  const h = normalizarParaMatch(haystack);
+  const n = normalizarParaMatch(needle).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${n}\\b`).test(h);
+}
+
 async function construirMensajeCotizacion(monto) {
   if (!state.cotizacionDolar) {
     await obtenerCotizacionDolar();
@@ -491,12 +501,27 @@ async function doEjecutarCobrar(userId, nombre) {
   if (nombre && nombre.toLowerCase() === 'ultimo') {
     filaActual = pendientes[pendientes.length - 1];
   } else if (nombre) {
-    const textoLower = nombre.toLowerCase();
-    filaActual = pendientes.find(f =>
-      getRowDescripcion(f, '').toLowerCase().includes(textoLower)
+    // Strip leading articles to handle "la consulta general" → "consulta general"
+    const nombreLimpio = nombre.replace(/^(?:la|el|lo|las|los|una|un)\s+/i, '').trim();
+
+    // Collect all word-boundary matches to detect ambiguity before committing
+    const coincidencias = pendientes.filter(f =>
+      matchPalabraCompleta(getRowDescripcion(f, ''), nombreLimpio)
     );
-    if (!filaActual) {
-      filaActual = pendientes.find(f => getRowIdUnico(f, '').toLowerCase() === textoLower);
+
+    if (coincidencias.length === 1) {
+      filaActual = coincidencias[0];
+    } else if (coincidencias.length > 1) {
+      let msg = `⚠️ *Hay varias coincidencias — ¿cuál querés cobrar?*\n\n`;
+      coincidencias.slice(0, 5).forEach((c, i) => {
+        msg += `${i + 1}. ${escapeMarkdown(getRowDescripcion(c, ''))}\n`;
+        msg += `   ${formatMonto(getRowMonto(c, 0), getRowMoneda(c, 'Pesos'))} — ${getRowFecha(c)}\n\n`;
+      });
+      msg += `Especificá mejor el nombre o usá: /cobrar [ID completo]`;
+      return msg;
+    } else {
+      // Fallback: exact ID match
+      filaActual = pendientes.find(f => getRowIdUnico(f, '').toLowerCase() === nombre.toLowerCase());
     }
   }
 
