@@ -1,6 +1,6 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
-const { runInBackground, withUserWriteLock } = require('../lib/write-queue');
+const { runInBackground } = require('../lib/write-queue');
 
 // Normaliza variantes como "Consultorio N° 1", "Consultorio Nro. 1",
 // "CONSULTORIO #1" a la forma "consultorio 1" que usa CONSULTORIO_MAP.
@@ -189,55 +189,49 @@ async function obtenerTurnoPorId(userId, idTurno) {
 }
 
 async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
-  await withUserWriteLock(userId, async () => {
-    const sheet = await crearTabTurnosSiNoExiste(userId);
-    if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
-    const rows = await sheet.getRows();
-    const row = rows.find(r => r.get('ID_Turno') === idTurno);
-    if (!row) throw new Error(`Turno ${idTurno} no encontrado`);
-    row.set('Estado', nuevoEstado);
-    await row.save();
-    const fecha = row.get('Fecha');
-    const turnosActualizados = rows.filter(r => r.get('Fecha') === fecha).map(rowToTurno);
-    sincronizarAgendaConTurnos(userId, fecha, turnosActualizados);
-  });
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+  const rows = await sheet.getRows();
+  const row = rows.find(r => r.get('ID_Turno') === idTurno);
+  if (!row) throw new Error(`Turno ${idTurno} no encontrado`);
+  row.set('Estado', nuevoEstado);
+  await row.save();
   invalidateCache(userId);
+  const fecha = row.get('Fecha');
+  const turnosActualizados = rows.filter(r => r.get('Fecha') === fecha).map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosActualizados);
 }
 
 async function eliminarTurno(userId, idTurno) {
-  await withUserWriteLock(userId, async () => {
-    const sheet = await crearTabTurnosSiNoExiste(userId);
-    if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
-    const rows = await sheet.getRows();
-    const row = rows.find(r => r.get('ID_Turno') === idTurno);
-    if (!row) throw new Error('turno_no_encontrado');
-    const fecha = row.get('Fecha');
-    await row.delete();
-    const turnosRestantes = rows
-      .filter(r => r.get('ID_Turno') !== idTurno && r.get('Fecha') === fecha)
-      .map(rowToTurno);
-    sincronizarAgendaConTurnos(userId, fecha, turnosRestantes);
-  });
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+  const rows = await sheet.getRows();
+  const row = rows.find(r => r.get('ID_Turno') === idTurno);
+  if (!row) throw new Error('turno_no_encontrado');
+  const fecha = row.get('Fecha');
+  await row.delete();
   invalidateCache(userId);
+  const turnosRestantes = rows
+    .filter(r => r.get('ID_Turno') !== idTurno && r.get('Fecha') === fecha)
+    .map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosRestantes);
 }
 
 async function actualizarDatosTurno(userId, idTurno, datos) {
-  await withUserWriteLock(userId, async () => {
-    const sheet = await crearTabTurnosSiNoExiste(userId);
-    if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
-    const rows = await sheet.getRows();
-    const row = rows.find(r => r.get('ID_Turno') === idTurno);
-    if (!row) throw new Error('turno_no_encontrado');
-    const campos = { Cliente: datos.cliente, Servicio: datos.servicio, Profesional: datos.profesional, Hora: datos.hora };
-    for (const [col, val] of Object.entries(campos)) {
-      if (val !== undefined) row.set(col, val);
-    }
-    await row.save();
-    const fecha = row.get('Fecha');
-    const turnosActualizados = rows.filter(r => r.get('Fecha') === fecha).map(rowToTurno);
-    sincronizarAgendaConTurnos(userId, fecha, turnosActualizados);
-  });
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+  const rows = await sheet.getRows();
+  const row = rows.find(r => r.get('ID_Turno') === idTurno);
+  if (!row) throw new Error('turno_no_encontrado');
+  const campos = { Cliente: datos.cliente, Servicio: datos.servicio, Profesional: datos.profesional, Hora: datos.hora };
+  for (const [col, val] of Object.entries(campos)) {
+    if (val !== undefined) row.set(col, val);
+  }
+  await row.save();
   invalidateCache(userId);
+  const fecha = row.get('Fecha');
+  const turnosActualizados = rows.filter(r => r.get('Fecha') === fecha).map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosActualizados);
 }
 
 const BLOCK_WIDTH = 5;
