@@ -19,6 +19,7 @@ Reglas:
 - Si hay varios consultorios o profesionales como encabezados de columna, usalos para agrupar cada turno.
 - Para cada turno, informa consultorio y/o profesional si se pueden leer. Si no se ve, usa null.
 - Si una celda tiene solo un nombre sin servicio, poné el nombre en "cliente" y null en "servicio".
+- El campo "consultorio" SIEMPRE debe usar número arábigo: "Consultorio 1", "Consultorio 2", nunca "Consultorio Uno" ni "Consultorio uno".
 
 Formato exacto de salida:
 {"turnos":[{"consultorio":"Consultorio 1","profesional":"Diego","hora":"09:00","cliente":"Maria Lopez","servicio":"Limpieza","estado":"Pendiente"}]}
@@ -132,7 +133,7 @@ function normalizarTurnos(turnos) {
   if (!Array.isArray(turnos)) return [];
 
   return turnos.map(turno => ({
-    consultorio: normalizarTexto(turno?.consultorio),
+    consultorio: normalizarConsultorio(turno?.consultorio),
     profesional: normalizarTexto(turno?.profesional),
     hora: normalizarHora(turno?.hora),
     cliente: normalizarTexto(turno?.cliente),
@@ -152,6 +153,11 @@ function completarTurno(turno) {
   };
 }
 
+const NUMEROS_ESCRITOS = {
+  'uno': '1', 'dos': '2', 'tres': '3', 'cuatro': '4', 'cinco': '5',
+  'seis': '6', 'siete': '7', 'ocho': '8', 'nueve': '9', 'diez': '10',
+};
+
 function normalizarTexto(value) {
   if (value == null) return null;
   const text = String(value)
@@ -159,6 +165,12 @@ function normalizarTexto(value) {
     .trim();
 
   return text ? text.replace(/\b\w/g, c => c.toUpperCase()) : null;
+}
+
+function normalizarConsultorio(value) {
+  const texto = normalizarTexto(value);
+  if (!texto) return null;
+  return texto.replace(/\b(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b/gi, w => NUMEROS_ESCRITOS[w.toLowerCase()]);
 }
 
 function normalizarHora(value) {
