@@ -43,6 +43,11 @@ function resolverProfesional(profesional, consultorio) {
   if (profesional) {
     const key = normalizarConsultorioKey(profesional)
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
+    // Si el campo ya contiene el nombre directamente (ej: "Diego"), devolverlo
+    const nameLower = profesional.trim().toLowerCase()
+    for (const nombre of Object.values(CONSULTORIO_MAP)) {
+      if (nombre && nombre.toLowerCase() === nameLower) return nombre
+    }
   }
   return ''
 }
