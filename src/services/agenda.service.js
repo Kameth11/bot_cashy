@@ -196,7 +196,9 @@ async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
   if (!row) throw new Error(`Turno ${idTurno} no encontrado`);
   row.set('Estado', nuevoEstado);
   await row.save();
-  sincronizarAgenda(userId, row.get('Fecha'));
+  const fecha = row.get('Fecha');
+  const turnosActualizados = rows.filter(r => r.get('Fecha') === fecha).map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosActualizados);
 }
 
 async function eliminarTurno(userId, idTurno) {
@@ -207,7 +209,10 @@ async function eliminarTurno(userId, idTurno) {
   if (!row) throw new Error('turno_no_encontrado');
   const fecha = row.get('Fecha');
   await row.delete();
-  sincronizarAgenda(userId, fecha);
+  const turnosRestantes = rows
+    .filter(r => r.get('ID_Turno') !== idTurno && r.get('Fecha') === fecha)
+    .map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosRestantes);
 }
 
 async function actualizarDatosTurno(userId, idTurno, datos) {
@@ -221,7 +226,9 @@ async function actualizarDatosTurno(userId, idTurno, datos) {
     if (val !== undefined) row.set(col, val);
   }
   await row.save();
-  sincronizarAgenda(userId, row.get('Fecha'));
+  const fecha = row.get('Fecha');
+  const turnosActualizados = rows.filter(r => r.get('Fecha') === fecha).map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosActualizados);
 }
 
 const BLOCK_WIDTH = 5;
@@ -451,10 +458,18 @@ function renderizarSeccionFecha(sheet, fechaStr, turnos) {
   }
 }
 
-// Dispara la sincronización de la Agenda para una fecha en background y
-// best-effort: la Agenda es secundaria, no debe demorar ni romper la operación
-// principal sobre Turnos. Corre bajo el lock del usuario para no pisar otras
-// escrituras del mismo sheet.
+// Sincroniza la tab Agenda reutilizando turnos ya cargados en memoria: evita
+// una segunda llamada a sheet.getRows() cuando la operación principal ya leyó
+// el sheet (reduce reads y evita el 429 de la Sheets API).
+function sincronizarAgendaConTurnos(userId, fechaStr, turnos) {
+  if (!fechaStr) return;
+  runInBackground(userId, async () => {
+    await escribirSeccionAgenda(userId, fechaStr, turnos);
+  }, 'agenda-sync');
+}
+
+// Versión completa: re-lee el sheet. Usar solo cuando no tenemos los turnos
+// en memoria (ej: crearTurno, sincronización iniciada desde el bot).
 function sincronizarAgenda(userId, fechaStr) {
   if (!fechaStr) return;
   runInBackground(userId, async () => {
