@@ -396,10 +396,18 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
   padding: 10px 14px;
   border-bottom: 1px solid var(--bg);
   transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .agenda-card:last-child { border-bottom: none; }
 .agenda-card:hover { background: var(--surface); }
+
+.agenda-card-main {
+  flex: 1;
+  min-width: 0;
+}
 
 .agenda-card-top {
   display: flex;
@@ -412,8 +420,8 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
   display: flex;
   gap: 4px;
   align-items: center;
-  flex-wrap: wrap;
-  margin-top: 8px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
