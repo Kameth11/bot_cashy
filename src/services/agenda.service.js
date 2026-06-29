@@ -88,6 +88,19 @@ async function crearTabTurnosSiNoExiste(userId) {
   }
 }
 
+// Versión liviana para operaciones sobre filas existentes: usa el doc cacheado
+// sin forzar loadInfo() en cada llamada. Evita 429 de quota de lecturas.
+async function getTurnosSheet(userId) {
+  const doc = await getDocCliente(userId, false);
+  if (!doc) return null;
+  const sheet = doc.sheetsByTitle['Turnos'];
+  if (!sheet) {
+    // Tab todavía no existe (primer uso) — la creamos con el path completo
+    return crearTabTurnosSiNoExiste(userId);
+  }
+  return sheet;
+}
+
 async function guardarTurnosFlat(userId, turnos) {
   const sheet = await crearTabTurnosSiNoExiste(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
@@ -141,7 +154,7 @@ function rowToTurno(r) {
 }
 
 async function obtenerTurnosPorFecha(userId, fechaStr) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) return [];
   const rows = await sheet.getRows();
   const del_dia = rows.filter(r => r.get('Fecha') === fechaStr);
@@ -181,7 +194,7 @@ async function crearTurno(userId, datos) {
 }
 
 async function obtenerTurnoPorId(userId, idTurno) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) return null;
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
@@ -189,7 +202,7 @@ async function obtenerTurnoPorId(userId, idTurno) {
 }
 
 async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
@@ -203,7 +216,7 @@ async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
 }
 
 async function eliminarTurno(userId, idTurno) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
@@ -218,7 +231,7 @@ async function eliminarTurno(userId, idTurno) {
 }
 
 async function actualizarDatosTurno(userId, idTurno, datos) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
