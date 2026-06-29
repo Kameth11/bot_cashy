@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { api } from '../services/api'
 import DatePickerButton from '../components/DatePickerButton'
+import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 
 const pad2 = n => String(n).padStart(2, '0')
 const hoyMedianoche = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }
@@ -101,6 +102,7 @@ export default function AgendaPage() {
   }, [fecha])
 
   useEffect(() => { cargar() }, [cargar])
+  useMovimientosEvents(useCallback(() => cargar(), [cargar]))
 
   async function handleLlego(turno) {
     setAccionando(turno.idTurno)
