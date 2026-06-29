@@ -76,6 +76,9 @@ export default function AgendaPage() {
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(null)
   const [eliminando, setEliminando] = useState(false)
   const [filtroProfesional, setFiltroProfesional] = useState(null)
+  const [modalNuevo, setModalNuevo] = useState(false)
+  const [nuevoForm, setNuevoForm] = useState({ cliente: '', servicio: '', profesional: '', hora: '' })
+  const [creando, setCreando] = useState(false)
   const [fecha, setFecha] = useState(hoyMedianoche)
   const [dropdownAbierto, setDropdownAbierto] = useState(null)
 
@@ -172,6 +175,32 @@ export default function AgendaPage() {
     }
   }
 
+  async function confirmarNuevo() {
+    if (!nuevoForm.cliente.trim()) { alert('El nombre del paciente es requerido'); return }
+    setCreando(true)
+    try {
+      const { data } = await api.post('/api/agenda', {
+        ...nuevoForm,
+        fecha: toApiFormat(fecha),
+      })
+      setTurnos(prev => [...prev, {
+        idTurno: data.idTurno,
+        cliente: nuevoForm.cliente,
+        servicio: nuevoForm.servicio,
+        profesional: nuevoForm.profesional,
+        hora: nuevoForm.hora,
+        estado: 'Pendiente',
+        consultorio: '',
+      }])
+      setModalNuevo(false)
+      setNuevoForm({ cliente: '', servicio: '', profesional: '', hora: '' })
+    } catch {
+      alert('Error al crear el turno')
+    } finally {
+      setCreando(false)
+    }
+  }
+
   function agregarLineaPago() {
     setPagos(prev => [...prev, { metodoPago: 'efectivo', monto: '' }])
   }
@@ -260,6 +289,7 @@ export default function AgendaPage() {
             title="Elegir fecha"
           />
           <button className="btn-agenda" onClick={cargar}>↻</button>
+          <button className="btn-agenda primary" onClick={() => { setNuevoForm({ cliente: '', servicio: '', profesional: '', hora: '' }); setModalNuevo(true) }}>+ Turno</button>
         </div>
       </div>
 
@@ -434,7 +464,6 @@ export default function AgendaPage() {
               {[
                 { label: 'Paciente', key: 'cliente' },
                 { label: 'Servicio', key: 'servicio' },
-                { label: 'Profesional', key: 'profesional' },
                 { label: 'Hora', key: 'hora', placeholder: '09:00' },
               ].map(({ label, key, placeholder }) => (
                 <div key={key}>
@@ -447,11 +476,85 @@ export default function AgendaPage() {
                   />
                 </div>
               ))}
+              <div>
+                <label className="form-label">Profesional</label>
+                <select
+                  className="form-input"
+                  value={editForm.profesional}
+                  onChange={e => setEditForm(f => ({ ...f, profesional: e.target.value }))}
+                >
+                  <option value="">Sin asignar</option>
+                  {FILTROS_CONSULTORIO.map(nombre => (
+                    <option key={nombre} value={nombre}>{nombre}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setModalEditar(null)}>Cancelar</button>
               <button className="btn-primary" onClick={confirmarEdicion} disabled={editando}>
                 {editando ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nuevo turno modal */}
+      {modalNuevo && (
+        <div className="overlay" onClick={() => setModalNuevo(false)}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title" style={{ fontSize: 16 }}>Nuevo turno</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16, textTransform: 'capitalize' }}>
+              {fecha.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+            <div className="modal-form">
+              <div>
+                <label className="form-label">Paciente *</label>
+                <input
+                  className="form-input"
+                  value={nuevoForm.cliente}
+                  placeholder="Nombre del paciente"
+                  autoFocus
+                  onChange={e => setNuevoForm(f => ({ ...f, cliente: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="form-label">Hora</label>
+                <input
+                  className="form-input"
+                  value={nuevoForm.hora}
+                  placeholder="09:00"
+                  onChange={e => setNuevoForm(f => ({ ...f, hora: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="form-label">Servicio</label>
+                <input
+                  className="form-input"
+                  value={nuevoForm.servicio}
+                  placeholder="Ej: Limpieza, Ortodoncia…"
+                  onChange={e => setNuevoForm(f => ({ ...f, servicio: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="form-label">Profesional</label>
+                <select
+                  className="form-input"
+                  value={nuevoForm.profesional}
+                  onChange={e => setNuevoForm(f => ({ ...f, profesional: e.target.value }))}
+                >
+                  <option value="">Sin asignar</option>
+                  {FILTROS_CONSULTORIO.map(nombre => (
+                    <option key={nombre} value={nombre}>{nombre}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setModalNuevo(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={confirmarNuevo} disabled={creando}>
+                {creando ? 'Guardando…' : 'Agregar turno'}
               </button>
             </div>
           </div>

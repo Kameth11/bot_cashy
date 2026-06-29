@@ -27,6 +27,7 @@ const {
   actualizarEstadoTurno,
   actualizarDatosTurno,
   eliminarTurno,
+  crearTurno,
   fechaHoyStr,
 } = require('../services/agenda.service');
 const clienteService = require('../services/cliente.service');
@@ -503,6 +504,18 @@ app.get('/api/agenda', authMiddleware, async (req, res) => {
     const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
     res.json({ turnos });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/agenda', authMiddleware, async (req, res) => {
+  try {
+    const { hora, cliente, servicio, profesional, fecha } = req.body || {};
+    if (!cliente) return res.status(400).json({ error: 'cliente es requerido' });
+    const idTurno = await crearTurno(req.user.userId, { hora, cliente, servicio, profesional, fecha });
+    res.status(201).json({ ok: true, idTurno });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/agenda', { err: err.message });
     res.status(500).json({ error: err.message });
   }
 });

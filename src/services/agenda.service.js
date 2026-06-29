@@ -144,9 +144,40 @@ async function obtenerTurnosPorFecha(userId, fechaStr) {
   const sheet = await crearTabTurnosSiNoExiste(userId);
   if (!sheet) return [];
   const rows = await sheet.getRows();
-  return rows
-    .filter(r => r.get('Fecha') === fechaStr)
-    .map(rowToTurno);
+  const del_dia = rows.filter(r => r.get('Fecha') === fechaStr);
+
+  // Filas agregadas a mano en el Sheet sin ID_Turno: asignarles uno ahora
+  // para que las acciones del dashboard (Llegó, Cobrar, etc.) funcionen.
+  const sinId = del_dia.filter(r => !r.get('ID_Turno'));
+  if (sinId.length > 0) {
+    await Promise.all(sinId.map(row => {
+      row.set('ID_Turno', generarIDTurno());
+      return row.save();
+    }));
+  }
+
+  return del_dia.map(rowToTurno);
+}
+
+async function crearTurno(userId, datos) {
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+  const idTurno = generarIDTurno();
+  const fecha = datos.fecha || fechaHoyStr();
+  const profesionalResuelto = resolverProfesional(datos.profesional, null) || datos.profesional || '';
+  await sheet.addRow({
+    ID_Turno: idTurno,
+    Fecha: fecha,
+    Hora: datos.hora || '',
+    Cliente: datos.cliente || '',
+    Servicio: datos.servicio || '',
+    Profesional: profesionalResuelto,
+    Consultorio: '',
+    Estado: 'Pendiente',
+  });
+  invalidateCache(userId);
+  sincronizarAgenda(userId, fecha);
+  return idTurno;
 }
 
 async function obtenerTurnoPorId(userId, idTurno) {
@@ -436,6 +467,7 @@ module.exports = {
   crearTabAgendaSiNoExiste,
   guardarTurnosAgenda,
   guardarTurnosFlat,
+  crearTurno,
   obtenerTurnosPorFecha,
   obtenerTurnoPorId,
   actualizarEstadoTurno,
