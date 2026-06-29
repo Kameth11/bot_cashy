@@ -224,9 +224,7 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
         systemInstruction: SYSTEM_PROMPT,
         generationConfig: {
           temperature: 0,
-          topP: 0.1,
-          topK: 1,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 4096,
           responseMimeType: 'application/json',
         },
       });
