@@ -346,7 +346,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 .agenda-patient { font-size: 13.5px; font-weight: 600; color: var(--text); }
 .agenda-treat   { font-size: 12px; color: var(--text-3); margin-top: 2px; }
 
-.agenda-badge { padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.agenda-badge { padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
 
 /* 3-column layout */
 .agenda-cols {
@@ -413,6 +413,8 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
   margin-bottom: 4px;
 }
 
