@@ -331,7 +331,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 }
 
 .agenda-appt {
-  display: flex; align-items: center; padding: 13px 24px;
+  display: flex; align-items: center; padding: 8px 24px;
   border-bottom: 1px solid var(--bg); transition: background 0.1s;
 }
 .agenda-appt:last-child { border-bottom: none; }
@@ -390,6 +390,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 }
 
 @media (max-width: 768px) {
+  .agenda-appt { padding: 13px 24px; }
   .navbar { padding: 0 16px; }
   .navbar-links { display: none; }
   .bot-status { display: none; }

@@ -231,9 +231,8 @@ export default function AgendaPage() {
   const llegaron   = turnosConTurno.filter(t => t.estado === 'Llegó').length
   const pendientes = turnosConTurno.filter(t => t.estado === 'Pendiente').length
 
-  const turnosList = [...turnosFiltrados].sort((a, b) =>
-    (a.hora || '').localeCompare(b.hora || '')
-  )
+  const parseHora = h => { if (!h) return 9999; const [hh, mm] = h.split(':').map(Number); return hh * 60 + (mm || 0) }
+  const turnosList = [...turnosFiltrados].sort((a, b) => parseHora(a.hora) - parseHora(b.hora))
 
   return (
     <div className="page">
