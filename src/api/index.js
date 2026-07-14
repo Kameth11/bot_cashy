@@ -21,6 +21,7 @@ const {
   deleteMovimiento,
   deleteMovimientoByKey,
 } = require('../services/db.service');
+const tenantRequestService = require('../services/tenant-request.service');
 const {
   obtenerTurnosPorFecha,
   obtenerTurnoPorId,
@@ -467,6 +468,103 @@ app.delete('/api/users/:userId', authMiddleware, adminOnly, async (req, res) => 
   } catch (err) {
     logger.error('API', 'Error DELETE /api/users', { err: err.message });
     res.status(500).json({ error: 'Error al eliminar usuario' });
+  }
+});
+
+// ── Solicitudes de acceso (admin only) ──
+app.get('/api/admin/tenant-requests', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { status } = req.query;
+    let solicitudes;
+    if (status === 'all') {
+      const supabase = require('../lib/supabase').getSupabase();
+      const { data, error } = await supabase
+        .from('tenant_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw new Error(error.message);
+      solicitudes = data || [];
+    } else {
+      solicitudes = await tenantRequestService.listarSolicitudesPendientes();
+    }
+    res.json({ solicitudes });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/admin/tenant-requests', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener solicitudes' });
+  }
+});
+
+app.post('/api/admin/tenant-requests/:id/approve', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supabase = require('../lib/supabase').getSupabase();
+    const { data: solicitud, error: fetchErr } = await supabase
+      .from('tenant_requests')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (fetchErr || !solicitud) return res.status(404).json({ error: 'Solicitud no encontrada' });
+
+    const resultado = await tenantRequestService.aprobarSolicitud(solicitud.email, req.user.userId);
+    if (!resultado.ok) return res.status(500).json({ error: resultado.error });
+
+    if (solicitud.telegram_user_id) {
+      const state = require('../state');
+      state.pendingRegistros.set(solicitud.telegram_user_id, {
+        step: 'sheetId',
+        email: solicitud.email,
+        telegramUserId: solicitud.telegram_user_id,
+      });
+      const { bot } = require('../lib/telegraf');
+      bot.telegram.sendMessage(
+        solicitud.telegram_user_id,
+        '✅ *¡Tu solicitud fue aprobada!*\n\n' +
+        'Ya podés configurar tu cuenta.\n\n' +
+        '📊 *Paso 1:* Compartí tu Google Sheet con mi service account:\n\n' +
+        `📧 *Email:* ${config.GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
+        'Dale permisos de "Editor"\n\n' +
+        '📝 Ingresá el ID de tu spreadsheet:\n' +
+        'Está en la URL: docs.google.com/spreadsheets/d/**AQUI_EL_ID**/edit\n\n' +
+        'O usá /start si querés retomar más tarde.',
+        { parse_mode: 'Markdown' }
+      ).catch(err => logger.warn('API', 'Error notificando usuario aprobado', { err: err.message }));
+    }
+
+    logger.audit('tenant_request_approved', { adminId: req.user.userId, email: solicitud.email });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/admin/tenant-requests/:id/approve', { err: err.message });
+    res.status(500).json({ error: 'Error al aprobar solicitud' });
+  }
+});
+
+app.post('/api/admin/tenant-requests/:id/reject', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supabase = require('../lib/supabase').getSupabase();
+    const { data: solicitud, error: fetchErr } = await supabase
+      .from('tenant_requests')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (fetchErr || !solicitud) return res.status(404).json({ error: 'Solicitud no encontrada' });
+
+    const resultado = await tenantRequestService.rechazarSolicitud(solicitud.email, req.user.userId);
+    if (!resultado.ok) return res.status(500).json({ error: resultado.error });
+
+    if (solicitud.telegram_user_id) {
+      const { bot } = require('../lib/telegraf');
+      bot.telegram.sendMessage(
+        solicitud.telegram_user_id,
+        '❌ Tu solicitud de acceso fue rechazada.\n\nSi creés que es un error, contactá al administrador.',
+      ).catch(err => logger.warn('API', 'Error notificando usuario rechazado', { err: err.message }));
+    }
+
+    logger.audit('tenant_request_rejected', { adminId: req.user.userId, email: solicitud.email });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/admin/tenant-requests/:id/reject', { err: err.message });
+    res.status(500).json({ error: 'Error al rechazar solicitud' });
   }
 });
 

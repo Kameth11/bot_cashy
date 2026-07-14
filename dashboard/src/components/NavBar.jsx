@@ -17,6 +17,7 @@ export default function NavBar() {
     ['/movimientos', 'Movimientos'],
     ['/agenda', 'Agenda'],
     ['/config', 'Config'],
+    ...(user?.isAdmin ? [['/solicitudes', 'Solicitudes']] : []),
   ]
 
   const userLabel = user?.email

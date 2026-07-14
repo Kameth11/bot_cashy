@@ -1,5 +1,5 @@
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
-const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, DASHBOARD_URL } = require('../config');
+const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, DASHBOARD_URL, ALLOWED_EMAILS, AUTHORIZED_USER_ID } = require('../config');
 const state = require('../state');
 const {
   esAdminOriginal,
@@ -12,6 +12,8 @@ const clienteService = require('./cliente.service');
 const { beginInviteRegistration } = require('./invite.service');
 const { validarEmail, validarSheetId } = require('../utils/validation');
 const { ensureSheetStructure } = require('./sheet.service');
+const tenantRequestService = require('./tenant-request.service');
+const { bot } = require('../lib/telegraf');
 
 function buildWelcomeMessage() {
   return (
@@ -49,17 +51,29 @@ function shouldShowWelcome(userId) {
 
 async function handleStart(userId) {
   if (shouldShowWelcome(userId)) {
+    return { message: buildWelcomeMessage(), parse_mode: 'Markdown' };
+  }
+
+  // Si tiene una solicitud aprobada pendiente de configurar el sheet, retomar ese paso
+  const solicitudAprobada = await tenantRequestService.buscarSolicitudAprobadaPorTelegramId(userId);
+  if (solicitudAprobada) {
+    state.pendingRegistros.set(userId, { step: 'sheetId', email: solicitudAprobada.email });
     return {
-      message: buildWelcomeMessage(),
-      parse_mode: 'Markdown'
+      message:
+        '✅ *¡Tu solicitud fue aprobada!*\n\n' +
+        'Ahora configurá tu Google Sheet.\n\n' +
+        '📊 *Paso 1:* Compartí tu sheet con mi service account:\n\n' +
+        `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
+        'Dale permisos de "Editor"\n\n' +
+        '📝 Ingresá el ID de tu spreadsheet:\n' +
+        'Está en la URL: docs.google.com/spreadsheets/d/**AQUI_EL_ID**/edit\n\n' +
+        'Usá /cancelar para salir.',
+      parse_mode: 'Markdown',
     };
   }
 
   beginRegistration(userId);
-  return {
-    message: buildStartRegistrationMessage(),
-    parse_mode: 'Markdown'
-  };
+  return { message: buildStartRegistrationMessage(), parse_mode: 'Markdown' };
 }
 
 async function handleEmailStep(userId, text) {
@@ -71,34 +85,85 @@ async function handleEmailStep(userId, text) {
     if (intentos >= MAX_INTENTOS_EMAIL) {
       state.pendingRegistros.delete(userId);
       state.pendingIntentosEmail.delete(userId);
-      return { message: '❌ Demasiados intentos. Usa /start para intentar de nuevo.' };
+      return { message: '❌ Demasiados intentos. Usá /start para intentar de nuevo.' };
     }
     return { message: `⚠️ Email inválido. Intentos: ${intentos}/${MAX_INTENTOS_EMAIL}\nEjemplo: juan@empresa.com` };
   }
 
-  if (!esEmailAutorizado(email)) {
-    const intentos = incrementIntentosEmail(userId);
-    if (intentos >= MAX_INTENTOS_EMAIL) {
-      state.pendingRegistros.delete(userId);
-      state.pendingIntentosEmail.delete(userId);
-      return { message: '❌ Email no autorizado. Usa /start para intentar de nuevo.' };
-    }
-    return { message: `❌ Email no autorizado. Intentos: ${intentos}/${MAX_INTENTOS_EMAIL}` };
+  // Bypass de emergencia: si el email está en ALLOWED_EMAILS (.env), aprobación directa
+  if (esEmailAutorizado(email)) {
+    resetIntentosEmail(userId);
+    state.pendingRegistros.set(userId, { step: 'sheetId', email, telegramUserId: userId });
+    return {
+      message:
+        '✅ *Email verificado!*\n\n' +
+        'Ahora configurá tu Google Sheet.\n\n' +
+        '📊 *Paso 1:* Compartí tu sheet con mi service account:\n\n' +
+        `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
+        'Dale permisos de "Editor"\n\n' +
+        '📝 Ingresá el ID de tu spreadsheet:\n' +
+        'Está en la URL: docs.google.com/spreadsheets/d/**AQUI_EL_ID**/edit\n\n' +
+        'Usá /cancelar para salir.',
+    };
   }
 
+  // Verificar estado en tenant_requests
+  const solicitud = await tenantRequestService.buscarSolicitudPorEmail(email);
+
+  if (solicitud?.status === 'approved') {
+    resetIntentosEmail(userId);
+    state.pendingRegistros.set(userId, { step: 'sheetId', email, telegramUserId: userId });
+    return {
+      message:
+        '✅ *Email aprobado!*\n\n' +
+        'Ahora configurá tu Google Sheet.\n\n' +
+        '📊 *Paso 1:* Compartí tu sheet con mi service account:\n\n' +
+        `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
+        'Dale permisos de "Editor"\n\n' +
+        '📝 Ingresá el ID de tu spreadsheet:\n' +
+        'Está en la URL: docs.google.com/spreadsheets/d/**AQUI_EL_ID**/edit\n\n' +
+        'Usá /cancelar para salir.',
+    };
+  }
+
+  if (solicitud?.status === 'pending') {
+    state.pendingRegistros.delete(userId);
+    resetIntentosEmail(userId);
+    return { message: '⏳ Tu solicitud ya está en revisión. Te avisamos cuando esté aprobada.' };
+  }
+
+  if (solicitud?.status === 'rejected') {
+    state.pendingRegistros.delete(userId);
+    resetIntentosEmail(userId);
+    return { message: '❌ Tu solicitud fue rechazada. Contactá al administrador para más información.' };
+  }
+
+  // No existe → crear solicitud y notificar admin
+  const resultado = await tenantRequestService.crearSolicitud(email, userId);
+  state.pendingRegistros.delete(userId);
   resetIntentosEmail(userId);
-  state.pendingRegistros.set(userId, { step: 'sheetId', email, telegramUserId: userId });
+
+  if (!resultado.ok) {
+    console.error('Error al crear tenant_request:', resultado.error);
+    return { message: '❌ Error al procesar la solicitud. Intentá de nuevo más tarde.' };
+  }
+
+  // Notificar al admin
+  if (AUTHORIZED_USER_ID) {
+    bot.telegram.sendMessage(
+      AUTHORIZED_USER_ID,
+      `🔔 *Nueva solicitud de acceso*\n\n📧 Email: \`${email}\`\nID Telegram: \`${userId}\`\n\nUsá /aprobar ${email} para aprobarla.`,
+      { parse_mode: 'Markdown' }
+    ).catch(err => console.error('Error notificando admin:', err.message));
+  }
 
   return {
     message:
-      '✅ *Email verificado!*\n\n' +
-      'Ahora configura tu Google Sheet.\n\n' +
-      '📊 *Paso 1:* Comparte tu sheet con mi service account:\n\n' +
-      `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
-      'Dale permisos de "Editor"\n\n' +
-      '📝Ingresa el ID de tu spreadsheet:\n' +
-      'Está en la URL: docs.google.com/spreadsheets/d/**AQUI_EL_ID**/edit\n\n' +
-      'Usa /cancelar para salir.'
+      '📨 *Solicitud enviada*\n\n' +
+      'Tu solicitud de acceso fue registrada.\n' +
+      'Te notificaremos por acá cuando esté aprobada.\n\n' +
+      'Si tenés dudas, contactá al administrador.',
+    parse_mode: 'Markdown',
   };
 }
 
