@@ -62,6 +62,7 @@ export default function Dashboard() {
 
   const [period,      setPeriod]      = useState('este-mes')
   const [movimientos, setMovimientos] = useState([])
+  const [pendientesTotales, setPendientesTotales] = useState([])
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState(null)
   const [reload,      setReload]      = useState(0)
@@ -100,10 +101,14 @@ export default function Dashboard() {
       setLoading(true)
       setError(null)
       try {
-        const { data } = await api.get('/api/movimientos', {
-          params: { desde: range.desde, hasta: range.hasta }
-        })
-        if (active) setMovimientos(Array.isArray(data?.movimientos) ? data.movimientos : [])
+        const [{ data }, { data: dataPend }] = await Promise.all([
+          api.get('/api/movimientos', { params: { desde: range.desde, hasta: range.hasta } }),
+          api.get('/api/movimientos', { params: { estado: 'Pendiente' } }),
+        ])
+        if (active) {
+          setMovimientos(Array.isArray(data?.movimientos) ? data.movimientos : [])
+          setPendientesTotales(Array.isArray(dataPend?.movimientos) ? dataPend.movimientos : [])
+        }
       } catch (err) {
         if (active) setError('No se pudieron cargar los movimientos')
       } finally {
@@ -119,7 +124,8 @@ export default function Dashboard() {
   const metricas = useMemo(() => {
     const cobrados      = movimientos.filter(m => m.tipo?.toLowerCase() === 'ingreso' && m.estado?.toLowerCase() === 'cobrado')
     const egresosArr    = movimientos.filter(m => m.tipo?.toLowerCase() === 'egreso')
-    const pendientesArr = movimientos.filter(m => m.estado?.toLowerCase() === 'pendiente')
+    // Pendientes: todos los impagos sin importar el período seleccionado
+    const pendientesArr = pendientesTotales
     const pendientes    = pendientesArr.length
 
     const sumPesos = arr => arr.reduce((acc, m) => acc + Math.abs(Number(m.montoPesos || m.monto || 0)), 0)
@@ -153,7 +159,7 @@ export default function Dashboard() {
         return b
       })(),
     }
-  }, [movimientos])
+  }, [movimientos, pendientesTotales])
 
   // ── Edit / delete handlers ────────────────────────────────
 
@@ -251,7 +257,7 @@ export default function Dashboard() {
         <MetricCard
           label="Pendientes"
           value={String(metricas.pendientes)}
-          subtitle={metricas.pendientes === 1 ? '1 movimiento' : `${metricas.pendientes} movimientos`}
+          subtitle={metricas.pendientes === 1 ? 'total acumulado' : `${metricas.pendientes} total acumulado`}
           variant="pendientes"
           items={metricas.pendientesArr}
         />
