@@ -3,9 +3,9 @@ import { useAuth } from '../hooks/useAuth'
 import { useApp } from '../contexts/AppContext'
 
 export default function NavBar() {
-  const { user, logout } = useAuth()
-  const { openNuevo }    = useApp()
-  const navigate         = useNavigate()
+  const { user, logout, puede } = useAuth()
+  const { openNuevo }           = useApp()
+  const navigate                = useNavigate()
 
   function handleLogout() {
     logout()
@@ -13,11 +13,12 @@ export default function NavBar() {
   }
 
   const links = [
-    ['/', 'Dashboard'],
-    ['/movimientos', 'Movimientos'],
-    ['/agenda', 'Agenda'],
+    ...(puede('ver_balance')     ? [['/', 'Dashboard']]          : []),
+    ...(puede('ver_movimientos') ? [['/movimientos', 'Movimientos']] : []),
+    ...(puede('ver_agenda')      ? [['/agenda', 'Agenda']]        : []),
     ['/config', 'Config'],
-    ...(user?.isAdmin ? [['/solicitudes', 'Solicitudes']] : []),
+    ...(user?.isAdmin            ? [['/solicitudes', 'Solicitudes']] : []),
+    ...(user?.isAdmin            ? [['/accesos', 'Accesos']]      : []),
   ]
 
   const userLabel = user?.email
@@ -43,7 +44,9 @@ export default function NavBar() {
       </div>
 
       <div className="navbar-right">
-        <button className="btn-nuevo" onClick={openNuevo}>+ Nuevo</button>
+        {puede('cargar_movimientos') && (
+          <button className="btn-nuevo" onClick={openNuevo}>+ Nuevo</button>
+        )}
         <div className="navbar-divider" />
         <div className="bot-status">
           <span className="bot-dot" />

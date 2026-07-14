@@ -352,3 +352,9 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-06-19 | Mantener push directo a `main`, planificar PRs + CI bloqueante a futuro | Velocidad de iteración hoy > proceso, pero hay disparadores claros para cambiarlo |
 | 2026-06-24 | Optimizaciones de carga sin infra nueva (rate limit, dual-write async, lecturas acotadas, semáforo Gemini) antes de escalar horizontal | Suben el techo de un solo proceso a decenas de tenants con bajo riesgo; el escalado horizontal (Redis) recién vale la pena después |
 | 2026-06-24 | Escalado horizontal (Fase 2) requiere Redis y se mantiene en **una sola instancia** hasta implementarlo | El write-lock en memoria corrompe datos con 2+ instancias; ver sección 6, "Escalabilidad y resiliencia" |
+| 2026-07-13 | Permisos granulares por usuario (6 permisos, presets de conveniencia) en vez de roles fijos | Permite que el dueño configure exactamente qué ve cada persona (odontólogos, recepcionista, contadora) sin roles rígidos |
+| 2026-07-13 | Permisos resueltos server-side en cada request, no horneados en el JWT | Los tokens duran 180d; un cambio de permisos debe impactar al toque sin re-login |
+| 2026-07-13 | `ver_movimientos` y `ver_balance` son permisos separados | La recepcionista carga cobros (ver_movimientos + cargar_movimientos) pero no ve el balance/reportes (ver_balance) |
+| 2026-07-13 | `/cobrado` en agenda requiere `cargar_movimientos`, no `editar_agenda` | Cobrar un turno crea un movimiento de plata; un odontólogo con solo agenda no debe poder cobrar |
+| 2026-07-13 | Default de permisos = `['ver_agenda']` (mínimo, fail-safe) | Un usuario nuevo nunca ve ni toca plata por accidente |
+| 2026-07-13 | Dueño/admin siempre tiene ADMIN_PERMISOS implícitos, no se persisten | No hay forma de auto-bloquearse como dueño ni de perder el acceso por un bug de escritura |

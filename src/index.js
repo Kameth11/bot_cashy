@@ -51,6 +51,7 @@ require('./handlers/commands/editarturno');
 require('./handlers/commands/solicitudes');
 require('./handlers/commands/aprobar');
 require('./handlers/commands/rechazar');
+require('./handlers/commands/accesos');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');

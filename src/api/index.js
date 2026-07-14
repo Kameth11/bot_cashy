@@ -9,7 +9,9 @@ const config = require('../config');
 const { notificarLlegadaPaciente } = require('../services/profesional.service');
 const { resolveTenantId } = require('../services/tenant.service');
 const { getSupabase, isAvailable } = require('../lib/supabase');
-const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
+const { esAdminOriginal, obtenerClientePorUserId, resolverPermisos } = require('../auth');
+const { PERMISOS, PRESETS, validarPermisos, detectarPreset } = require('../auth/permisos');
+const { setPermisos: guardarPermisos } = require('../services/cliente.service');
 const { obtenerDatosSheet } = require('../services/sheet.service');
 const { ejecutarBalance, ejecutarHoy, ejecutarSemana, ejecutarMes } = require('../services/command.service');
 const {
@@ -118,6 +120,28 @@ function adminOnly(req, res, next) {
   next();
 }
 
+// Permite el acceso solo al dueño del consultorio (isOwner) o al admin global.
+function ownerOnly(req, res, next) {
+  const cliente = obtenerClientePorUserId(Number(req.user?.userId));
+  if (!cliente?.isOwner && !esAdminOriginal(req.user?.userId)) {
+    return res.status(403).json({ error: 'Solo el dueño del consultorio' });
+  }
+  next();
+}
+
+// Middleware de permiso granular. Resuelve permisos por request (no desde el JWT)
+// para que los cambios de permisos impacten sin necesidad de re-login.
+function requierePermiso(permiso) {
+  return (req, res, next) => {
+    const permisos = resolverPermisos(req.user?.userId);
+    if (!permisos.includes(permiso)) {
+      logger.audit('permiso_denegado', { userId: req.user?.userId, permiso, route: req.path });
+      return res.status(403).json({ error: 'No tenés permiso para esta acción' });
+    }
+    next();
+  };
+}
+
 // Rate limiting de las rutas de auth: doble clave (IP + telegramId) para que
 // no sea bypasseable variando solo una de las dos.
 const requestCodeByIp   = createLimiter({ windowMs: 10 * 60 * 1000, max: 20 });
@@ -207,7 +231,7 @@ app.post('/api/auth/verify',
     const cliente = obtenerClientePorUserId(Number(telegramId));
     const esAdmin = esAdminOriginal(Number(telegramId));
     logger.audit('auth_dev_token_login', { telegramId });
-    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
+    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId) } });
   }
 
   let codeData = null;
@@ -249,14 +273,14 @@ app.post('/api/auth/verify',
   const cliente = obtenerClientePorUserId(Number(telegramId));
   const esAdmin = esAdminOriginal(Number(telegramId));
   logger.audit('auth_verify_success', { telegramId, esAdmin });
-  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
+  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId) } });
 });
 
 // ── Auth: me ──
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   const cliente = obtenerClientePorUserId(Number(req.user.userId));
   const esAdmin = esAdminOriginal(Number(req.user.userId));
-  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
+  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(req.user.userId) } });
 });
 
 // ── Cache de movimientos (30s) ──
@@ -302,7 +326,7 @@ app.get('/api/events', authMiddleware, (req, res) => {
 });
 
 // ── Movimientos: list ──
-app.get('/api/movimientos', authMiddleware, async (req, res) => {
+app.get('/api/movimientos', authMiddleware, requierePermiso('ver_movimientos'), async (req, res) => {
   try {
     const { tipo, estado, profesional, paciente, desde, hasta, buscar } = req.query;
     const datos = await getDatosConCache(req.user.userId);
@@ -335,7 +359,7 @@ app.get('/api/movimientos', authMiddleware, async (req, res) => {
 });
 
 // ── Movimientos: create ──
-app.post('/api/movimientos', authMiddleware, async (req, res) => {
+app.post('/api/movimientos', authMiddleware, requierePermiso('cargar_movimientos'), async (req, res) => {
   try {
     const body = req.body || {};
 
@@ -390,7 +414,7 @@ app.post('/api/movimientos', authMiddleware, async (req, res) => {
 });
 
 // ── Movimientos: update ──
-app.put('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
+app.put('/api/movimientos/:idUnico', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
   try {
     const { idUnico } = req.params;
     const body = req.body || {};
@@ -415,7 +439,7 @@ app.put('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
 });
 
 // ── Movimientos: delete por ID ──
-app.delete('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
+app.delete('/api/movimientos/:idUnico', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
   try {
     await deleteMovimiento(req.user.userId, req.params.idUnico);
     invalidarCacheMovimientos(req.user.userId);
@@ -429,7 +453,7 @@ app.delete('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
 });
 
 // ── Movimientos: delete por clave compuesta (filas sin ID_Unico) ──
-app.delete('/api/movimientos-by-key', authMiddleware, async (req, res) => {
+app.delete('/api/movimientos-by-key', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
   try {
     const { descripcion, monto, fecha } = req.body || {};
     if (!descripcion || monto === undefined) return res.status(400).json({ error: 'descripcion y monto son requeridos' });
@@ -569,7 +593,7 @@ app.post('/api/admin/tenant-requests/:id/reject', authMiddleware, adminOnly, asy
 });
 
 // ── Profesionales ──
-app.get('/api/profesionales', authMiddleware, async (req, res) => {
+app.get('/api/profesionales', authMiddleware, requierePermiso('ver_agenda'), async (req, res) => {
   try {
     const datos = await obtenerDatosSheet(req.user.userId);
     const set = new Set();
@@ -581,7 +605,7 @@ app.get('/api/profesionales', authMiddleware, async (req, res) => {
 });
 
 // ── Metrics ──
-app.get('/api/metrics', authMiddleware, async (req, res) => {
+app.get('/api/metrics', authMiddleware, requierePermiso('ver_balance'), async (req, res) => {
   try {
     const { periodo = 'hoy' } = req.query;
     let texto;
@@ -596,7 +620,7 @@ app.get('/api/metrics', authMiddleware, async (req, res) => {
 });
 
 // ── Agenda ──
-app.get('/api/agenda', authMiddleware, async (req, res) => {
+app.get('/api/agenda', authMiddleware, requierePermiso('ver_agenda'), async (req, res) => {
   try {
     const fecha = req.query.fecha || fechaHoyStr();
     const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
@@ -606,7 +630,7 @@ app.get('/api/agenda', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/agenda', authMiddleware, async (req, res) => {
+app.post('/api/agenda', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const { hora, cliente, servicio, profesional, fecha } = req.body || {};
     if (!cliente) return res.status(400).json({ error: 'cliente es requerido' });
@@ -618,7 +642,7 @@ app.post('/api/agenda', authMiddleware, async (req, res) => {
   }
 });
 
-app.delete('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
+app.delete('/api/agenda/:idTurno', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     await eliminarTurno(req.user.userId, req.params.idTurno);
     res.json({ ok: true });
@@ -629,7 +653,7 @@ app.delete('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
   }
 });
 
-app.patch('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
+app.patch('/api/agenda/:idTurno', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const { idTurno } = req.params;
     const { cliente, servicio, profesional, hora } = req.body || {};
@@ -645,7 +669,7 @@ app.patch('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
+app.post('/api/agenda/:idTurno/llego', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const { idTurno } = req.params;
 
@@ -666,7 +690,8 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
   }
 });
 
-app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
+// cobrado crea movimientos de plata → requiere cargar_movimientos, no solo editar_agenda
+app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, requierePermiso('cargar_movimientos'), async (req, res) => {
   try {
     const { idTurno } = req.params;
     const { montoTotal, pagos, moneda = 'Pesos' } = req.body;
@@ -715,7 +740,7 @@ app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/agenda/:idTurno/cancelar', authMiddleware, async (req, res) => {
+app.post('/api/agenda/:idTurno/cancelar', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const turno = await obtenerTurnoPorId(req.user.userId, req.params.idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
@@ -726,7 +751,7 @@ app.post('/api/agenda/:idTurno/cancelar', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/agenda/:idTurno/novino', authMiddleware, async (req, res) => {
+app.post('/api/agenda/:idTurno/novino', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const turno = await obtenerTurnoPorId(req.user.userId, req.params.idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
@@ -734,6 +759,64 @@ app.post('/api/agenda/:idTurno/novino', authMiddleware, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Accesos: gestión de permisos por el dueño del consultorio ──
+app.get('/api/accesos', authMiddleware, ownerOnly, (req, res) => {
+  const { DEFAULT_PERMISOS: DEF, ADMIN_PERMISOS: ADM } = require('../auth/permisos');
+  const ownerKey = String(req.user.userId);
+  const owner = clienteService.clientes[ownerKey];
+  if (!owner) return res.status(404).json({ error: 'Perfil no encontrado' });
+
+  const miembros = [{
+    userId: ownerKey,
+    email: owner.email || null,
+    isOwner: true,
+    permisos: ADM,
+    preset: 'admin',
+  }];
+
+  for (const guestId of owner.usuarios || []) {
+    const guestKey = String(guestId);
+    const perms = (owner.permisos || {})[guestKey] || DEF;
+    miembros.push({
+      userId: guestKey,
+      email: null,
+      isOwner: false,
+      permisos: perms,
+      preset: detectarPreset(perms),
+    });
+  }
+
+  res.json({ miembros, permisosDisponibles: PERMISOS, presets: PRESETS });
+});
+
+app.put('/api/accesos/:userId/permisos', authMiddleware, ownerOnly, async (req, res) => {
+  const ownerKey = String(req.user.userId);
+  const targetKey = String(req.params.userId);
+
+  // El dueño no puede auto-editarse
+  if (targetKey === ownerKey) return res.status(400).json({ error: 'No podés editar los permisos del dueño' });
+
+  const owner = clienteService.clientes[ownerKey];
+  if (!owner) return res.status(404).json({ error: 'Perfil no encontrado' });
+
+  const esInvitado = (owner.usuarios || []).map(String).includes(targetKey);
+  if (!esInvitado) return res.status(404).json({ error: 'Usuario no es miembro de este consultorio' });
+
+  const { permisos } = req.body;
+  if (!validarPermisos(permisos)) {
+    return res.status(400).json({ error: 'Permisos inválidos', permisosValidos: PERMISOS });
+  }
+
+  try {
+    await guardarPermisos(ownerKey, targetKey, permisos);
+    logger.audit('permisos_updated', { adminId: ownerKey, targetId: targetKey, permisos });
+    res.json({ ok: true, permisos, preset: detectarPreset(permisos) });
+  } catch (err) {
+    logger.error('API', 'Error PUT /api/accesos', { err: err.message });
+    res.status(500).json({ error: 'Error al guardar permisos' });
   }
 });
 
