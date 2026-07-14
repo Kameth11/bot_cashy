@@ -17,8 +17,6 @@ export default function NavBar() {
     ...(puede('ver_movimientos') ? [['/movimientos', 'Movimientos']] : []),
     ...(puede('ver_agenda')      ? [['/agenda', 'Agenda']]        : []),
     ['/config', 'Config'],
-    ...(user?.isAdmin            ? [['/solicitudes', 'Solicitudes']] : []),
-    ...(user?.isAdmin            ? [['/accesos', 'Accesos']]      : []),
   ]
 
   const userLabel = user?.email

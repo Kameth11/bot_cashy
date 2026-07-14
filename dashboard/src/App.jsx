@@ -12,8 +12,6 @@ import Dashboard from './pages/Dashboard'
 import AgendaPage from './pages/AgendaPage'
 import MovimientosPage from './pages/MovimientosPage'
 import ConfigPage from './pages/ConfigPage'
-import SolicitudesPage from './pages/SolicitudesPage'
-import AccesosPage from './pages/AccesosPage'
 import { api } from './services/api'
 
 function LayoutWithModal() {
@@ -47,8 +45,8 @@ function LayoutWithModal() {
           <Route path="/movimientos" element={puede('ver_movimientos') ? <MovimientosPage /> : <Navigate to={defaultRoute} replace />} />
           <Route path="/agenda"      element={puede('ver_agenda')      ? <AgendaPage />      : <Navigate to={defaultRoute} replace />} />
           <Route path="/config"      element={<ConfigPage />} />
-          <Route path="/solicitudes" element={<SolicitudesPage />} />
-          <Route path="/accesos"     element={<AccesosPage />} />
+          <Route path="/solicitudes" element={<Navigate to="/config?tab=solicitudes" replace />} />
+          <Route path="/accesos"     element={<Navigate to="/config?tab=accesos" replace />} />
           <Route path="*"            element={<Navigate to={defaultRoute} replace />} />
         </Routes>
       </main>

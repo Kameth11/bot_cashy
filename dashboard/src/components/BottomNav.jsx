@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, List, CalendarDays, Settings, Plus, Users } from 'lucide-react'
+import { LayoutDashboard, List, CalendarDays, Settings, Plus } from 'lucide-react'
 import { useApp } from '../contexts/AppContext'
 import { useAuth } from '../hooks/useAuth'
 
@@ -36,12 +36,6 @@ export default function BottomNav() {
         <Settings size={20} />
         <span>Config</span>
       </NavLink>
-      {user?.isAdmin && (
-        <NavLink to="/accesos" className={({ isActive }) => `bottom-nav-item${isActive ? ' active' : ''}`}>
-          <Users size={20} />
-          <span>Accesos</span>
-        </NavLink>
-      )}
     </nav>
   )
 }
