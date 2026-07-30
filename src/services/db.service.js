@@ -1337,6 +1337,8 @@ async function deleteMovimientoByKey(userId, compositeKey) {
 }
 
 module.exports = {
+  // Usado por personal.service para crear el profile/tenant antes del primer insert.
+  ensureProfile,
   getSheetId,
   invalidateCache,
   getDocCliente,

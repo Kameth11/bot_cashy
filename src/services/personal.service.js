@@ -11,6 +11,8 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { withUserWriteLock } = require('../lib/write-queue');
 const { getSupabase, isAvailable } = require('../lib/supabase');
+const { forTenant } = require('../lib/tenant-db');
+const { resolveTenantId } = require('./tenant.service');
 const { emitMovimientosUpdated } = require('./events.service');
 const { convertirAPesos } = require('./movimiento.service');
 const logger = require('../lib/logger');
@@ -124,7 +126,10 @@ async function resolvePersonalCapabilities() {
       ['viajes', 'viajes_personales'],
       ['presupuestos', 'presupuestos_personales'],
     ]) {
-      const check = await supabase.from(tabla).select('id').limit(1);
+      // tenant-isolation-ignore: sonda de existencia de la tabla, no lectura de
+      // datos. Va con head:true para no traer ninguna fila (misma excepción
+      // documentada que el sniffing de columnas en db.service.js).
+      const check = await supabase.from(tabla).select('id', { head: true, count: 'exact' });
       if (!check.error) {
         result[key] = true;
       } else if (!isMissingRelationError(check.error)) {
@@ -381,7 +386,19 @@ async function insertarEnSupabase(userId, movimiento) {
   const caps = await resolvePersonalCapabilities();
   if (!caps.movimientos) return null;
 
-  const supabase = getSupabase();
+  // El aislamiento por tenant es server-side (ver ARCHITECTURE.md): toda query
+  // de negocio pasa por forTenant, que inyecta el tenant_id. Nunca llamarlo con
+  // null — tira excepción a propósito.
+  // Lazy para no crear un ciclo con db.service (que ya requiere sheet.service).
+  const { ensureProfile } = require('./db.service');
+  await ensureProfile(userId);
+  const tenantId = await resolveTenantId(userId);
+  if (!tenantId) {
+    // El Sheet ya guardó, así que no se le corta la operación al usuario.
+    console.error('personal: no se pudo resolver tenantId, se guarda solo en Sheets para', userId);
+    return null;
+  }
+
   const payload = {
     user_id: userId,
     legacy_id: movimiento.idMov,
@@ -399,7 +416,8 @@ async function insertarEnSupabase(userId, movimiento) {
     origen_carga: movimiento.origenCarga || 'bot',
   };
 
-  const { data, error } = await supabase
+  // `tenant_id` lo inyecta el wrapper: no va en el payload.
+  const { data, error } = await forTenant(tenantId)
     .from('movimientos_personales')
     .insert(payload)
     .select('id')
@@ -515,11 +533,17 @@ async function eliminarMovimientoPersonal(userId, idMov) {
 
   const caps = await resolvePersonalCapabilities();
   if (caps.movimientos) {
-    const { error } = await getSupabase()
-      .from('movimientos_personales')
-      .delete()
-      .eq('legacy_id', String(idMov));
-    if (error) console.error('Supabase movimientos_personales delete error:', error.message);
+    const tenantId = await resolveTenantId(userId);
+    if (tenantId) {
+      // Doble filtro: el wrapper agrega tenant_id, y el user_id evita que un
+      // socio del mismo consultorio borre un movimiento personal ajeno.
+      const { error } = await forTenant(tenantId)
+        .from('movimientos_personales')
+        .delete()
+        .eq('legacy_id', String(idMov))
+        .eq('user_id', userId);
+      if (error) console.error('Supabase movimientos_personales delete error:', error.message);
+    }
   }
 
   emitMovimientosUpdated(userId);

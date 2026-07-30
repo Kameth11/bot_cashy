@@ -36,6 +36,7 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS viajes_personales (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id BIGINT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
 
   legacy_id TEXT,
   nombre TEXT NOT NULL,
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS viajes_personales (
 CREATE TABLE IF NOT EXISTS movimientos_personales (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id BIGINT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
 
   legacy_id TEXT,
   tipo_movimiento TEXT NOT NULL CHECK (tipo_movimiento IN ('ingreso', 'egreso')),
@@ -102,6 +104,7 @@ CREATE TABLE IF NOT EXISTS movimientos_personales (
 CREATE TABLE IF NOT EXISTS presupuestos_personales (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id BIGINT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
 
   categoria TEXT NOT NULL,
   monto_mensual NUMERIC NOT NULL CHECK (monto_mensual > 0),
@@ -133,7 +136,9 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ── Índices ──────────────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_movimientos_personales_user_id ON movimientos_personales(user_id);
+-- Matchea el patron real de query: tenant + persona + mes.
+CREATE INDEX IF NOT EXISTS idx_movimientos_personales_tenant_user_fecha
+  ON movimientos_personales (tenant_id, user_id, fecha DESC);
 CREATE INDEX IF NOT EXISTS idx_movimientos_personales_categoria ON movimientos_personales(categoria);
 CREATE INDEX IF NOT EXISTS idx_movimientos_personales_fecha ON movimientos_personales(fecha);
 CREATE INDEX IF NOT EXISTS idx_movimientos_personales_viaje_id ON movimientos_personales(viaje_id);
@@ -141,43 +146,34 @@ CREATE INDEX IF NOT EXISTS idx_movimientos_personales_tipo ON movimientos_person
 CREATE UNIQUE INDEX IF NOT EXISTS idx_movimientos_personales_legacy_id_unique
   ON movimientos_personales(legacy_id) WHERE legacy_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_viajes_personales_user_id ON viajes_personales(user_id);
+CREATE INDEX IF NOT EXISTS idx_viajes_personales_tenant_user
+  ON viajes_personales (tenant_id, user_id, estado);
 CREATE INDEX IF NOT EXISTS idx_viajes_personales_estado ON viajes_personales(estado);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_viajes_personales_legacy_id_unique
   ON viajes_personales(legacy_id) WHERE legacy_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_presupuestos_personales_user_id ON presupuestos_personales(user_id);
+CREATE INDEX IF NOT EXISTS idx_presupuestos_personales_tenant_user
+  ON presupuestos_personales (tenant_id, user_id);
 
 -- ── RLS ──────────────────────────────────────────────────────────────────────
--- Mismo criterio que movimientos_v2: se resuelve el dueño vía profiles.web_user_id.
+-- El aislamiento real es server-side, via forTenant() en src/lib/tenant-db.js.
+-- El backend siempre usa la service_role_key, asi que una policy basada en
+-- auth.uid() nunca se ejecutaria: se documenta la realidad, igual que hizo
+-- 003_enforce_tenant.sql para movimientos/profiles.
 
-ALTER TABLE movimientos_personales ENABLE ROW LEVEL SECURITY;
-ALTER TABLE viajes_personales ENABLE ROW LEVEL SECURITY;
-ALTER TABLE presupuestos_personales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE movimientos_personales   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE viajes_personales        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE presupuestos_personales  ENABLE ROW LEVEL SECURITY;
 
 DO $$
-DECLARE
-  t TEXT;
-  op TEXT;
-  politica TEXT;
-  clausula TEXT;
+DECLARE t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['movimientos_personales', 'viajes_personales', 'presupuestos_personales']
   LOOP
-    FOREACH op IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']
-    LOOP
-      politica := format('Users can %s own %s', lower(op), t);
-      EXECUTE format('DROP POLICY IF EXISTS %I ON %I', politica, t);
-
-      -- INSERT usa WITH CHECK; el resto USING.
-      clausula := CASE WHEN op = 'INSERT' THEN 'WITH CHECK' ELSE 'USING' END;
-
-      EXECUTE format(
-        'CREATE POLICY %I ON %I FOR %s %s ('
-        || 'EXISTS (SELECT 1 FROM profiles p WHERE p.id = user_id AND p.web_user_id = auth.uid())'
-        || ')',
-        politica, t, op, clausula
-      );
-    END LOOP;
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', 'solo_service_role', t);
+    EXECUTE format(
+      'CREATE POLICY %I ON %I FOR ALL TO service_role USING (true) WITH CHECK (true)',
+      'solo_service_role', t
+    );
   END LOOP;
 END $$;
