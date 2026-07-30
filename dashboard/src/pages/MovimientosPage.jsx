@@ -44,6 +44,7 @@ export default function MovimientosPage() {
   const [q,      setQ]      = useState('')
   const [tipo,   setTipo]   = useState('todos')
   const [moneda, setMoneda] = useState('todas')
+  const [estado, setEstado] = useState('todos')
   const [fecha,  setFecha]  = useState('') // yyyy-mm-dd
 
   const [editando,      setEditando]      = useState(null)
@@ -75,6 +76,9 @@ export default function MovimientosPage() {
   const filtered = useMemo(() => {
     let r = movimientos
     if (tipo !== 'todos') r = r.filter(m => m.tipo?.toLowerCase() === tipo)
+    // Solo se guardan dos estados: Cobrado y Pendiente. El modal muestra
+    // "Pagado" para egresos, pero la API lo normaliza a Cobrado.
+    if (estado !== 'todos') r = r.filter(m => m.estado?.toLowerCase() === estado)
     if (moneda !== 'todas') {
       const map = { ARS: 'Pesos', USD: 'Dólares', EUR: 'Euros' }
       r = r.filter(m => m.moneda === map[moneda])
@@ -98,7 +102,7 @@ export default function MovimientosPage() {
       })
     }
     return ordenarPorFechaDesc(r)
-  }, [movimientos, tipo, moneda, q, fecha])
+  }, [movimientos, tipo, estado, moneda, q, fecha])
 
   const handleGuardar = useCallback(async (idUnico, updates) => {
     setModalError(null)
@@ -126,7 +130,7 @@ export default function MovimientosPage() {
     } finally { setBorrando(false) }
   }, [])
 
-  const hasFilters = tipo !== 'todos' || moneda !== 'todas' || q.trim() || fecha
+  const hasFilters = tipo !== 'todos' || estado !== 'todos' || moneda !== 'todas' || q.trim() || fecha
 
   return (
     <div className="page">
@@ -172,6 +176,12 @@ export default function MovimientosPage() {
         </div>
         <div className="filter-divider" />
         <div className="filter-chips">
+          {[['todos','Todos'],['pendiente','Pendientes'],['cobrado','Cobrados']].map(([v,l]) => (
+            <button key={v} className={`chip${estado === v ? ' active' : ''}`} onClick={() => setEstado(v)}>{l}</button>
+          ))}
+        </div>
+        <div className="filter-divider" />
+        <div className="filter-chips">
           {[['todas','Todas'],['ARS','ARS'],['USD','USD'],['EUR','EUR']].map(([v,l]) => (
             <button key={v} className={`chip${moneda === v ? ' active' : ''}`} onClick={() => setMoneda(v)}>{l}</button>
           ))}
@@ -186,7 +196,7 @@ export default function MovimientosPage() {
           )}
         </div>
         {hasFilters && (
-          <button className="clear-btn" onClick={() => { setQ(''); setTipo('todos'); setMoneda('todas'); setFecha('') }}>
+          <button className="clear-btn" onClick={() => { setQ(''); setTipo('todos'); setEstado('todos'); setMoneda('todas'); setFecha('') }}>
             Limpiar filtros ×
           </button>
         )}

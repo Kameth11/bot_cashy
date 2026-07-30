@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icon.svg'],
+      includeAssets: ['favicon.svg', 'icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Cashy',
         short_name: 'Cashy',
@@ -17,13 +17,15 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/',
         orientation: 'portrait',
+        // Chrome pide PNG de 192 y 512 para habilitar el banner de instalación;
+        // con sólo el SVG la instalación en Android queda a medias. Los PNG van
+        // aplanados (sin alfa) porque Android aplica su propia máscara y las
+        // esquinas transparentes se verían negras.
         icons: [
-          {
-            src: 'icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
-          },
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
     }),
