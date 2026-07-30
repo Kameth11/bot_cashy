@@ -58,6 +58,42 @@ async function aprobarSolicitud(email, approvedBy) {
   return { ok: true, data };
 }
 
+// Identificador para altas por código de invitación. NO es un email real: el
+// invitado nunca ingresa uno en ese flujo. Se deriva del Telegram ID para
+// respetar la unicidad de la columna sin inventar una casilla que exista.
+function claveInvitacion(telegramUserId) {
+  return `invitacion+${telegramUserId}@telegram.local`;
+}
+
+/**
+ * Registra el alta por código de invitación como una solicitud ya aprobada.
+ *
+ * El owner que generó el código ya validó a la persona, así que no tiene
+ * sentido mandarla a la cola de aprobación. Pero sí queda asentada en
+ * `tenant_requests`, para que el alta no quede fuera del circuito de auditoría
+ * que el resto del onboarding respeta.
+ */
+async function registrarInvitacionAprobada(telegramUserId, ownerId) {
+  if (!supabaseDisponible()) return { ok: false, error: 'Supabase no disponible' };
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('tenant_requests')
+    .upsert(
+      {
+        email: claveInvitacion(telegramUserId),
+        telegram_user_id: telegramUserId,
+        status: 'approved',
+        approved_by: ownerId ? String(ownerId) : null,
+        approved_at: new Date().toISOString(),
+      },
+      { onConflict: 'email', ignoreDuplicates: false }
+    )
+    .select()
+    .single();
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data };
+}
+
 async function rechazarSolicitud(email, approvedBy) {
   if (!supabaseDisponible()) return { ok: false, error: 'Supabase no disponible' };
   const supabase = getSupabase();
@@ -99,6 +135,8 @@ async function seedApprovedEmails(emails) {
 }
 
 module.exports = {
+  registrarInvitacionAprobada,
+  claveInvitacion,
   crearSolicitud,
   buscarSolicitudPorEmail,
   buscarSolicitudAprobadaPorTelegramId,

@@ -8,6 +8,7 @@ const {
 } = require('../auth');
 const clienteService = require('./cliente.service');
 const state = require('../state');
+const tenantRequestService = require('./tenant-request.service');
 
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -100,6 +101,15 @@ async function beginInviteRegistration(userId, rawCode) {
     codigo
   });
   state.pendingCodigos.delete(codigo);
+
+  // El owner que generó el código ya validó a la persona, así que no va a la
+  // cola de aprobación. Pero se asienta como solicitud aprobada para que el
+  // alta por invitación no quede fuera del circuito de auditoría del resto del
+  // onboarding. Best-effort: si Supabase no está, el alta sigue igual.
+  const resultado = await tenantRequestService.registrarInvitacionAprobada(userId, ownerId);
+  if (!resultado.ok && resultado.error !== 'Supabase no disponible') {
+    console.error('No se pudo registrar la invitación en tenant_requests:', resultado.error);
+  }
 
   return {
     message:

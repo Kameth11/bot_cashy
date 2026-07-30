@@ -1021,7 +1021,12 @@ if (fs.existsSync(DIST)) {
     maxAge: '7d',
     index: false,
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith('index.html')) {
+      // Los assets llevan hash en el nombre, así que se pueden cachear fuerte.
+      // index.html y el service worker NO: si el navegador cachea sw.js 7 días,
+      // la PWA instalada sigue sirviendo la versión vieja mucho después del
+      // deploy, y el usuario no ve los cambios aunque estén publicados.
+      const base = path.basename(filePath);
+      if (base === 'index.html' || base === 'sw.js' || base === 'registerSW.js') {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       }
     },
