@@ -8,6 +8,12 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Cashy" />
     <meta name="theme-color" content="#0747A6" />
+    <!-- Icono de la pestaña. Sin esto el navegador muestra el ícono por
+         defecto. El SVG es el principal; el PNG cubre los casos que no lo
+         soportan (algunos lectores de feeds, accesos directos viejos). -->
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+
     <!-- iOS ignora los iconos del manifest y no soporta SVG acá: si esto no es
          un PNG, "Agregar a inicio" deja el icono en blanco. -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
