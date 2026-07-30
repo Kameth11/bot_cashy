@@ -670,10 +670,13 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
     gap: 12px;
   }
 
-  /* Varios meses no entran en 390px: se scrollea en su propio contenedor
-     en vez de comprimir los botones hasta hacerlos ilegibles. */
-  .period-sel { overflow-x: auto; }
-  .period-btn { flex: 0 0 auto; min-width: 62px; }
+  /* Solo para selectores con muchas opciones (--scroll): se scrollean en su
+     propio contenedor en vez de comprimir los botones hasta hacerlos
+     ilegibles. NO aplicar al selector general: con pocas opciones los botones
+     tienen que repartirse parejo el ancho (flex:1, más arriba), y si acá se
+     pisa con flex:0 0 auto quedan de anchos distintos y se ve desprolijo. */
+  .period-sel--scroll { overflow-x: auto; }
+  .period-sel--scroll .period-btn { flex: 0 0 auto; min-width: 62px; }
 
   .navbar-left { gap: 10px; min-width: 0; }
   .btn-nuevo { padding: 6px 10px; font-size: 12px; }
@@ -725,3 +728,23 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 
 /* El header de card ya se usa con un link a la derecha en el consultorio. */
 .card-header { display: flex; justify-content: space-between; align-items: baseline; }
+
+/* ── Selector de período de Personal ───────────────────────── */
+/* Pocos meses (se reparten parejo el ancho) + calendario al lado para
+   saltar a cualquier otra fecha. Con muchos meses los botones quedaban
+   apretados e ilegibles en el celular. */
+
+.pers-periodo { display: flex; align-items: stretch; gap: 8px; }
+.pers-periodo .period-sel { flex: 1; }
+
+.period-cal-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px 12px; background: var(--white);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-2); cursor: pointer; transition: all 0.15s;
+}
+.period-cal-btn:hover { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+
+@media (max-width: 768px) {
+  .pers-periodo { width: 100%; }
+}

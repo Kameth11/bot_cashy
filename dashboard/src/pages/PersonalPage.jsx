@@ -3,6 +3,7 @@ import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import { MontoCell } from '../components/Money'
 import PresupuestosModal from '../components/PresupuestosModal'
+import DatePickerButton from '../components/DatePickerButton'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import { formatFecha, formatPesos, etiquetaCategoria } from '../utils/format'
@@ -14,14 +15,28 @@ function colorPresupuesto(porcentaje) {
   return 'var(--green)'
 }
 
-function mesesRecientes(cantidad = 6) {
+function claveMes(fecha) {
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
+}
+
+function etiquetaMes(clave) {
+  const [a, m] = clave.split('-').map(Number)
+  // Se arma a mano en vez de con toLocaleDateString({month:'long',year:'2-digit'}),
+  // que en es-AR devuelve "julio de 26".
+  const nombre = new Date(a, m - 1, 1).toLocaleDateString('es-AR', { month: 'long' })
+  const esteAnio = new Date().getFullYear()
+  const capitalizado = nombre.charAt(0).toUpperCase() + nombre.slice(1)
+  return a === esteAnio ? capitalizado : `${capitalizado} ${String(a).slice(-2)}`
+}
+
+// Tres meses desde el actual hacia atrás. Con pocos botones se reparten parejo
+// el ancho y se leen bien en el celular; con seis quedaban apretados e
+// ilegibles. Para cualquier mes más viejo está el calendario.
+function mesesRecientes(cantidad = 3) {
   const hoy = new Date()
-  return Array.from({ length: cantidad }, (_, i) => {
-    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)
-    const valor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
-    return [valor, label]
-  })
+  return Array.from({ length: cantidad }, (_, i) =>
+    claveMes(new Date(hoy.getFullYear(), hoy.getMonth() - i, 1))
+  )
 }
 
 // Barra horizontal en CSS: el proyecto no tiene librería de charts y para esto
@@ -47,7 +62,8 @@ function BarraCategoria({ label, monto, porcentaje, color = 'var(--primary)' }) 
 export default function PersonalPage() {
   const { reloadSignal } = useApp()
 
-  const [mes,     setMes]     = useState(mesesRecientes(1)[0][0])
+  const [mes,     setMes]     = useState(mesesRecientes(1)[0])
+  const [fechaCal, setFechaCal] = useState('')
   const [resumen, setResumen] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
@@ -58,7 +74,18 @@ export default function PersonalPage() {
   const [guardandoPresu, setGuardandoPresu] = useState(false)
   const [presuError,     setPresuError]     = useState(null)
 
-  const meses = useMemo(() => mesesRecientes(6), [])
+  // Si el mes elegido por calendario no está entre los tres recientes, se suma
+  // como cuarto botón para que se vea cuál está activo.
+  const meses = useMemo(() => {
+    const recientes = mesesRecientes(3)
+    return recientes.includes(mes) ? recientes : [...recientes, mes]
+  }, [mes])
+
+  const irAFecha = useCallback((iso) => {
+    if (!iso) return
+    setFechaCal(iso)
+    setMes(iso.slice(0, 7)) // YYYY-MM-DD -> YYYY-MM
+  }, [])
 
   // Las categorías las define el backend; se piden una sola vez.
   useEffect(() => {
@@ -122,16 +149,24 @@ export default function PersonalPage() {
           <h1 className="page-title">Personal</h1>
           <p className="page-subtitle">Gastos e ingresos de tu vida, separados del consultorio</p>
         </div>
-        <div className="period-sel">
-          {meses.map(([valor, label]) => (
-            <button
-              key={valor}
-              className={`period-btn${mes === valor ? ' active' : ''}`}
-              onClick={() => setMes(valor)}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="pers-periodo">
+          <div className="period-sel">
+            {meses.map(valor => (
+              <button
+                key={valor}
+                className={`period-btn${mes === valor ? ' active' : ''}`}
+                onClick={() => { setMes(valor); setFechaCal('') }}
+              >
+                {etiquetaMes(valor)}
+              </button>
+            ))}
+          </div>
+          <DatePickerButton
+            value={fechaCal}
+            onChange={irAFecha}
+            title="Ir a otra fecha"
+            className="period-cal-btn"
+          />
         </div>
       </div>
 
