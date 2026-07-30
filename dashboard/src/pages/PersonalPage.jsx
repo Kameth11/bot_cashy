@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import { MontoCell } from '../components/Money'
+import PresupuestosModal from '../components/PresupuestosModal'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import { formatFecha, formatPesos, etiquetaCategoria } from '../utils/format'
@@ -52,7 +53,34 @@ export default function PersonalPage() {
   const [error,   setError]   = useState(null)
   const [reload,  setReload]  = useState(0)
 
+  const [categorias,     setCategorias]     = useState(null)
+  const [showPresu,      setShowPresu]      = useState(false)
+  const [guardandoPresu, setGuardandoPresu] = useState(false)
+  const [presuError,     setPresuError]     = useState(null)
+
   const meses = useMemo(() => mesesRecientes(6), [])
+
+  // Las categorías las define el backend; se piden una sola vez.
+  useEffect(() => {
+    let active = true
+    api.get('/api/personal/categorias')
+      .then(res => { if (active) setCategorias(res.data) })
+      .catch(() => { /* la vista funciona igual sin el editor de presupuestos */ })
+    return () => { active = false }
+  }, [])
+
+  const handleGuardarPresupuesto = useCallback(async (payload) => {
+    setPresuError(null)
+    setGuardandoPresu(true)
+    try {
+      await api.put('/api/personal/presupuestos', payload)
+      setReload(r => r + 1)
+    } catch (err) {
+      setPresuError(err?.response?.data?.error || 'No se pudo guardar el presupuesto')
+    } finally {
+      setGuardandoPresu(false)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -74,9 +102,21 @@ export default function PersonalPage() {
   useMovimientosEvents(useCallback(() => setReload(r => r + 1), []))
 
   const maxCategoria = resumen?.porCategoria?.[0]?.total || 0
+  const excedidos = (resumen?.presupuestos || []).filter(p => p.excedido)
 
   return (
     <div className="page">
+      {showPresu && (
+        <PresupuestosModal
+          categorias={categorias}
+          presupuestos={resumen?.presupuestos || []}
+          guardando={guardandoPresu}
+          error={presuError}
+          onGuardar={handleGuardarPresupuesto}
+          onCerrar={() => { setShowPresu(false); setPresuError(null) }}
+        />
+      )}
+
       <div className="page-header">
         <div>
           <h1 className="page-title">Personal</h1>
@@ -96,6 +136,14 @@ export default function PersonalPage() {
       </div>
 
       {error && <div className="error-box" style={{ marginBottom: 20 }}>{error}</div>}
+
+      {excedidos.length > 0 && (
+        <div className="presu-alerta">
+          <strong>Te pasaste del presupuesto en {excedidos.length === 1 ? '1 categoría' : `${excedidos.length} categorías`}:</strong>
+          {' '}
+          {excedidos.map(p => `${etiquetaCategoria(p.categoria)} (${p.porcentaje}%)`).join(' · ')}
+        </div>
+      )}
 
       {loading && !resumen && <div className="empty-state">Cargando...</div>}
 
@@ -169,11 +217,19 @@ export default function PersonalPage() {
             </div>
 
             <div className="card-surface">
-              <div className="card-header"><span>Presupuestos</span></div>
+              <div className="card-header">
+                <span>Presupuestos</span>
+                <button className="card-header-link" onClick={() => setShowPresu(true)}>
+                  {resumen.presupuestos.length === 0 ? 'Definir →' : 'Editar →'}
+                </button>
+              </div>
               <div className="pers-card-body">
                 {resumen.presupuestos.length === 0 ? (
                   <div className="empty-state">
-                    Todavía no definiste presupuestos.
+                    Todavía no definiste presupuestos.<br />
+                    <button className="btn-link-inline" onClick={() => setShowPresu(true)}>
+                      Definí uno
+                    </button>{' '}y te aviso cuando te estés pasando.
                   </div>
                 ) : (
                   resumen.presupuestos.map(p => (

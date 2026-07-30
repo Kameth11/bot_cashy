@@ -29,7 +29,11 @@ const {
 } = require('../services/agenda.service');
 const clienteService = require('../services/cliente.service');
 const personalService = require('../services/personal.service');
-const { normalizarCategoriaPersonal } = require('../services/personal-nlp.service');
+const {
+  normalizarCategoriaPersonal,
+  CATEGORIAS_EGRESO_PERSONAL,
+  CATEGORIAS_INGRESO_PERSONAL,
+} = require('../services/personal-nlp.service');
 const { sanitizarInput } = require('../utils/formatter');
 const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
@@ -570,6 +574,15 @@ app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
 // pasa por el modelo de movimientos clínicos.
 
 const MES_REGEX = /^\d{4}-\d{2}$/;
+
+// Las categorías salen del servicio, no de una lista repetida en el front: si
+// se agrega una, aparece sola en la UI y sigue validando igual en el POST.
+app.get('/api/personal/categorias', authMiddleware, (req, res) => {
+  res.json({
+    egreso: CATEGORIAS_EGRESO_PERSONAL,
+    ingreso: CATEGORIAS_INGRESO_PERSONAL,
+  });
+});
 
 // Un solo request trae todo lo que la vista Personal necesita (totales, por
 // categoría, presupuestos y viaje activo), en vez de encadenar cuatro.

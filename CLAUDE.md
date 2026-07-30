@@ -164,6 +164,28 @@ gasto Insumos $-500
 | `/cobrar ultimo` | Cobrar último movimiento |
 | `/cobrar [nombre]` | Cobrar por paciente |
 | `/ayuda` | Todos los comandos |
+| `/personal` | Resumen del mes de finanzas personales |
+| `/viaje` | Ver / abrir / cerrar un viaje (agrupa gastos personales) |
+
+---
+
+## Finanzas personales (segundo ámbito)
+
+Además del cashflow del consultorio, el bot registra **finanzas personales**
+(casa, viajes, nafta, supermercado) en un ámbito **separado**:
+
+- **Almacenamiento**: pestañas propias del spreadsheet del usuario (`Personal`,
+  `Viajes`, `Presupuestos`, `Preferencias`), auto-creadas. Dual-write opcional a
+  Supabase vía `sql/schema_personal.sql`. **No toca `movimientos_v2`** (su CHECK
+  rechaza las categorías personales y el error está silenciado).
+- **Ámbito automático**: `personal-nlp.service.js` decide personal vs
+  consultorio con calificadores ("luz de casa"), memoria de correcciones
+  previas, y fallback a consultorio para no cambiar el comportamiento histórico.
+  Siempre corregible con un botón en la confirmación.
+- **Categorías propias y cerradas** (18 egreso + 4 ingreso), distintas de las
+  del consultorio.
+
+Detalle completo en `ROADMAP_CASHY_CLINICA.md` sección 5.b.
 
 ---
 
