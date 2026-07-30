@@ -26,9 +26,10 @@ export function useAuth() {
   }, []);
 
   const loginDemo = useCallback(() => {
+    const demoUser = { userId: 'demo', isAdmin: false, permisos: [] };
     localStorage.setItem(STORAGE_KEY, 'demo-token');
-    localStorage.setItem(USER_KEY, JSON.stringify({ userId: 'demo', isAdmin: false }));
-    setUser({ userId: 'demo', isAdmin: false });
+    localStorage.setItem(USER_KEY, JSON.stringify(demoUser));
+    setUser(demoUser);
   }, []);
 
   const logout = useCallback(() => {
@@ -59,5 +60,12 @@ export function useAuth() {
     else setLoading(false);
   }, []);
 
-  return { user, loading, login, requestCode, loginDemo, logout };
+  // Helper para chequear permisos en componentes sin importar la lista de constantes
+  const puede = useCallback((permiso) => {
+    if (!user) return false;
+    if (user.isAdmin) return true;
+    return Array.isArray(user.permisos) && user.permisos.includes(permiso);
+  }, [user]);
+
+  return { user, loading, login, requestCode, loginDemo, logout, puede };
 }

@@ -1,5 +1,6 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
+const { runInBackground } = require('../lib/write-queue');
 
 // Normaliza variantes como "Consultorio N° 1", "Consultorio Nro. 1",
 // "CONSULTORIO #1" a la forma "consultorio 1" que usa CONSULTORIO_MAP.
@@ -30,6 +31,11 @@ function resolverProfesional(profesional, consultorio) {
     const key = normalizarConsultorioKey(profesional);
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
       return CONSULTORIO_MAP[key];
+    }
+    // Si el campo ya contiene el nombre directamente (ej: "Diego"), devolverlo
+    const nameLower = profesional.trim().toLowerCase();
+    for (const nombre of Object.values(CONSULTORIO_MAP)) {
+      if (nombre && nombre.toLowerCase() === nameLower) return nombre;
     }
   }
   return '';
@@ -80,6 +86,19 @@ async function crearTabTurnosSiNoExiste(userId) {
     console.error('Error al crear tab Turnos:', err.message);
     throw new Error(`No se pudo acceder a la tab Turnos: ${err.message}`);
   }
+}
+
+// Versión liviana para operaciones sobre filas existentes: usa el doc cacheado
+// sin forzar loadInfo() en cada llamada. Evita 429 de quota de lecturas.
+async function getTurnosSheet(userId) {
+  const doc = await getDocCliente(userId, false);
+  if (!doc) return null;
+  const sheet = doc.sheetsByTitle['Turnos'];
+  if (!sheet) {
+    // Tab todavía no existe (primer uso) — la creamos con el path completo
+    return crearTabTurnosSiNoExiste(userId);
+  }
+  return sheet;
 }
 
 async function guardarTurnosFlat(userId, turnos) {
@@ -135,16 +154,47 @@ function rowToTurno(r) {
 }
 
 async function obtenerTurnosPorFecha(userId, fechaStr) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) return [];
   const rows = await sheet.getRows();
-  return rows
-    .filter(r => r.get('Fecha') === fechaStr)
-    .map(rowToTurno);
+  const del_dia = rows.filter(r => r.get('Fecha') === fechaStr);
+
+  // Filas agregadas a mano en el Sheet sin ID_Turno: asignarles uno ahora
+  // para que las acciones del dashboard (Llegó, Cobrar, etc.) funcionen.
+  const sinId = del_dia.filter(r => !r.get('ID_Turno'));
+  if (sinId.length > 0) {
+    await Promise.all(sinId.map(row => {
+      row.set('ID_Turno', generarIDTurno());
+      return row.save();
+    }));
+  }
+
+  return del_dia.map(rowToTurno);
+}
+
+async function crearTurno(userId, datos) {
+  const sheet = await crearTabTurnosSiNoExiste(userId);
+  if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
+  const idTurno = generarIDTurno();
+  const fecha = datos.fecha || fechaHoyStr();
+  const profesionalResuelto = resolverProfesional(datos.profesional, null) || datos.profesional || '';
+  await sheet.addRow({
+    ID_Turno: idTurno,
+    Fecha: fecha,
+    Hora: datos.hora || '',
+    Cliente: datos.cliente || '',
+    Servicio: datos.servicio || '',
+    Profesional: profesionalResuelto,
+    Consultorio: '',
+    Estado: 'Pendiente',
+  });
+  invalidateCache(userId);
+  sincronizarAgenda(userId, fecha);
+  return idTurno;
 }
 
 async function obtenerTurnoPorId(userId, idTurno) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) return null;
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
@@ -152,26 +202,36 @@ async function obtenerTurnoPorId(userId, idTurno) {
 }
 
 async function actualizarEstadoTurno(userId, idTurno, nuevoEstado) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
   if (!row) throw new Error(`Turno ${idTurno} no encontrado`);
   row.set('Estado', nuevoEstado);
   await row.save();
+  invalidateCache(userId);
+  const fecha = row.get('Fecha');
+  const turnosActualizados = rows.filter(r => r.get('Fecha') === fecha).map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosActualizados);
 }
 
 async function eliminarTurno(userId, idTurno) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
   if (!row) throw new Error('turno_no_encontrado');
+  const fecha = row.get('Fecha');
   await row.delete();
+  invalidateCache(userId);
+  const turnosRestantes = rows
+    .filter(r => r.get('ID_Turno') !== idTurno && r.get('Fecha') === fecha)
+    .map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosRestantes);
 }
 
 async function actualizarDatosTurno(userId, idTurno, datos) {
-  const sheet = await crearTabTurnosSiNoExiste(userId);
+  const sheet = await getTurnosSheet(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
   const rows = await sheet.getRows();
   const row = rows.find(r => r.get('ID_Turno') === idTurno);
@@ -181,6 +241,10 @@ async function actualizarDatosTurno(userId, idTurno, datos) {
     if (val !== undefined) row.set(col, val);
   }
   await row.save();
+  invalidateCache(userId);
+  const fecha = row.get('Fecha');
+  const turnosActualizados = rows.filter(r => r.get('Fecha') === fecha).map(rowToTurno);
+  sincronizarAgendaConTurnos(userId, fecha, turnosActualizados);
 }
 
 const BLOCK_WIDTH = 5;
@@ -336,15 +400,113 @@ async function guardarTurnosAgenda(userId, turnos) {
   };
 }
 
+// Reescribe la sección visual de la tab "Agenda" para una fecha, tomando los
+// turnos desde la tab "Turnos" (la fuente de verdad que usa el dashboard). La
+// Agenda es solo una vista linda; nadie la lee de vuelta. Sin esto, queda
+// congelada con lo que se importó de la foto mientras Turnos sigue cambiando
+// (Llegó/Cobrado/editar/borrar), y las dos hojas se ven distintas.
+async function escribirSeccionAgenda(userId, fechaStr, turnos) {
+  const agendaSheet = await crearTabAgendaSiNoExiste(userId);
+  if (!agendaSheet) throw new Error('No se pudo acceder a la tab Agenda');
+
+  await asegurarTamanoSheet(agendaSheet, Math.max(agendaSheet.columnCount, 60), Math.max(agendaSheet.rowCount, 500));
+  await agendaSheet.loadCells();
+  renderizarSeccionFecha(agendaSheet, fechaStr, turnos);
+  await agendaSheet.saveUpdatedCells();
+  invalidateCache(userId);
+}
+
+// Parte pura (sin I/O) de la sincronización: sobre una grilla ya cargada,
+// limpia la sección de `fechaStr` si existe y reescribe sus bloques desde
+// `turnos`. Se exporta para poder testear el cálculo de celdas, que es donde
+// es fácil equivocarse en silencio.
+function renderizarSeccionFecha(sheet, fechaStr, turnos) {
+  // 1. Localizar la sección existente para esta fecha: filas donde aparece
+  //    fechaStr en la columna Fecha de algún bloque (cada bloque ocupa
+  //    BLOCK_WIDTH+BLOCK_SPACING columnas; la Fecha está en el offset 4).
+  let minDataRow = Infinity;
+  let maxDataRow = -1;
+  for (let r = 0; r < sheet.rowCount; r++) {
+    for (let c = BLOCK_HEADERS.length - 1; c < sheet.columnCount; c += BLOCK_WIDTH + BLOCK_SPACING) {
+      if (sheet.getCell(r, c).value === fechaStr) {
+        if (r < minDataRow) minDataRow = r;
+        if (r > maxDataRow) maxDataRow = r;
+      }
+    }
+  }
+
+  let startRow;
+  if (minDataRow !== Infinity) {
+    // Ya existe: limpiar toda la banda de filas de la sección (título 2 filas
+    // arriba del primer dato, headers, y datos) en todas las columnas, para
+    // reescribirla desde cero en el mismo lugar. El margen cubre el caso de
+    // que un bloque crezca al reagrupar (los turnos para una fecha nunca
+    // aumentan en estas operaciones, así que no pisa la fecha de abajo).
+    const titleRow = Math.max(0, minDataRow - 2);
+    const lastRow = Math.min(sheet.rowCount - 1, Math.max(maxDataRow, minDataRow + turnos.length) + 1);
+    for (let r = titleRow; r <= lastRow; r++) {
+      for (let c = 0; c < sheet.columnCount; c++) {
+        const cell = sheet.getCell(r, c);
+        if (cell.value !== null && cell.value !== '') cell.value = '';
+      }
+    }
+    startRow = minDataRow - 1;
+  } else {
+    // Fecha nueva: primera fila libre debajo del contenido existente.
+    let lastUsedRow = 0;
+    for (let r = 0; r < sheet.rowCount; r++) {
+      for (let c = 0; c < sheet.columnCount; c++) {
+        const v = sheet.getCell(r, c).value;
+        if (v !== null && v !== '') { lastUsedRow = r + 1; break; }
+      }
+    }
+    startRow = lastUsedRow === 0 ? 1 : lastUsedRow + 2;
+  }
+
+  // 2. Escribir los bloques desde la columna 0 (si quedaron turnos; si se
+  //    borraron todos, la sección queda limpia y no se escribe nada).
+  if (turnos.length > 0) {
+    const groups = agruparTurnos(turnos);
+    groups.forEach((group, groupIndex) => {
+      const startColumn = groupIndex * (BLOCK_WIDTH + BLOCK_SPACING);
+      escribirBloque(sheet, startRow, startColumn, group, fechaStr);
+    });
+  }
+}
+
+// Sincroniza la tab Agenda reutilizando turnos ya cargados en memoria: evita
+// una segunda llamada a sheet.getRows() cuando la operación principal ya leyó
+// el sheet (reduce reads y evita el 429 de la Sheets API).
+function sincronizarAgendaConTurnos(userId, fechaStr, turnos) {
+  if (!fechaStr) return;
+  runInBackground(userId, async () => {
+    await escribirSeccionAgenda(userId, fechaStr, turnos);
+  }, 'agenda-sync');
+}
+
+// Versión completa: re-lee el sheet. Usar solo cuando no tenemos los turnos
+// en memoria (ej: crearTurno, sincronización iniciada desde el bot).
+function sincronizarAgenda(userId, fechaStr) {
+  if (!fechaStr) return;
+  runInBackground(userId, async () => {
+    const turnos = await obtenerTurnosPorFecha(userId, fechaStr);
+    await escribirSeccionAgenda(userId, fechaStr, turnos);
+  }, 'agenda-sync');
+}
+
 module.exports = {
   crearTabAgendaSiNoExiste,
   guardarTurnosAgenda,
   guardarTurnosFlat,
+  crearTurno,
   obtenerTurnosPorFecha,
   obtenerTurnoPorId,
   actualizarEstadoTurno,
   actualizarDatosTurno,
   eliminarTurno,
+  escribirSeccionAgenda,
+  renderizarSeccionFecha,
+  sincronizarAgenda,
   fechaHoyStr,
   resolverProfesional,
 };

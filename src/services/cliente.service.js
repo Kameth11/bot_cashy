@@ -1,6 +1,7 @@
 const fs = require('fs');
 const { CLIENTES_FILE, USE_SUPABASE } = require('../config');
 const { getSupabase, isAvailable } = require('../lib/supabase');
+const { DEFAULT_PERMISOS, ADMIN_PERMISOS, validarPermisos } = require('../auth/permisos');
 
 let clientes = {};
 
@@ -23,6 +24,7 @@ function buildProfileRow(userId, clienteData = {}) {
     sheet_id: clienteData.sheetId || null,
     plan: clienteData.plan || 'free',
     usuarios: Array.isArray(clienteData.usuarios) ? clienteData.usuarios : [],
+    permisos: clienteData.permisos && typeof clienteData.permisos === 'object' ? clienteData.permisos : {},
   };
 }
 
@@ -55,6 +57,7 @@ async function cargarClientes() {
           email: profile.email || null,
           telegramUserId: profile.id,
           usuarios: profile.usuarios || [],
+          permisos: profile.permisos || {},
           creadoEn: profile.created_at || new Date().toISOString(),
         };
       }
@@ -150,12 +153,70 @@ async function getCliente(userId) {
         email: data.email,
         telegramUserId: data.id,
         usuarios: data.usuarios || [],
+        permisos: data.permisos || {},
       };
     } catch {
       return null;
     }
   }
   return clientes[userId] || null;
+}
+
+// Devuelve los permisos de un invitado dentro del consultorio de ownerUserId.
+// Si el invitado no tiene permisos asignados, devuelve DEFAULT_PERMISOS.
+async function getPermisos(ownerUserId, guestUserId) {
+  const ownerKey = String(ownerUserId);
+  const guestKey = String(guestUserId);
+
+  if (USE_SUPABASE && isAvailable()) {
+    try {
+      const { data } = await getSupabase()
+        .from('profiles')
+        .select('permisos')
+        .eq('id', parseInt(ownerKey, 10))
+        .single();
+      if (data?.permisos) return data.permisos[guestKey] || DEFAULT_PERMISOS;
+    } catch { /* fallthrough to in-memory */ }
+  }
+  const owner = clientes[ownerKey];
+  if (!owner) return DEFAULT_PERMISOS;
+  return (owner.permisos || {})[guestKey] || DEFAULT_PERMISOS;
+}
+
+// Actualiza los permisos de un invitado dentro del consultorio de ownerUserId.
+// permisosArray debe ser un subset validado de PERMISOS.
+async function setPermisos(ownerUserId, guestUserId, permisosArray) {
+  const ownerKey = String(ownerUserId);
+  const guestKey = String(guestUserId);
+
+  if (!validarPermisos(permisosArray)) throw new Error('Permisos inválidos');
+
+  // Actualizar en memoria
+  if (!clientes[ownerKey]) throw new Error('Dueño no encontrado');
+  if (!clientes[ownerKey].permisos) clientes[ownerKey].permisos = {};
+  clientes[ownerKey].permisos[guestKey] = permisosArray;
+
+  // Persistir en Supabase (update puntual, no reescribe todo)
+  if (USE_SUPABASE && isAvailable()) {
+    try {
+      const nuevoMapa = { ...clientes[ownerKey].permisos };
+      await getSupabase()
+        .from('profiles')
+        .update({ permisos: nuevoMapa })
+        .eq('id', parseInt(ownerKey, 10));
+    } catch (err) {
+      console.error('Supabase setPermisos error (clientes.json actualizado igual):', err.message);
+    }
+  }
+
+  // Persistir en clientes.json (siempre, como respaldo)
+  return encolarEscritura(async () => {
+    try {
+      fs.writeFileSync(CLIENTES_FILE, JSON.stringify(clientes, null, 2));
+    } catch (e) {
+      console.error('Error guardando clientes.json en setPermisos:', e.message);
+    }
+  });
 }
 
 // initialize on load
@@ -175,4 +236,6 @@ module.exports = {
   guardarClientes,
   getCliente,
   eliminarCliente,
+  getPermisos,
+  setPermisos,
 };

@@ -1,5 +1,6 @@
 const { bot } = require('../../lib/telegraf');
 const { registrarProfesional } = require('../../services/profesional.service');
+const { resolveTenantId } = require('../../services/tenant.service');
 const state = require('../../state');
 
 bot.command('profesional', async (ctx) => {
@@ -19,7 +20,8 @@ async function handleProfesionalNombreStep(userId, text) {
     return { message: '⚠️ Nombre inválido. Escribí tu nombre completo:' };
   }
 
-  const result = await registrarProfesional(userId, nombre);
+  const tenantId = await resolveTenantId(userId);
+  const result = await registrarProfesional(tenantId, userId, nombre);
   state.pendingRegistros.delete(userId);
 
   if (!result.ok) {

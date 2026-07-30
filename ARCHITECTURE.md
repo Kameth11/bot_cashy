@@ -93,6 +93,41 @@ otra.
   100% de que cada desarrollador recuerde filtrar bien en cada función.
 - Esto es lo que de verdad separa "un cliente" de "SaaS multi-tenant".
 
+**Estado de implementación (2026-06-24): completa** para las tablas
+reales (`profiles`, `movimientos`, `profesionales`). Se optó por el
+camino de filtrado server-side centralizado y auditado (no Supabase
+Auth/RLS por `auth.uid()` — el bot de Telegram no tiene login
+tradicional, hubiera significado rehacer auth desde cero). Implementado:
+- `tenants` + `tenant_id NOT NULL` en las 3 tablas, con 2 tenants reales
+  hoy (consultorio principal + invitado, y un segundo cliente).
+- `src/lib/tenant-db.js` (`forTenant(tenantId)`): única forma permitida
+  de tocar tablas de negocio. `scripts/check-tenant-isolation.js` corre en
+  CI y falla el build si aparece una query fuera de ese wrapper.
+- `src/services/tenant.service.js` (`resolveTenantId`): resuelve
+  `tenantId` desde un Telegram ID (owner o invitado), con cache en
+  memoria.
+- `ensureProfile` (`db.service.js`) crea/hereda el tenant correcto al
+  onboardear un perfil nuevo (agrupando por `sheet_id`), así que clientes
+  futuros no necesitan backfill manual.
+- RLS en `profiles`/`movimientos`/`profesionales`: policy que solo
+  permite `service_role` (no filtra por tenant a nivel de Postgres —
+  ver más abajo). Cierra el acceso directo con `anon_key`, no protege
+  contra un bug en el wrapper de aplicación.
+- Se cerró una fuga cross-tenant real que existía antes de esto:
+  `profesional.service.js` buscaba profesionales por nombre sin filtrar
+  por consultorio.
+
+**TODO:** si/cuando se activen `movimientos_v2`/`movimiento_eventos_v2`/
+`obras_sociales`/`prestaciones` (hoy son esquemas draft que nunca se
+crearon en producción), sumarles `tenant_id` e incluirlas en
+`SCOPED_TABLES` de `tenant-db.js` en ese momento, no antes.
+
+**No implementado a propósito (documentado como Fase 2.6/3 a futuro):**
+RLS real con `auth.uid()`/claims propios vía `set_config` por
+transacción — solo vale la pena con más de un desarrollador tocando el
+código o un volumen de tenants donde un bug de aislamiento sea
+catastrófico, no para vender al segundo/tercer cliente.
+
 **Fase 3 — Onboarding automático**
 - Dado que la decisión es mantener Sheets para siempre como respaldo, esta
   fase es la que más esfuerzo concentra: automatizar la creación del Sheet
@@ -209,6 +244,64 @@ cualquiera de estos:
   como el `write-queue` o las TTLMaps de `state/index.js` — hoy asumen un
   solo proceso).
 
+### Escalabilidad y resiliencia bajo carga
+
+**Hecho (2026-06-24) — optimizaciones que NO requieren cambiar de hosting ni
+infra nueva.** Llevan el techo de "un solo proceso" bastante más arriba
+(decenas de tenants) sin tocar la arquitectura:
+
+- **Logs**: se sacaron los `console.log('[debug]'…)` que imprimían movimientos
+  completos (PII) en cada insert.
+- **Crash recovery**: `uncaughtException` ahora loguea, cierra ordenado y hace
+  `process.exit(1)` para que Railway levante una instancia limpia (antes seguía
+  con estado indefinido).
+- **Rate limit en `/api`**: límite global por IP (120/min) sobre las rutas de
+  datos (excluye `/api/auth/*`, `/api/events` SSE y `/api/cotizacion`). Protege
+  la cuota de Google Sheets de un dashboard con refresh agresivo o de abuso.
+- **Menos llamadas a Sheets por operación**: `getSheetCliente` reusa el
+  documento cacheado (TTL 2h) en vez de rehacer `loadInfo()`, y se quitó
+  `loadCells()` (cargaba toda la grilla) de los caminos de lectura y escritura.
+- **Dual-write a Sheets best-effort**: con Supabase como fuente de verdad, la
+  copia a Google Sheets se hace en background bajo el lock del usuario
+  (`runInBackground` en `src/lib/write-queue.js`), sin demorar la respuesta del
+  bot/dashboard. Si Sheets está lento o sobre cuota, no afecta al usuario.
+- **Lecturas acotadas**: `fetchLegacyRowsForUser` trae como mucho
+  `MAX_MOVIMIENTOS_READ` (20k) filas más recientes en vez de toda la historia,
+  con índice `idx_movimientos_tenant_user_created`
+  (`sql/migrations/004_indexes.sql`). Es un guard contra lecturas desbocadas,
+  no paginación real — cuando un tenant se acerque a ese número, toca paginar.
+- **Concurrencia de Gemini acotada**: semáforo compartido (`src/lib/semaphore.js`,
+  máx 3 en vuelo, cola de 12) para fotos de agenda + transcripción de audio, así
+  N usuarios mandando media a la vez no disparan N llamadas simultáneas a Gemini.
+
+**Pendiente — escalado horizontal real (Fase 2, NO implementado).** El único
+bloqueante que **corrompe datos** al correr 2+ instancias es el write-lock en
+memoria (`withUserWriteLock` en `src/lib/write-queue.js`): dos instancias
+escribiendo el mismo Sheet/fila a la vez. El resto del estado en memoria
+(rate limiters, `_movCache` de `api/index.js`, suscriptores SSE de
+`events.service.js`, TTLMaps de `state/index.js`) es degradable-pero-tolerable
+por instancia un tiempo. Para escalar a réplicas hace falta:
+
+1. **Prerrequisito (acción manual)**: provisionar **Redis** en Railway
+   (add-on) y exponer `REDIS_URL` como variable de entorno. Agregar dependencia
+   `ioredis`.
+2. **Write-lock distribuido en Redis**: reemplazar la implementación de
+   `withUserWriteLock` por un lock en Redis (`SET key NX PX ttl` con release
+   seguro, o `redlock`), keyed por userId, manteniendo la misma interfaz para
+   no tocar los callers. Conviene un fallback automático a la versión en memoria
+   cuando `REDIS_URL` no está, para poder shipear el código dormido.
+3. **`auth_codes`**: ya se persisten en Supabase (`api/index.js`); quitar la
+   dependencia del `Map` global en memoria como fuente.
+4. **SSE entre instancias**: o Redis pub/sub para fan-out de
+   `movimientos_updated`, o activar **sticky sessions** en Railway y mantener
+   SSE por-instancia.
+5. **Activar réplicas**: recién subir a 2+ instancias en Railway cuando 2–4
+   estén listos **y** las optimizaciones de arriba lleven un tiempo estables en
+   producción. No antes.
+
+Mientras tanto, el sistema corre como **una sola instancia** (no subir el
+replica count en Railway hasta hacer la Fase 2).
+
 ### CI/CD
 
 **Hoy**: push directo a `main`, Railway redeploya automático, CI corre pero
@@ -257,3 +350,11 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-06-19 | Migración a modelo v2 sin reprocesar histórico (convive con legacy) | Menor riesgo/esfuerzo que una migración masiva; el roadmap ya lo sugería |
 | 2026-06-19 | Railway como hosting actual, no decisión permanente | Revisar si crece la cantidad de tenants o el costo deja de ser conveniente |
 | 2026-06-19 | Mantener push directo a `main`, planificar PRs + CI bloqueante a futuro | Velocidad de iteración hoy > proceso, pero hay disparadores claros para cambiarlo |
+| 2026-06-24 | Optimizaciones de carga sin infra nueva (rate limit, dual-write async, lecturas acotadas, semáforo Gemini) antes de escalar horizontal | Suben el techo de un solo proceso a decenas de tenants con bajo riesgo; el escalado horizontal (Redis) recién vale la pena después |
+| 2026-06-24 | Escalado horizontal (Fase 2) requiere Redis y se mantiene en **una sola instancia** hasta implementarlo | El write-lock en memoria corrompe datos con 2+ instancias; ver sección 6, "Escalabilidad y resiliencia" |
+| 2026-07-13 | Permisos granulares por usuario (6 permisos, presets de conveniencia) en vez de roles fijos | Permite que el dueño configure exactamente qué ve cada persona (odontólogos, recepcionista, contadora) sin roles rígidos |
+| 2026-07-13 | Permisos resueltos server-side en cada request, no horneados en el JWT | Los tokens duran 180d; un cambio de permisos debe impactar al toque sin re-login |
+| 2026-07-13 | `ver_movimientos` y `ver_balance` son permisos separados | La recepcionista carga cobros (ver_movimientos + cargar_movimientos) pero no ve el balance/reportes (ver_balance) |
+| 2026-07-13 | `/cobrado` en agenda requiere `cargar_movimientos`, no `editar_agenda` | Cobrar un turno crea un movimiento de plata; un odontólogo con solo agenda no debe poder cobrar |
+| 2026-07-13 | Default de permisos = `['ver_agenda']` (mínimo, fail-safe) | Un usuario nuevo nunca ve ni toca plata por accidente |
+| 2026-07-13 | Dueño/admin siempre tiene ADMIN_PERMISOS implícitos, no se persisten | No hay forma de auto-bloquearse como dueño ni de perder el acceso por un bug de escritura |

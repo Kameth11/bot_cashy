@@ -21,4 +21,15 @@ function withUserWriteLock(userId, fn) {
   return run; // el caller ve el resultado/error real de fn, sin envolver
 }
 
-module.exports = { withUserWriteLock };
+// Corre `fn` bajo el lock de escritura del usuario pero SIN bloquear al caller:
+// devuelve de inmediato y deja la operación corriendo en background. Sirve para
+// trabajo best-effort que no debe demorar la respuesta al usuario (ej: el
+// dual-write a Google Sheets cuando Supabase ya es la fuente de verdad). Los
+// errores se loguean, nunca se propagan (no hay nadie esperándolos).
+function runInBackground(userId, fn, label = 'background') {
+  withUserWriteLock(userId, fn).catch(err => {
+    console.error(`runInBackground[${label}] error (userId=${userId}):`, err && err.message ? err.message : err);
+  });
+}
+
+module.exports = { withUserWriteLock, runInBackground };

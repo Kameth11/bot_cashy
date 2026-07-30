@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { api } from '../services/api'
 import DatePickerButton from '../components/DatePickerButton'
+import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 
 const pad2 = n => String(n).padStart(2, '0')
 const hoyMedianoche = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }
@@ -15,19 +16,22 @@ const CONSULTORIO_MAP = {
   'consultorio 3': '',
 }
 
-// Opciones fijas de filtro: solo los consultorios con nombre asignado
+const CONSULTORIOS_CONFIG = [
+  { key: 'consultorio 1', label: 'Consultorio 1', nombre: 'Laura' },
+  { key: 'consultorio 2', label: 'Consultorio 2', nombre: 'Diego' },
+  { key: 'consultorio 3', label: 'Consultorio 3', nombre: '' },
+]
+
 const FILTROS_CONSULTORIO = Object.entries(CONSULTORIO_MAP)
   .filter(([, nombre]) => nombre !== '')
   .map(([, nombre]) => nombre)
 
-// Normaliza variantes como "Consultorio N° 1", "Consultorio Nro. 1",
-// "CONSULTORIO #1" a la forma "consultorio 1" que usa CONSULTORIO_MAP.
 function normalizarConsultorioKey(value) {
   if (!value) return ''
   const key = String(value)
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
   const match = key.match(/consultorio[^0-9]*([0-9]+)/)
@@ -43,8 +47,28 @@ function resolverProfesional(profesional, consultorio) {
   if (profesional) {
     const key = normalizarConsultorioKey(profesional)
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
+    const nameLower = profesional.trim().toLowerCase()
+    for (const nombre of Object.values(CONSULTORIO_MAP)) {
+      if (nombre && nombre.toLowerCase() === nameLower) return nombre
+    }
   }
   return ''
+}
+
+function resolverConsultorioKey(turno) {
+  if (turno.consultorio) {
+    const key = normalizarConsultorioKey(turno.consultorio)
+    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return key
+  }
+  if (turno.profesional) {
+    const nameLower = turno.profesional.trim().toLowerCase()
+    for (const [key, nombre] of Object.entries(CONSULTORIO_MAP)) {
+      if (nombre && nombre.toLowerCase() === nameLower) return key
+    }
+    const key = normalizarConsultorioKey(turno.profesional)
+    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return key
+  }
+  return null
 }
 
 const ESTADOS = {
@@ -52,6 +76,7 @@ const ESTADOS = {
   'Llegó':   { label: 'Llegó',    bg: '#DEEBFF', color: '#0747A6',  bar: '#0747A6'  },
   Cobrado:   { label: 'Cobrado',  bg: '#E3FCEF', color: '#006644',  bar: '#006644'  },
   Cancelado: { label: 'Cancelado',bg: '#FFEBE6', color: '#BF2600',  bar: '#BF2600'  },
+  'No vino': { label: 'No vino',  bg: '#F4F5F7', color: '#5E6C84',  bar: '#5E6C84'  },
 }
 
 
@@ -60,8 +85,8 @@ export default function AgendaPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [modalTurno, setModalTurno] = useState(null)
-  const [monto, setMonto] = useState('')
-  const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [montoTotal, setMontoTotal] = useState('')
+  const [pagos, setPagos] = useState([{ metodoPago: 'efectivo', monto: '' }])
   const [guardando, setGuardando] = useState(false)
   const [accionando, setAccionando] = useState(null)
   const [modalEditar, setModalEditar] = useState(null)
@@ -69,12 +94,14 @@ export default function AgendaPage() {
   const [editando, setEditando] = useState(false)
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(null)
   const [eliminando, setEliminando] = useState(false)
-  const [filtroProfesional, setFiltroProfesional] = useState(null)
+  const [modalNuevo, setModalNuevo] = useState(false)
+  const [nuevoForm, setNuevoForm] = useState({ cliente: '', servicio: '', profesional: '', hora: '' })
+  const [creando, setCreando] = useState(false)
   const [fecha, setFecha] = useState(hoyMedianoche)
+  const [dropdownAbierto, setDropdownAbierto] = useState(null)
 
   function shiftFecha(deltaDias) {
     setFecha(f => { const d = new Date(f); d.setDate(d.getDate() + deltaDias); return d })
-    setFiltroProfesional(null)
   }
 
   const cargar = useCallback(async () => {
@@ -91,6 +118,7 @@ export default function AgendaPage() {
   }, [fecha])
 
   useEffect(() => { cargar() }, [cargar])
+  useMovimientosEvents(useCallback(() => cargar(), [cargar]))
 
   async function handleLlego(turno) {
     setAccionando(turno.idTurno)
@@ -101,6 +129,32 @@ export default function AgendaPage() {
       ))
     } catch {
       alert('Error al registrar llegada')
+    } finally {
+      setAccionando(null)
+    }
+  }
+
+  async function handleCancelar(turno) {
+    setAccionando(turno.idTurno)
+    setDropdownAbierto(null)
+    try {
+      await api.post(`/api/agenda/${turno.idTurno}/cancelar`)
+      setTurnos(prev => prev.map(t => t.idTurno === turno.idTurno ? { ...t, estado: 'Cancelado' } : t))
+    } catch {
+      alert('Error al cancelar el turno')
+    } finally {
+      setAccionando(null)
+    }
+  }
+
+  async function handleNoVino(turno) {
+    setAccionando(turno.idTurno)
+    setDropdownAbierto(null)
+    try {
+      await api.post(`/api/agenda/${turno.idTurno}/novino`)
+      setTurnos(prev => prev.map(t => t.idTurno === turno.idTurno ? { ...t, estado: 'No vino' } : t))
+    } catch {
+      alert('Error al registrar ausencia')
     } finally {
       setAccionando(null)
     }
@@ -139,20 +193,69 @@ export default function AgendaPage() {
     }
   }
 
+  async function confirmarNuevo() {
+    if (!nuevoForm.cliente.trim()) { alert('El nombre del paciente es requerido'); return }
+    setCreando(true)
+    try {
+      const { data } = await api.post('/api/agenda', {
+        ...nuevoForm,
+        fecha: toApiFormat(fecha),
+      })
+      setTurnos(prev => [...prev, {
+        idTurno: data.idTurno,
+        cliente: nuevoForm.cliente,
+        servicio: nuevoForm.servicio,
+        profesional: nuevoForm.profesional,
+        hora: nuevoForm.hora,
+        estado: 'Pendiente',
+        consultorio: '',
+      }])
+      setModalNuevo(false)
+      setNuevoForm({ cliente: '', servicio: '', profesional: '', hora: '' })
+    } catch {
+      alert('Error al crear el turno')
+    } finally {
+      setCreando(false)
+    }
+  }
+
+  function agregarLineaPago() {
+    setPagos(prev => [...prev, { metodoPago: 'efectivo', monto: '' }])
+  }
+
+  function quitarLineaPago(idx) {
+    setPagos(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  function actualizarLineaPago(idx, campo, valor) {
+    setPagos(prev => prev.map((p, i) => i === idx ? { ...p, [campo]: valor } : p))
+  }
+
+  const montoPagado = pagos.reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
+  const saldoPendienteModal = Math.max(0, (Number(montoTotal) || 0) - montoPagado)
+
   async function confirmarCobro() {
-    if (!monto || isNaN(Number(monto)) || Number(monto) <= 0) {
-      alert('Ingresá un monto válido')
+    if (!montoTotal || isNaN(Number(montoTotal)) || Number(montoTotal) <= 0) {
+      alert('Ingresá un monto total válido')
+      return
+    }
+    if (pagos.some(p => !p.monto || isNaN(Number(p.monto)) || Number(p.monto) <= 0)) {
+      alert('Completá un monto válido en cada forma de pago')
+      return
+    }
+    if (montoPagado > Number(montoTotal) + 0.01) {
+      alert('La suma de los pagos no puede superar el monto total')
       return
     }
     setGuardando(true)
     try {
-      await api.patch(`/api/agenda/${modalTurno.idTurno}/cobrado`, {
-        monto: Number(monto),
-        metodoPago,
+      const { data } = await api.patch(`/api/agenda/${modalTurno.idTurno}/cobrado`, {
+        montoTotal: Number(montoTotal),
+        pagos: pagos.map(p => ({ monto: Number(p.monto), metodoPago: p.metodoPago })),
         moneda: 'Pesos',
       })
       setTurnos(prev => prev.map(t =>
-        t.idTurno === modalTurno.idTurno ? { ...t, estado: 'Cobrado' } : t
+        t.idTurno === modalTurno.idTurno ? { ...t, estado: data.estadoFinal } : t
       ))
       setModalTurno(null)
     } catch {
@@ -164,25 +267,14 @@ export default function AgendaPage() {
 
   const esHoy = toInputValue(fecha) === toInputValue(hoyMedianoche())
 
-  // Profesionales ocasionales del día (no están en los chips fijos)
-  const profesionalesExtra = [...new Set(
-    turnos
-      .map(t => resolverProfesional(t.profesional, t.consultorio))
-      .filter(p => p && !FILTROS_CONSULTORIO.includes(p))
-  )]
-
-  const turnosFiltrados = filtroProfesional !== null
-    ? turnos.filter(t => resolverProfesional(t.profesional, t.consultorio) === filtroProfesional)
-    : turnos
-
-  const turnosConTurno = turnosFiltrados.filter(t => t.estado !== 'Cancelado')
+  const turnosConTurno = turnos.filter(t => t.estado !== 'Cancelado' && t.estado !== 'No vino')
   const cobrados   = turnosConTurno.filter(t => t.estado === 'Cobrado').length
   const llegaron   = turnosConTurno.filter(t => t.estado === 'Llegó').length
   const pendientes = turnosConTurno.filter(t => t.estado === 'Pendiente').length
 
-  const turnosList = [...turnosFiltrados].sort((a, b) =>
-    (a.hora || '').localeCompare(b.hora || '')
-  )
+  const parseHora = h => { if (!h) return 9999; const [hh, mm] = h.split(':').map(Number); return hh * 60 + (mm || 0) }
+  const turnosList = [...turnos].sort((a, b) => parseHora(a.hora) - parseHora(b.hora))
+  const sinAsignar = turnosList.filter(t => resolverConsultorioKey(t) === null)
 
   return (
     <div className="page">
@@ -196,52 +288,23 @@ export default function AgendaPage() {
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <button className="btn-agenda" onClick={() => shiftFecha(-1)} title="Día anterior">←</button>
           {!esHoy && (
-            <button className="btn-agenda" onClick={() => { setFecha(hoyMedianoche()); setFiltroProfesional(null) }}>Hoy</button>
+            <button className="btn-agenda" onClick={() => setFecha(hoyMedianoche())}>Hoy</button>
           )}
           <button className="btn-agenda" onClick={() => shiftFecha(1)} disabled={esHoy} title="Día siguiente">→</button>
           <DatePickerButton
             value={toInputValue(fecha)}
-            onChange={v => { if (v) { setFecha(fromInputValue(v)); setFiltroProfesional(null) } }}
+            onChange={v => { if (v) setFecha(fromInputValue(v)) }}
             title="Elegir fecha"
           />
           <button className="btn-agenda" onClick={cargar}>↻</button>
+          <button className="btn-agenda primary" onClick={() => { setNuevoForm({ cliente: '', servicio: '', profesional: '', hora: '' }); setModalNuevo(true) }}>+ Turno</button>
         </div>
       </div>
 
       {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}
 
-      {/* Filtros por consultorio */}
-      {!loading && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-          <button
-            className={`chip${filtroProfesional === null ? ' active' : ''}`}
-            onClick={() => setFiltroProfesional(null)}
-          >
-            Todos
-          </button>
-          {FILTROS_CONSULTORIO.map(nombre => (
-            <button
-              key={nombre}
-              className={`chip${filtroProfesional === nombre ? ' active' : ''}`}
-              onClick={() => setFiltroProfesional(nombre)}
-            >
-              {nombre}
-            </button>
-          ))}
-          {profesionalesExtra.map(nombre => (
-            <button
-              key={nombre}
-              className={`chip${filtroProfesional === nombre ? ' active' : ''}`}
-              onClick={() => setFiltroProfesional(nombre)}
-            >
-              {nombre}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Summary chips */}
-      {!loading && turnosFiltrados.length > 0 && (
+      {!loading && turnos.length > 0 && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           {[
             ['Pendientes', pendientes, 'Pendiente'],
@@ -258,68 +321,142 @@ export default function AgendaPage() {
         </div>
       )}
 
-      {/* Appointment list */}
-      <div className="card-surface">
-        {loading && <div className="empty-state">Cargando…</div>}
+      {/* 3-column consultorio view */}
+      {loading && <div className="card-surface"><div className="empty-state">Cargando…</div></div>}
 
-        {!loading && turnosList.length === 0 && !error && (
-          <div className="empty-state">
-            {esHoy
-              ? 'Sin turnos hoy. Enviá una foto de la agenda al bot para cargarlos.'
-              : 'Sin turnos para este día.'}
+      {!loading && (
+        <div className="agenda-cols">
+          {CONSULTORIOS_CONFIG.map(({ key, label, nombre }) => {
+            const colTurnos = turnosList.filter(t => resolverConsultorioKey(t) === key)
+            return (
+              <div key={key} className="agenda-col">
+                <div className="agenda-col-header">
+                  <span className="agenda-col-label">{label}</span>
+                  {nombre && <span className="agenda-col-name">{nombre}</span>}
+                </div>
+                <div className="agenda-col-body">
+                  {colTurnos.length === 0 && (
+                    <div className="agenda-col-empty">Sin turnos</div>
+                  )}
+                  {colTurnos.map((turno, i) => {
+                    const e = ESTADOS[turno.estado] || ESTADOS.Pendiente
+                    const puedeAccion = turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado' && turno.estado !== 'No vino'
+                    return (
+                      <div key={turno.idTurno || i} className="agenda-card">
+                        <div className="agenda-card-main">
+                          <div className="agenda-card-top">
+                            <span className="agenda-time">{turno.hora || '–'}</span>
+                            <span className="agenda-badge" style={{ background: e.bg, color: e.color }}>{e.label}</span>
+                          </div>
+                          <div className="agenda-patient">{turno.cliente || 'Sin nombre'}</div>
+                          {turno.servicio && <div className="agenda-treat">{turno.servicio}</div>}
+                        </div>
+                        <div className="agenda-card-actions">
+                          <button className="action-btn" title="Editar" onClick={() => abrirEditar(turno)}>
+                            <Pencil size={13} />
+                          </button>
+                          <button className="action-btn" title="Eliminar" style={{ color: 'var(--red)' }} onClick={() => setConfirmandoEliminar(turno)}>
+                            <Trash2 size={13} />
+                          </button>
+                          {puedeAccion && (
+                            <>
+                              {turno.estado !== 'Llegó' && (
+                                <button
+                                  className="btn-agenda"
+                                  style={{ fontSize: 11, padding: '3px 8px' }}
+                                  disabled={accionando === turno.idTurno}
+                                  onClick={() => handleLlego(turno)}
+                                >
+                                  {accionando === turno.idTurno ? '…' : 'Llegó'}
+                                </button>
+                              )}
+                              <button
+                                className="btn-agenda primary"
+                                style={{ fontSize: 11, padding: '3px 8px' }}
+                                disabled={accionando === turno.idTurno}
+                                onClick={() => { setModalTurno(turno); setMontoTotal(''); setPagos([{ metodoPago: 'efectivo', monto: '' }]) }}
+                              >
+                                Cobrar
+                              </button>
+                              <div style={{ position: 'relative' }}>
+                                <button
+                                  className="action-btn"
+                                  title="Más opciones"
+                                  disabled={accionando === turno.idTurno}
+                                  onClick={ev => { ev.stopPropagation(); setDropdownAbierto(d => d === turno.idTurno ? null : turno.idTurno) }}
+                                  style={{ fontSize: 14, fontWeight: 700, padding: '0 6px' }}
+                                >
+                                  ⋮
+                                </button>
+                                {dropdownAbierto === turno.idTurno && (
+                                  <>
+                                    <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setDropdownAbierto(null)} />
+                                    <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(9,30,66,.15)', zIndex: 100, minWidth: 130, overflow: 'hidden' }}>
+                                      <button
+                                        style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}
+                                        onClick={() => handleCancelar(turno)}
+                                      >Canceló</button>
+                                      <button
+                                        style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}
+                                        onClick={() => handleNoVino(turno)}
+                                      >No vino</button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Turnos sin consultorio asignado */}
+      {!loading && sinAsignar.length > 0 && (
+        <div className="card-surface" style={{ marginTop: 12 }}>
+          <div style={{ padding: '8px 16px', fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--bg)' }}>
+            Sin consultorio asignado
           </div>
-        )}
-
-        {!loading && turnosList.map((turno, i) => {
-          const e = ESTADOS[turno.estado] || ESTADOS.Pendiente
-          const puedeAccion = turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado'
-          return (
-            <div key={turno.idTurno || i} className="agenda-appt">
-              <span className="agenda-time">{turno.hora || '–'}</span>
-              <div className="agenda-bar" style={{ background: e.bar }} />
-              <div className="agenda-info">
-                <div className="agenda-patient">{turno.cliente || 'Sin nombre'}</div>
-                {(turno.servicio || resolverProfesional(turno.profesional, turno.consultorio)) && (
-                  <div className="agenda-treat">
-                    {[turno.servicio, resolverProfesional(turno.profesional, turno.consultorio)].filter(Boolean).join(' · ')}
-                  </div>
-                )}
-              </div>
-              <span className="agenda-badge" style={{ background: e.bg, color: e.color, marginRight: 8 }}>
-                {e.label}
-              </span>
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                <button className="action-btn" title="Editar" onClick={() => abrirEditar(turno)}>
-                  <Pencil size={14} />
-                </button>
-                <button className="action-btn" title="Eliminar" style={{ color: 'var(--red)' }} onClick={() => setConfirmandoEliminar(turno)}>
-                  <Trash2 size={14} />
-                </button>
-                {puedeAccion && (
-                  <>
-                    {turno.estado !== 'Llegó' && (
-                      <button
-                        className="btn-agenda"
-                        disabled={accionando === turno.idTurno}
-                        onClick={() => handleLlego(turno)}
-                      >
-                        {accionando === turno.idTurno ? '…' : 'Llegó'}
+          {sinAsignar.map((turno, i) => {
+            const e = ESTADOS[turno.estado] || ESTADOS.Pendiente
+            const puedeAccion = turno.estado !== 'Cobrado' && turno.estado !== 'Cancelado' && turno.estado !== 'No vino'
+            return (
+              <div key={turno.idTurno || i} className="agenda-appt">
+                <span className="agenda-time">{turno.hora || '–'}</span>
+                <div className="agenda-bar" style={{ background: e.bar }} />
+                <div className="agenda-info">
+                  <div className="agenda-patient">{turno.cliente || 'Sin nombre'}</div>
+                  {turno.servicio && <div className="agenda-treat">{turno.servicio}</div>}
+                </div>
+                <span className="agenda-badge" style={{ background: e.bg, color: e.color, marginRight: 8 }}>{e.label}</span>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <button className="action-btn" title="Editar" onClick={() => abrirEditar(turno)}><Pencil size={14} /></button>
+                  <button className="action-btn" title="Eliminar" style={{ color: 'var(--red)' }} onClick={() => setConfirmandoEliminar(turno)}><Trash2 size={14} /></button>
+                  {puedeAccion && (
+                    <>
+                      {turno.estado !== 'Llegó' && (
+                        <button className="btn-agenda" disabled={accionando === turno.idTurno} onClick={() => handleLlego(turno)}>
+                          {accionando === turno.idTurno ? '…' : 'Llegó'}
+                        </button>
+                      )}
+                      <button className="btn-agenda primary" disabled={accionando === turno.idTurno}
+                        onClick={() => { setModalTurno(turno); setMontoTotal(''); setPagos([{ metodoPago: 'efectivo', monto: '' }]) }}>
+                        Cobrar
                       </button>
-                    )}
-                    <button
-                      className="btn-agenda primary"
-                      disabled={accionando === turno.idTurno}
-                      onClick={() => { setModalTurno(turno); setMonto(''); setMetodoPago('efectivo') }}
-                    >
-                      Cobrar
-                    </button>
-                  </>
-                )}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Eliminar modal */}
       {confirmandoEliminar && (
@@ -349,7 +486,6 @@ export default function AgendaPage() {
               {[
                 { label: 'Paciente', key: 'cliente' },
                 { label: 'Servicio', key: 'servicio' },
-                { label: 'Profesional', key: 'profesional' },
                 { label: 'Hora', key: 'hora', placeholder: '09:00' },
               ].map(({ label, key, placeholder }) => (
                 <div key={key}>
@@ -362,11 +498,85 @@ export default function AgendaPage() {
                   />
                 </div>
               ))}
+              <div>
+                <label className="form-label">Profesional</label>
+                <select
+                  className="form-input"
+                  value={editForm.profesional}
+                  onChange={e => setEditForm(f => ({ ...f, profesional: e.target.value }))}
+                >
+                  <option value="">Sin asignar</option>
+                  {FILTROS_CONSULTORIO.map(nombre => (
+                    <option key={nombre} value={nombre}>{nombre}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setModalEditar(null)}>Cancelar</button>
               <button className="btn-primary" onClick={confirmarEdicion} disabled={editando}>
                 {editando ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nuevo turno modal */}
+      {modalNuevo && (
+        <div className="overlay" onClick={() => setModalNuevo(false)}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title" style={{ fontSize: 16 }}>Nuevo turno</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16, textTransform: 'capitalize' }}>
+              {fecha.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+            <div className="modal-form">
+              <div>
+                <label className="form-label">Paciente *</label>
+                <input
+                  className="form-input"
+                  value={nuevoForm.cliente}
+                  placeholder="Nombre del paciente"
+                  autoFocus
+                  onChange={e => setNuevoForm(f => ({ ...f, cliente: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="form-label">Hora</label>
+                <input
+                  className="form-input"
+                  value={nuevoForm.hora}
+                  placeholder="09:00"
+                  onChange={e => setNuevoForm(f => ({ ...f, hora: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="form-label">Servicio</label>
+                <input
+                  className="form-input"
+                  value={nuevoForm.servicio}
+                  placeholder="Ej: Limpieza, Ortodoncia…"
+                  onChange={e => setNuevoForm(f => ({ ...f, servicio: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="form-label">Profesional</label>
+                <select
+                  className="form-input"
+                  value={nuevoForm.profesional}
+                  onChange={e => setNuevoForm(f => ({ ...f, profesional: e.target.value }))}
+                >
+                  <option value="">Sin asignar</option>
+                  {FILTROS_CONSULTORIO.map(nombre => (
+                    <option key={nombre} value={nombre}>{nombre}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setModalNuevo(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={confirmarNuevo} disabled={creando}>
+                {creando ? 'Guardando…' : 'Agregar turno'}
               </button>
             </div>
           </div>
@@ -385,25 +595,64 @@ export default function AgendaPage() {
             </p>
             <div className="modal-form">
               <div>
-                <label className="form-label">Monto ($)</label>
+                <label className="form-label">Monto total ($)</label>
                 <input
                   className="form-input"
                   type="number"
                   placeholder="15000"
-                  value={monto}
-                  onChange={e => setMonto(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && confirmarCobro()}
+                  value={montoTotal}
+                  onChange={e => setMontoTotal(e.target.value)}
                   autoFocus
                 />
               </div>
-              <div>
-                <label className="form-label">Método de pago</label>
-                <select className="form-input" value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
-                  <option value="efectivo">Efectivo</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="tarjeta">Tarjeta</option>
-                </select>
-              </div>
+
+              {pagos.map((pago, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="form-label">Forma de pago</label>
+                    <select
+                      className="form-input"
+                      value={pago.metodoPago}
+                      onChange={e => actualizarLineaPago(idx, 'metodoPago', e.target.value)}
+                    >
+                      <option value="efectivo">Efectivo</option>
+                      <option value="transferencia">Transferencia</option>
+                      <option value="tarjeta">Tarjeta</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="form-label">Monto</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      placeholder="0"
+                      value={pago.monto}
+                      onChange={e => actualizarLineaPago(idx, 'monto', e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && confirmarCobro()}
+                    />
+                  </div>
+                  {pagos.length > 1 && (
+                    <button
+                      className="action-btn"
+                      title="Quitar"
+                      style={{ color: 'var(--red)', marginBottom: 4 }}
+                      onClick={() => quitarLineaPago(idx)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              <button className="btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={agregarLineaPago}>
+                + Agregar forma de pago
+              </button>
+
+              {Number(montoTotal) > 0 && saldoPendienteModal > 0.01 && (
+                <p style={{ fontSize: 13, color: 'var(--orange, #FF8B00)' }}>
+                  ⚠️ Quedará un saldo pendiente de ${saldoPendienteModal.toLocaleString('es-AR')}
+                </p>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setModalTurno(null)}>Cancelar</button>

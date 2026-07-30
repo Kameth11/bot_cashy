@@ -1,6 +1,7 @@
 const { AUTHORIZED_USER_ID, ALLOWED_EMAILS, CODIGO_EXPIRACION_HORAS } = require('../config');
 const clienteService = require('../services/cliente.service');
 const state = require('../state');
+const { ADMIN_PERMISOS, DEFAULT_PERMISOS } = require('./permisos');
 
 const CODIGO_EXPIRACION_MS = CODIGO_EXPIRACION_HORAS * 60 * 60 * 1000;
 
@@ -60,10 +61,24 @@ function codigoInvitacionExpirado(codigoData) {
   return Date.now() - codigoData.createdAt > CODIGO_EXPIRACION_MS;
 }
 
+// Resuelve el array de permisos de un userId.
+// Se llama por request (no desde el JWT) para que un cambio de permisos
+// impacte al toque sin esperar a que expire el token de 180 días.
+function resolverPermisos(userId) {
+  const numId = Number(userId);
+  if (esAdminOriginal(numId)) return ADMIN_PERMISOS;
+  const cliente = obtenerClientePorUserId(numId);
+  if (!cliente) return DEFAULT_PERMISOS;
+  if (cliente.isOwner) return ADMIN_PERMISOS;
+  const mapa = cliente.permisos || {};
+  return mapa[String(userId)] || DEFAULT_PERMISOS;
+}
+
 module.exports = {
   esAdminOriginal,
   esEmailAutorizado,
   obtenerClientePorUserId,
+  resolverPermisos,
   getIntentosEmail,
   incrementIntentosEmail,
   resetIntentosEmail,

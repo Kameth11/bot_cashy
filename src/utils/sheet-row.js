@@ -180,6 +180,11 @@ function getRowSaldoPendiente(row, fallback = 0) {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+function getRowFechaCobro(row, fallback = '') {
+  const value = getField(row, ['FechaCobro', 'fechacobro'], fallback);
+  return formatDateValue(value, fallback);
+}
+
 function toMovimiento(row) {
   return {
     fecha: getRowFecha(row, ''),
@@ -201,6 +206,7 @@ function toMovimiento(row) {
     fechaPrestacion: getRowFechaPrestacion(row, ''),
     fechaVencimiento: getRowFechaVencimiento(row, ''),
     saldoPendiente: getRowSaldoPendiente(row, 0),
+    fechaCobro: getRowFechaCobro(row, ''),
   };
 }
 
@@ -235,6 +241,7 @@ module.exports = {
   getRowFechaPrestacion,
   getRowFechaVencimiento,
   getRowSaldoPendiente,
+  getRowFechaCobro,
   formatDateValue,
   toMovimiento,
   isValidMovimientoRow,

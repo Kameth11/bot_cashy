@@ -1,10 +1,12 @@
 const { getSupabase, isAvailable } = require('../lib/supabase');
+const { forTenant } = require('../lib/tenant-db');
+const { resolveTenantId, invalidateTenantCache } = require('./tenant.service');
 const { USE_SUPABASE, SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 const { emitMovimientosUpdated } = require('./events.service');
-const { withUserWriteLock } = require('../lib/write-queue');
+const { withUserWriteLock, runInBackground } = require('../lib/write-queue');
 const { getRowIdUnico, formatDateValue } = require('../utils/sheet-row');
 const {
   buildMovimientoV2Payload,
@@ -16,6 +18,13 @@ const {
   normalizeMetodoPago,
 } = require('../utils/movimiento-v2');
 
+// Tope de seguridad para lecturas: evita que una cuenta con años de historia
+// traiga decenas de miles de filas en cada fetch del dashboard. Se traen las
+// más recientes (order created_at desc); el orden final lo rearma sortByKeyAsc
+// aguas abajo. Es un guard contra lecturas desbocadas, no paginación real
+// (cuando un tenant se acerque a este número, toca paginar de verdad).
+const MAX_MOVIMIENTOS_READ = 20000;
+
 const v2CapabilityCache = {
   checked: false,
   movimientosV2: false,
@@ -26,6 +35,7 @@ const legacyCapabilityCache = {
   checked: false,
   extendedMovimientos: false,
   extendedCampos: false,
+  fechaCobro: false,
 };
 
 let v2CapabilityPromise = null;
@@ -89,6 +99,36 @@ function invalidateCache(userId) {
   getSheetService().invalidateCache(userId);
 }
 
+// Resuelve el tenant de un sheet_id (otro profile ya creado con el mismo
+// sheet, ej: el owner cuando este perfil es de un usuario invitado) o crea
+// un tenant nuevo. profiles/tenants quedan fuera de tenant-db.js a
+// proposito: son las tablas que definen el mapeo userId -> tenantId, no
+// tiene sentido pedirles el tenantId a si mismas (ver tenant.service.js).
+async function resolveOrCreateTenantId(supabase, sheetId) {
+  if (sheetId) {
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('tenant_id')
+      .eq('sheet_id', sheetId)
+      .not('tenant_id', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    if (existing?.tenant_id) return existing.tenant_id;
+  }
+
+  const { data: tenant, error } = await supabase
+    .from('tenants')
+    .insert({ nombre: sheetId ? `Consultorio ${sheetId.slice(0, 8)}` : 'Consultorio sin sheet' })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('Supabase resolveOrCreateTenantId error:', error.message);
+    return null;
+  }
+  return tenant.id;
+}
+
 async function ensureProfile(userId) {
   if (!USE_SUPABASE) return;
 
@@ -97,7 +137,7 @@ async function ensureProfile(userId) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id')
+    .select('id, tenant_id')
     .eq('id', userId)
     .maybeSingle();
 
@@ -106,15 +146,29 @@ async function ensureProfile(userId) {
     return;
   }
 
-  if (data) return;
-
   const cliente = obtenerClientePorUserId(userId);
+  const sheetId = cliente?.sheetId || (esAdminOriginal(userId) ? SPREADSHEET_ID : null);
+
+  if (data) {
+    // Perfil viejo de antes de la Fase 2 sin tenant_id - se completa al vuelo.
+    if (!data.tenant_id) {
+      const tenantId = await resolveOrCreateTenantId(supabase, sheetId);
+      if (tenantId) {
+        await supabase.from('profiles').update({ tenant_id: tenantId }).eq('id', userId);
+        invalidateTenantCache(userId);
+      }
+    }
+    return;
+  }
+
+  const tenantId = await resolveOrCreateTenantId(supabase, sheetId);
   const profileRow = {
     id: userId,
     email: cliente?.email || null,
     display_name: cliente?.email ? cliente.email.split('@')[0] : null,
-    sheet_id: cliente?.sheetId || (esAdminOriginal(userId) ? SPREADSHEET_ID : null),
+    sheet_id: sheetId,
     usuarios: Array.isArray(cliente?.usuarios) ? cliente.usuarios : [],
+    tenant_id: tenantId,
   };
 
   const { error: upsertError } = await supabase
@@ -187,13 +241,14 @@ function isMissingColumnError(error) {
 
 async function resolveLegacyCapabilities(supabase) {
   if (!USE_SUPABASE || !supabase) {
-    return { extendedMovimientos: false, extendedCampos: false };
+    return { extendedMovimientos: false, extendedCampos: false, fechaCobro: false };
   }
 
   if (legacyCapabilityCache.checked) {
     return {
       extendedMovimientos: legacyCapabilityCache.extendedMovimientos,
       extendedCampos: legacyCapabilityCache.extendedCampos,
+      fechaCobro: legacyCapabilityCache.fechaCobro,
     };
   }
 
@@ -204,7 +259,9 @@ async function resolveLegacyCapabilities(supabase) {
   legacyCapabilityPromise = (async () => {
     let extendedMovimientos = false;
     let extendedCampos = false;
+    let fechaCobro = false;
 
+    // tenant-isolation-ignore: solo prueba si existen columnas, no lee datos de usuario
     const check = await supabase
       .from('movimientos')
       .select('categoria,medio_pago,referencia_id')
@@ -216,6 +273,7 @@ async function resolveLegacyCapabilities(supabase) {
       console.error('Supabase movimientos extended schema check error:', check.error.message);
     }
 
+    // tenant-isolation-ignore: solo prueba si existen columnas, no lee datos de usuario
     const camposCheck = await supabase
       .from('movimientos')
       .select('paciente,profesional,tratamiento,proveedor,fecha_prestacion,fecha_vencimiento')
@@ -227,17 +285,29 @@ async function resolveLegacyCapabilities(supabase) {
       console.error('Supabase movimientos campos extendidos check error:', camposCheck.error.message);
     }
 
-    console.log('[debug] resolveLegacyCapabilities:', {
-      extendedMovimientos,
-      extendedCampos,
-      camposCheckError: camposCheck.error ? camposCheck.error.message : null,
-    });
+    // Capability separada de extendedCampos a propósito: fecha_cobro es una
+    // columna nueva (migración 005) independiente de las que ya existen en
+    // producción. Si fuera parte de extendedCampos, mientras la migración no
+    // corra, paciente/profesional/tratamiento/proveedor (que SÍ existen hoy)
+    // dejarían de escribirse.
+    // tenant-isolation-ignore: solo prueba si existe la columna, no lee datos de usuario
+    const fechaCobroCheck = await supabase
+      .from('movimientos')
+      .select('fecha_cobro')
+      .limit(1);
+
+    if (!fechaCobroCheck.error) {
+      fechaCobro = true;
+    } else if (!isMissingColumnError(fechaCobroCheck.error)) {
+      console.error('Supabase movimientos fecha_cobro check error:', fechaCobroCheck.error.message);
+    }
 
     legacyCapabilityCache.checked = true;
     legacyCapabilityCache.extendedMovimientos = extendedMovimientos;
     legacyCapabilityCache.extendedCampos = extendedCampos;
+    legacyCapabilityCache.fechaCobro = fechaCobro;
     legacyCapabilityPromise = null;
-    return { extendedMovimientos, extendedCampos };
+    return { extendedMovimientos, extendedCampos, fechaCobro };
   })();
 
   return legacyCapabilityPromise;
@@ -256,6 +326,7 @@ function buildLegacySnapshotFromRow(row) {
     metodo_pago: getDbPaymentMethod(row),
     monto_pesos: row.monto_pesos,
     id_unico: row.id_unico,
+    fecha_cobro: row.fecha_cobro,
   };
 }
 
@@ -272,6 +343,7 @@ function buildLegacyRowDataFromSnapshot(snapshot) {
     ID_Unico: snapshot.id_unico || '',
     MontoPesos: snapshot.monto_pesos,
     Pagador: snapshot.pagador || '',
+    FechaCobro: formatLegacyDate(snapshot.fecha_cobro) || '',
   };
 }
 
@@ -525,6 +597,7 @@ function mapLegacyDbRowToPlainData(row, v2Row = null) {
     proveedor: row.proveedor || v2Fields.proveedor,
     fechaPrestacion: formatDateValue(row.fecha_prestacion, '') || v2Fields.fechaPrestacion,
     fechaVencimiento: formatDateValue(row.fecha_vencimiento, '') || v2Fields.fechaVencimiento,
+    fechaCobro: formatDateValue(row.fecha_cobro, ''),
     referenciaId: row.referencia_id || v2Fields.referenciaId,
     _sortKey: row.created_at || null,
   };
@@ -549,12 +622,13 @@ function mapV2RowToPlainData(row) {
   };
 }
 
-async function fetchLegacyRowsForUser(supabase, userId) {
-  const { data, error } = await supabase
+async function fetchLegacyRowsForUser(supabase, userId, tenantId) {
+  const { data, error } = await forTenant(tenantId)
     .from('movimientos')
     .select('*')
     .eq('user_id', userId)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false })
+    .limit(MAX_MOVIMIENTOS_READ);
 
   if (error) {
     throw error;
@@ -580,8 +654,8 @@ async function fetchV2RowsForUser(supabase, userId) {
   return data || [];
 }
 
-async function resolveReadModelRows(supabase, userId) {
-  const legacyRows = await fetchLegacyRowsForUser(supabase, userId);
+async function resolveReadModelRows(supabase, userId, tenantId) {
+  const legacyRows = await fetchLegacyRowsForUser(supabase, userId, tenantId);
   const v2Rows = await fetchV2RowsForUser(supabase, userId);
   const legacyIds = new Set(legacyRows.map(row => String(row.id)));
   const v2OnlyRows = v2Rows.filter(row => !row.legacy_row_id || !legacyIds.has(String(row.legacy_row_id)));
@@ -608,7 +682,7 @@ function sortByKeyAsc(items, getKey) {
   });
 }
 
-function buildLegacySupabaseRowWrapper(userId, row) {
+function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
   return {
     _supabase: true,
     id: row.id,
@@ -618,6 +692,7 @@ function buildLegacySupabaseRowWrapper(userId, row) {
       const legacyEstado = mapDbStateToLegacyDisplay(row.estado);
       const legacyTipo = mapDbTipoToLegacyDisplay(row.tipo);
       const legacyMetodoPago = getDbPaymentMethod(row);
+      const legacyFechaCobro = formatLegacyDate(row.fecha_cobro);
       const map = {
         'Fecha': legacyFecha,
         'fecha': legacyFecha,
@@ -642,6 +717,8 @@ function buildLegacySupabaseRowWrapper(userId, row) {
         'MontoPesos': row.monto_pesos,
         'montopesos': row.monto_pesos,
         'ID_Origen': row.id_origen,
+        'FechaCobro': legacyFechaCobro,
+        'fechacobro': legacyFechaCobro,
       };
       return map[field];
     },
@@ -659,6 +736,8 @@ function buildLegacySupabaseRowWrapper(userId, row) {
         'metodopago': 'metodo_pago',
         'MontoPesos': 'monto_pesos',
         'montopesos': 'monto_pesos',
+        'FechaCobro': 'fecha_cobro',
+        'fechacobro': 'fecha_cobro',
       };
       if (map[field]) {
         this._updates = this._updates || {};
@@ -674,22 +753,25 @@ function buildLegacySupabaseRowWrapper(userId, row) {
         if (updates.metodo_pago !== undefined) {
           updates.medio_pago = normalizeMetodoPago(updates.metodo_pago) || null;
         }
+        if (updates.fecha_cobro !== undefined) {
+          updates.fecha_cobro = toDbDate(updates.fecha_cobro) || null;
+        }
         if (!legacyCapabilities.extendedMovimientos) {
           delete updates.medio_pago;
           delete updates.referencia_id;
         }
-        const { error: updateError } = await supabase2
+        if (!legacyCapabilities.fechaCobro) {
+          delete updates.fecha_cobro;
+        }
+        const { error: updateError } = await forTenant(tenantId)
           .from('movimientos')
           .update(updates)
           .eq('id', this.id);
         if (updateError) {
           throw new Error(`Supabase movimientos update failed: ${updateError.message}`);
         }
-        try {
-          await syncRowUpdateToSheet(userId, row.id_unico, updates);
-        } catch (sheetError) {
-          console.error('Sheet sync update error:', sheetError.message);
-        }
+        // Sheet best-effort en background (Supabase ya guardó): no demora la request.
+        runInBackground(userId, () => syncRowUpdateToSheet(userId, row.id_unico, updates), 'sheet-update');
         try {
           await syncLegacyUpdateToV2(supabase2, userId, legacySnapshot, updates);
         } catch (v2Error) {
@@ -702,18 +784,15 @@ function buildLegacySupabaseRowWrapper(userId, row) {
     async delete() {
       const supabase2 = getSupabase();
       const legacyRowId = row.id;
-      const { error: deleteError } = await supabase2
+      const { error: deleteError } = await forTenant(tenantId)
         .from('movimientos')
         .delete()
         .eq('id', this.id);
       if (deleteError) {
         throw new Error(`Supabase movimientos delete failed: ${deleteError.message}`);
       }
-      try {
-        await syncRowDeleteToSheet(userId, row.id_unico);
-      } catch (sheetError) {
-        console.error('Sheet sync delete error:', sheetError.message);
-      }
+      // Sheet best-effort en background (Supabase ya borró): no demora la request.
+      runInBackground(userId, () => syncRowDeleteToSheet(userId, row.id_unico), 'sheet-delete');
       try {
         await syncLegacyDeleteToV2(supabase2, legacyRowId);
       } catch (v2Error) {
@@ -851,8 +930,13 @@ async function obtenerDatosSheet(userId) {
     return getSheetService().obtenerDatosSheet(userId);
   }
 
+  const tenantId = await resolveTenantId(userId);
+  if (!tenantId) {
+    return getSheetService().obtenerDatosSheet(userId);
+  }
+
   try {
-    const { legacyRows, v2OnlyRows, v2ByLegacyId } = await resolveReadModelRows(supabase, userId);
+    const { legacyRows, v2OnlyRows, v2ByLegacyId } = await resolveReadModelRows(supabase, userId, tenantId);
     const combined = [
       ...legacyRows.map(row => mapLegacyDbRowToPlainData(row, v2ByLegacyId.get(String(row.id)) || null)),
       ...v2OnlyRows.map(mapV2RowToPlainData),
@@ -900,11 +984,16 @@ async function syncRowUpdateToSheet(userId, rowIdUnico, updates = {}) {
     id_unico: 'ID_Unico',
     id_origen: 'ID_Origen',
     referencia_id: 'ReferenciaId',
+    fecha_cobro: 'FechaCobro',
   };
 
   for (const [key, value] of Object.entries(updates)) {
     if (fieldMap[key]) {
-      sheetRow.set(fieldMap[key], value);
+      // fecha_cobro llega en ISO (o null) desde el wrapper de Supabase; el
+      // Sheet usa el mismo formato DD/MM/YYYY que el resto de las columnas
+      // de fecha.
+      const sheetValue = key === 'fecha_cobro' ? formatLegacyDate(value) : value;
+      sheetRow.set(fieldMap[key], sheetValue);
     }
   }
 
@@ -988,6 +1077,10 @@ async function doAddRow(userId, rowData, options = {}) {
     proveedor: rowData.Proveedor || null,
     fecha_prestacion: toDbDate(rowData.FechaPrestacion) || null,
     fecha_vencimiento: toDbDate(rowData.FechaVencimiento) || null,
+    // No se stampea acá: FechaCobro solo se setea en la transición real
+    // Pendiente -> Cobrado (ver doEjecutarCobrar / updateMovimiento). Esto
+    // queda en null salvo que el caller la pase explícitamente.
+    fecha_cobro: toDbDate(rowData.FechaCobro) || null,
   };
 
   if (!legacyCapabilities.extendedMovimientos) {
@@ -1005,11 +1098,25 @@ async function doAddRow(userId, rowData, options = {}) {
     delete supabaseRow.fecha_vencimiento;
   }
 
+  if (!legacyCapabilities.fechaCobro) {
+    delete supabaseRow.fecha_cobro;
+  }
+
   await ensureProfile(userId);
 
-  console.log('[debug] addRow supabaseRow:', supabaseRow);
+  const tenantId = await resolveTenantId(userId);
+  if (!tenantId) {
+    console.error('Supabase addRow: no se pudo resolver tenantId, usando solo Sheet para', userId);
+    const sheet = await getSheetService().getSheetCliente(userId);
+    if (!sheet) return null;
+    await getSheetService().ensureSheetStructure(sheet);
+    const row = await sheet.addRow(rowData, { insert: true });
+    await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+    emitMovimientosUpdated(userId);
+    return row;
+  }
 
-  const { data, error } = await supabase
+  const { data, error } = await forTenant(tenantId)
     .from('movimientos')
     .insert(supabaseRow)
     .select()
@@ -1042,17 +1149,17 @@ async function doAddRow(userId, rowData, options = {}) {
     console.error('Supabase movimientos_v2 sync insert error:', v2Error.message);
   }
 
-  // dual-write: also write to sheet as backup
-  try {
+  // dual-write best-effort: Supabase ya es la fuente de verdad, así que el
+  // backup a Google Sheets se hace en background bajo el lock del usuario (para
+  // no pisar otras escrituras del mismo user) sin demorar la respuesta. Si
+  // Sheets está lento o sobre cuota, no afecta al bot/dashboard.
+  runInBackground(userId, async () => {
     const sheet = await getSheetService().getSheetCliente(userId);
-    if (sheet) {
-      await getSheetService().ensureSheetStructure(sheet);
-      const row = await sheet.addRow(rowData, { insert: true });
-      await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
-    }
-  } catch (e) {
-    // sheet write failed, thats OK - supabase is source of truth
-  }
+    if (!sheet) return;
+    await getSheetService().ensureSheetStructure(sheet);
+    const row = await sheet.addRow(rowData, { insert: true });
+    await aplicarColorMontoEnFila(row, rowData.Monto, rowData.Estado);
+  }, 'sheet-addRow');
 
   emitMovimientosUpdated(userId);
   return data || rowData;
@@ -1072,10 +1179,17 @@ async function getRows(userId) {
     return sheet.getRows();
   }
 
+  const tenantId = await resolveTenantId(userId);
+  if (!tenantId) {
+    const sheet = await getSheetService().getSheetCliente(userId);
+    if (!sheet) return [];
+    return sheet.getRows();
+  }
+
   try {
-    const { legacyRows, v2OnlyRows } = await resolveReadModelRows(supabase, userId);
+    const { legacyRows, v2OnlyRows } = await resolveReadModelRows(supabase, userId, tenantId);
     const combined = [
-      ...legacyRows.map(row => buildLegacySupabaseRowWrapper(userId, row)),
+      ...legacyRows.map(row => buildLegacySupabaseRowWrapper(userId, tenantId, row)),
       ...v2OnlyRows.map(row => buildV2SupabaseRowWrapper(userId, row)),
     ];
 
@@ -1172,7 +1286,22 @@ async function updateMovimiento(userId, idUnico, updates) {
       metodoPago:  'MetodoPago',
       metodo_pago: 'MetodoPago',
       montoPesos:  'MontoPesos',
+      fechaCobro:  'FechaCobro',
+      fecha_cobro: 'FechaCobro',
     };
+
+    // Stampear/limpiar FechaCobro solo en la transición real de estado, no en
+    // cualquier edición. Cobrado -> Pendiente limpia la fecha: si no, quedaría
+    // una fecha de cobro fantasma en un movimiento que ya no está cobrado.
+    if (updates.estado !== undefined) {
+      const estadoPrevio = row.get('Estado');
+      if (updates.estado === 'Cobrado' && estadoPrevio === 'Pendiente') {
+        const hoy = new Date();
+        updates = { ...updates, fechaCobro: `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}` };
+      } else if (updates.estado === 'Pendiente' && estadoPrevio === 'Cobrado') {
+        updates = { ...updates, fechaCobro: '' };
+      }
+    }
 
     for (const [key, value] of Object.entries(updates)) {
       const col = fieldMap[key];
@@ -1222,4 +1351,7 @@ module.exports = {
   deleteMovimientoByKey,
   getProfile,
   upsertProfile,
+  // Exportados para tests de regresion (guarda de lectura acotada).
+  MAX_MOVIMIENTOS_READ,
+  fetchLegacyRowsForUser,
 };

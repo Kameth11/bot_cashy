@@ -20,6 +20,17 @@ function formatFechaInput(value) {
   return format(new Date(y, m - 1, d), 'dd/MM/yy', { locale: es })
 }
 
+// FechaCobroNote es propio de esta pantalla; el resto de las primitivas
+// (CurrencyBadge, StatusBadge, MontoCell) vienen de components/Money.jsx.
+//
+// Muestra "(cobrado DD/MM/YY)" solo cuando el movimiento se cobró en una
+// fecha distinta a la original (transición real Pendiente -> Cobrado), no en
+// movimientos creados directamente como Cobrado.
+function FechaCobroNote({ mov }) {
+  if (mov.estado !== 'Cobrado' || !mov.fechaCobro || mov.fechaCobro === mov.fecha) return null
+  return <span style={{ fontSize: 11, color: 'var(--text-3)' }}>(cobrado {formatFecha(mov.fechaCobro)})</span>
+}
+
 // ── Main ───────────────────────────────────────────────────
 
 export default function MovimientosPage() {
@@ -217,7 +228,12 @@ export default function MovimientosPage() {
                       <td className="mv-fecha">{formatFecha(mov.fecha)}</td>
                       <td><CurrencyBadge moneda={mov.moneda} /></td>
                       <td className="right"><MontoCell mov={mov} /></td>
-                      <td><StatusBadge estado={mov.estado} /></td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <StatusBadge estado={mov.estado} />
+                          <FechaCobroNote mov={mov} />
+                        </div>
+                      </td>
                       <td>
                         <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
                           <button className="action-btn" title="Editar" onClick={() => { setModalError(null); setEditando(mov) }}>✏️</button>
@@ -236,7 +252,10 @@ export default function MovimientosPage() {
                 <div key={mov.idUnico ?? i} className="mov-card-mobile">
                   <div className="mov-card-top">
                     <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 700 }}>{formatFecha(mov.fecha)}</span>
-                    <StatusBadge estado={mov.estado} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                      <StatusBadge estado={mov.estado} />
+                      <FechaCobroNote mov={mov} />
+                    </div>
                   </div>
                   <div className="mv-desc">
                     <span className="mv-dot" style={{ background: mov.tipo?.toLowerCase() === 'egreso' ? 'var(--red)' : 'var(--green)' }} />

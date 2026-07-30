@@ -13,7 +13,7 @@ export default function DatePickerButton({ value, onChange, title = 'Elegir fech
   }
 
   return (
-    <div style={{ position: 'relative', display: 'inline-flex' }}>
+    <div style={{ position: 'relative', display: 'inline-flex', overflow: 'hidden' }}>
       <button type="button" className={className} title={title} onClick={abrir}>
         <Calendar size={14} />
       </button>
@@ -21,8 +21,9 @@ export default function DatePickerButton({ value, onChange, title = 'Elegir fech
         ref={inputRef}
         type="date"
         value={value || ''}
+        tabIndex={-1}
         onChange={e => onChange(e.target.value)}
-        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', border: 0, cursor: 'pointer' }}
+        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', border: 0, padding: 0, margin: 0, pointerEvents: 'none' }}
       />
     </div>
   )

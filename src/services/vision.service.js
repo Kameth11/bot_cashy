@@ -21,6 +21,7 @@ Reglas de campos:
 - Ignora garabatos, lineas, anotaciones marginales y texto irrelevante.
 - Si hay varios consultorios o profesionales como encabezados de columna, usalos para agrupar cada turno. Si no se ve, usa null.
 - Si una celda tiene solo un nombre sin servicio, poné el nombre en "cliente" y null en "servicio".
+- El campo "consultorio" SIEMPRE debe usar número arábigo: "Consultorio 1", "Consultorio 2", nunca "Consultorio Uno" ni "Consultorio uno".
 
 Horas (normaliza SIEMPRE a HH:MM 24h):
 - "9" -> "09:00"; "9:30" o "9.30" -> "09:30"; "9hs"/"9 hrs" -> "09:00".
@@ -139,7 +140,7 @@ async function preprocessPhoto(photoBuffer) {
       .png({ compressionLevel: 7 })
       .toBuffer();
   } catch (error) {
-    console.log(`Vision: preprocess fallo, usando original: ${error.message.substring(0, 120)}`);
+    console.log(`Vision: preprocess fallo, usando original: ${error.message}`);
     return photoBuffer;
   }
 }
@@ -148,7 +149,7 @@ function normalizarTurnos(turnos) {
   if (!Array.isArray(turnos)) return [];
 
   return turnos.map(turno => ({
-    consultorio: normalizarTexto(turno?.consultorio),
+    consultorio: normalizarConsultorio(turno?.consultorio),
     profesional: normalizarTexto(turno?.profesional),
     hora: normalizarHora(turno?.hora),
     cliente: normalizarTexto(turno?.cliente),
@@ -168,6 +169,11 @@ function completarTurno(turno) {
   };
 }
 
+const NUMEROS_ESCRITOS = {
+  'uno': '1', 'dos': '2', 'tres': '3', 'cuatro': '4', 'cinco': '5',
+  'seis': '6', 'siete': '7', 'ocho': '8', 'nueve': '9', 'diez': '10',
+};
+
 function normalizarTexto(value) {
   if (value == null) return null;
   const text = String(value)
@@ -175,6 +181,12 @@ function normalizarTexto(value) {
     .trim();
 
   return text ? text.replace(/\b\w/g, c => c.toUpperCase()) : null;
+}
+
+function normalizarConsultorio(value) {
+  const texto = normalizarTexto(value);
+  if (!texto) return null;
+  return texto.replace(/\b(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b/gi, w => NUMEROS_ESCRITOS[w.toLowerCase()]);
 }
 
 function normalizarHora(value) {
@@ -228,9 +240,7 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
         systemInstruction: SYSTEM_PROMPT,
         generationConfig: {
           temperature: 0,
-          topP: 0.1,
-          topK: 1,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 4096,
           responseMimeType: 'application/json',
         },
       });
@@ -255,7 +265,11 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
 
       return { turnos: normalizarTurnos(parsed.turnos.map(completarTurno)) };
     } catch (error) {
-      console.log(`Vision: modelo ${modelName} no disponible: ${error.message.substring(0, 120)}`);
+      const detalle = error.status ? `[${error.status}] ${error.message}` : error.message;
+      console.log(`Vision: modelo ${modelName} no disponible: ${detalle}`);
+      if (error.cause) {
+        console.log(`Vision: causa subyacente: ${error.cause}`);
+      }
     }
   }
 

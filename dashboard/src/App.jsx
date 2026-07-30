@@ -18,7 +18,11 @@ import { api } from './services/api'
 
 function LayoutWithModal() {
   const { showNuevo, closeNuevo, nuevoError, setNuevoError, creando, setCreando, triggerReload } = useApp()
+  const { puede } = useAuth()
   const location = useLocation()
+
+  // Ruta raíz: redirigir al primer destino permitido según permisos
+  const defaultRoute = puede('ver_balance') ? '/' : puede('ver_agenda') ? '/agenda' : '/config'
 
   // El botón "+ Nuevo" es el mismo, pero en la vista Personal tiene que crear
   // un movimiento personal, no uno del consultorio.
@@ -55,12 +59,14 @@ function LayoutWithModal() {
       <NavBar />
       <main className="app-main">
         <Routes>
-          <Route path="/"            element={<Dashboard />} />
-          <Route path="/movimientos" element={<MovimientosPage />} />
-          <Route path="/agenda"      element={<AgendaPage />} />
+          <Route path="/"            element={puede('ver_balance')     ? <Dashboard />       : <Navigate to={defaultRoute} replace />} />
+          <Route path="/movimientos" element={puede('ver_movimientos') ? <MovimientosPage /> : <Navigate to={defaultRoute} replace />} />
+          <Route path="/agenda"      element={puede('ver_agenda')      ? <AgendaPage />      : <Navigate to={defaultRoute} replace />} />
           <Route path="/config"      element={<ConfigPage />} />
           <Route path="/personal"    element={<PersonalPage />} />
-          <Route path="*"            element={<Navigate to="/" replace />} />
+          <Route path="/solicitudes" element={<Navigate to="/config?tab=solicitudes" replace />} />
+          <Route path="/accesos"     element={<Navigate to="/config?tab=accesos" replace />} />
+          <Route path="*"            element={<Navigate to={defaultRoute} replace />} />
         </Routes>
       </main>
       <BottomNav />

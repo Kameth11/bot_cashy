@@ -386,4 +386,81 @@ describe('quickParse', () => {
       },
     });
   });
+
+  // Caso reportado: "se pagó" estaba en la lista de palabras de ingreso sin
+  // distinguir si el pago va HACIA un tercero (egreso) o es la consulta que
+  // cobramos (ingreso); además el nombre se "tragaba" la cláusula de deuda
+  // siguiente. Ver ARCHITECTURE.md / quick_nlp.service.js VERBOS_PAGO_A_TERCERO.
+  test('parsea pago parcial a un tercero con deuda residual (egreso)', () => {
+    const result = quickParse('Se pago 300 dolares a financiera juan carlos debemos todavia 300 dolares mas');
+
+    expect(result).toMatchObject({
+      intent: 'pago_parcial_con_deuda',
+      entities: {
+        montoPagado: 300,
+        monedaPagada: 'Dólares',
+        montoDeuda: 300,
+        monedaDeuda: 'Dólares',
+        proveedorNombre: 'Financiera Juan Carlos',
+      },
+    });
+  });
+
+  test('parsea pago parcial a un tercero con conector "y" y "quedamos debiendo"', () => {
+    const result = quickParse('pagamos 500 a Dental Sur y quedamos debiendo 200');
+
+    expect(result).toMatchObject({
+      intent: 'pago_parcial_con_deuda',
+      entities: {
+        montoPagado: 500,
+        montoDeuda: 200,
+        proveedorNombre: 'Dental Sur',
+      },
+    });
+  });
+
+  test('pago simple a un tercero sin deuda residual se interpreta como egreso', () => {
+    const result = quickParse('Se pago 300 dolares a la financiera');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'gasto',
+        monto: 300,
+        moneda: 'Dólares',
+      },
+    });
+  });
+
+  test('no rompe "se pagó la consulta" como ingreso (sin tercero explícito)', () => {
+    const result = quickParse('se pago la consulta de Juan Perez 15000 efectivo');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'ingreso',
+        monto: 15000,
+      },
+    });
+  });
+
+  test('"le transfirieron/pagaron a X" sigue siendo ingreso (no lo roba el matcher de egreso)', () => {
+    const result = quickParse('Le transfirieron a Diego 400 mil');
+
+    expect(result).toMatchObject({
+      intent: 'registrar_movimiento',
+      entities: {
+        tipo: 'ingreso',
+        pacienteNombre: 'Diego',
+      },
+    });
+  });
+
+  test('extrae correctamente cuando "de" se repite antes y después del nombre', () => {
+    const result = quickParse('cuota de ortodoncia de Sofia 75k');
+
+    expect(result).toMatchObject({
+      entities: { pacienteNombre: 'Sofia' },
+    });
+  });
 });

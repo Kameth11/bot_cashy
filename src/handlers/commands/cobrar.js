@@ -1,14 +1,15 @@
 const { bot } = require('../../lib/telegraf');
 const cmd = require('../../services/command.service');
+const { mostrarCobrar } = require('../cobrar-confirm');
 
 bot.command('cobrar', async (ctx) => {
   try {
     const texto = ctx.message.text.replace('/cobrar', '').trim();
-    const msg = await cmd.ejecutarCobrar(ctx.from.id, texto || null);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    const resultado = await cmd.buscarCandidatosCobrar(ctx.from.id, texto || null);
+    return mostrarCobrar(ctx, resultado);
   } catch (error) {
     console.error('Error /cobrar:', error.message);
-    ctx.reply('❌ Error al actualizar el pendiente.');
+    ctx.reply('❌ Error al buscar pendientes.');
   }
 });
 

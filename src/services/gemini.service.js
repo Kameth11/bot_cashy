@@ -40,8 +40,9 @@ INTERPRETACION:
 - Si aparece una frase como "Diego vino por consulta" o "Vino Diego por limpieza", toma a Diego como pacienteNombre.
 - No uses profesionalNombre para un nombre comun salvo que aparezca un titulo explicito como Dr, Dra, doctor o doctora.
 - Si el usuario dice que alguien "ya pagó", "me pagó", "me transfirió", "entró lo de" o "cobré lo de", normalmente es cobrar_movimiento cuando se refiere a una deuda pendiente existente.
+- También es cobrar_movimiento cuando la frase dice que algo "ya está pago", "está pagado", "quedó pagado", "está saldado", "ya saldó", o cualquier combinación que indique que un pendiente anterior fue resuelto.
 - Si la frase describe plata que entra o sale como un hecho nuevo para registrar, usar registrar_movimiento.
-- Para cobrar_movimiento, extrae el nombre/persona/concepto en nombre.
+- Para cobrar_movimiento, extrae el nombre/persona/concepto en nombre. Si el nombre lleva artículo ("la consulta de", "el pendiente de"), incluilo sin el artículo.
 - PAGOS PARCIALES: Si la frase menciona un pago parcial pero NO hay dos montos distintos (cobrado vs pendiente), usar registrar_movimiento normal con el monto cobrado. Los cobros parciales con dos montos los maneja otro sistema.
 - ESTADO: para registrar_movimiento, "estado" es "Pendiente" si la plata todavía NO se cobró/pagó (ej: "me deben", "queda pendiente", "a fin de mes paga", "le fío", "todavía no pagó"). En cualquier otro caso, "estado" es "Cobrado".
 
@@ -61,6 +62,9 @@ Ejemplos:
 "Diego vino por consulta" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Diego","monto":null,"moneda":"Pesos","metodo_pago":null,"categoria":"consulta","pacienteNombre":"Diego","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Consulta","proveedorNombre":null,"estado":"Cobrado"}}
 "cuanto tengo" -> {"intent":"ver_balance","entities":{}}
 "ya me pago Juan" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
+"la consulta general que está pendiente paga" -> {"intent":"cobrar_movimiento","entities":{"nombre":"consulta general"}}
+"el pendiente de Maria ya esta saldado" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Maria"}}
+"la deuda de Juan quedo pagada" -> {"intent":"cobrar_movimiento","entities":{"nombre":"Juan"}}
 "borrar gasto insumos" -> {"intent":"eliminar_movimiento","entities":{"nombre":"insumos"}}
 "honorarios €200 transferencia" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Honorarios","monto":200,"moneda":"Euros","metodo_pago":"transferencia","categoria":"honorarios","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
 "insumos €50 efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Insumos","monto":50,"moneda":"Euros","metodo_pago":"efectivo","categoria":"insumos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
