@@ -457,10 +457,15 @@ async function registrarMovimientoPersonal(userId, datos) {
   if (!sheet) throw new Error('sin_sheet');
 
   const fecha = datos.fecha || fechaHoyStr();
+
+  // Si el llamador ya decidió el viaje (ej. el usuario tocó "No es del viaje"
+  // en la confirmación), se respeta su decisión — incluso si es null. Solo se
+  // autoatribuye cuando no viene la clave.
   const viajeActivo = await obtenerViajeActivo(userId);
-  const viajeId = correspondeAlViaje(viajeActivo, { fecha, categoria })
-    ? viajeActivo.idViaje
-    : null;
+  const viajeDecidido = Object.prototype.hasOwnProperty.call(datos, 'viajeId');
+  const viajeId = viajeDecidido
+    ? (datos.viajeId || null)
+    : (correspondeAlViaje(viajeActivo, { fecha, categoria }) ? viajeActivo.idViaje : null);
 
   const movimiento = {
     idMov: generarIdMov(),
@@ -521,6 +526,7 @@ module.exports = {
   crearViaje,
   cerrarViaje,
   correspondeAlViaje,
+  fechaHoyStr,
   obtenerPresupuestos,
   evaluarPresupuesto,
   resolvePersonalCapabilities,

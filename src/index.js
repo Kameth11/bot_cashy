@@ -46,6 +46,8 @@ require('./handlers/commands/salir');
 require('./handlers/commands/nlptest');
 require('./handlers/commands/profesional');
 require('./handlers/commands/editarturno');
+require('./handlers/commands/personal');
+require('./handlers/commands/viaje');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');

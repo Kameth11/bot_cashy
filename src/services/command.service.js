@@ -784,7 +784,13 @@ function buildHelpMessage() {
     '`/sheet` - Ver link de tu Google Sheet\n\n' +
     '👥 *Invitaciones:*\n' +
     '`/codigo` - Generar un código de invitación (solo owner)\n' +
-    '`/unir CODIGO` - Unirte a una cuenta con un código'
+    '`/unir CODIGO` - Unirte a una cuenta con un código\n\n' +
+    '🏠 *Finanzas personales:*\n' +
+    'Escribí el gasto y lo categorizo solo: `nafta 20000`, `super 45000`\n' +
+    '`/personal` - Resumen del mes por categoría\n' +
+    '`/viaje nuevo Brasil 10/01 20/01` - Abrir un viaje\n' +
+    '`/viaje` - Ver el viaje activo y su total\n' +
+    '_Si me equivoco de ámbito, corregilo con el botón y lo recuerdo._'
   );
 }
 

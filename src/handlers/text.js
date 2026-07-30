@@ -212,6 +212,48 @@ const { confirmButtons } = require('./actions');
 
 const regexMsg = /^(consulta|servicio|gasto|pendiente)\s+(.+?)\s+(?:\$|U\$|USD|€|EUR)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
+/**
+ * Marca un movimiento con su ámbito (personal / consultorio) antes de mostrar
+ * la confirmación. Solo aplica a `registrar_movimiento`: los intents de consulta
+ * (/balance, /pendientes...) siguen siendo del consultorio.
+ *
+ * Si resuelve personal, reemplaza la categoría clínica por la personal y calcula
+ * la atribución al viaje activo. La categoría original se guarda para poder
+ * volver atrás si el usuario toca el toggle.
+ */
+async function marcarAmbito(userId, text, result) {
+  if (!result || result.intent !== 'registrar_movimiento') return result;
+
+  const personalService = require('../services/personal.service');
+  const { resolverAmbito, inferirCategoriaPersonal } = require('../services/personal-nlp.service');
+
+  const preferencias = await personalService.leerPreferencias(userId);
+  const { ambito, ambiguo, termino } = resolverAmbito(text, { preferencias });
+
+  const entities = { ...(result.entities || {}) };
+  entities.ambito = ambito;
+  entities.ambiguoAmbito = ambiguo;
+  entities.terminoAmbito = termino;
+  entities.textoOriginal = text;
+
+  if (ambito === 'personal') {
+    entities.categoriaConsultorio = entities.categoria || null;
+    entities.categoria = inferirCategoriaPersonal(entities.tipo, text);
+
+    const viaje = await personalService.obtenerViajeActivo(userId);
+    const fechaMov = entities.fecha || personalService.fechaHoyStr();
+    if (viaje && personalService.correspondeAlViaje(viaje, {
+      fecha: fechaMov,
+      categoria: entities.categoria,
+    })) {
+      entities.viajeId = viaje.idViaje;
+      entities.viajeNombre = viaje.nombre;
+    }
+  }
+
+  return { ...result, entities };
+}
+
 async function procesarTextoConNlp(ctx, text) {
   const userId = ctx.from.id;
   if (state.processingNlp.has(userId)) {
@@ -222,7 +264,7 @@ async function procesarTextoConNlp(ctx, text) {
     const quickResult = quickParse(text);
     if (shouldHandleWithQuickParseFirst(quickResult)) {
       try {
-        const handled = await handleNLPIntent(ctx, quickResult);
+        const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, quickResult));
         if (handled) return;
       } catch (e) {
         console.error('Error quick NLP:', e.message);
@@ -235,7 +277,7 @@ async function procesarTextoConNlp(ctx, text) {
       try {
         const nlpResult = await geminiService.parseMessage(userId, text);
         if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
-          const handled = await handleNLPIntent(ctx, nlpResult);
+          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, nlpResult));
           if (handled) return;
         }
       } catch (nlpError) {
@@ -245,7 +287,7 @@ async function procesarTextoConNlp(ctx, text) {
 
     if (quickResult) {
       try {
-        const handled = await handleNLPIntent(ctx, quickResult);
+        const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, quickResult));
         if (handled) return;
       } catch (e) {
         console.error('Error quick NLP:', e.message);

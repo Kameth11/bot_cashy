@@ -13,6 +13,10 @@ function formatMontoConMoneda(monto, moneda) {
   return formatMonto(monto, moneda);
 }
 
+function esAmbitoPersonal(entities) {
+  return String((entities || {}).ambito || '').toLowerCase() === 'personal';
+}
+
 function crearMensajeConfirmacion(entities) {
   const es = entities || {};
   const tipoRaw = String(es.tipo || '').toLowerCase();
@@ -29,34 +33,75 @@ function crearMensajeConfirmacion(entities) {
     : null;
 
   const v = (x) => (x ? escapeMarkdown(String(x)) : '—');
+  const categoriaTexto = es.categoria ? escapeMarkdown(String(es.categoria).replace(/_/g, ' ')) : '—';
+
+  // El ámbito personal tiene otros campos: no hay paciente ni tratamiento, y
+  // sí importan la categoría y el viaje al que se atribuye.
+  if (esAmbitoPersonal(es)) {
+    const viajeLinea = es.viajeNombre
+      ? `• Viaje: ✈️ ${escapeMarkdown(String(es.viajeNombre))}\n`
+      : '';
+    return (
+      `📋 *Entendí esto:*\n\n` +
+      `• Ámbito: 🏠 Personal\n` +
+      `• Tipo: ${tipoTexto}\n` +
+      `• Monto: ${montoTexto}${es.monto ? monedaLabel : ''}\n` +
+      `• Categoría: ${categoriaTexto}\n` +
+      `• Detalle: ${v(es.descripcion)}\n` +
+      `• Método: ${v(metodo)}\n` +
+      viajeLinea +
+      `\n_¿Es correcto?_`
+    );
+  }
 
   const nombreLabel = esEgreso ? 'Proveedor' : 'Paciente';
   const nombreValor = esEgreso ? es.proveedorNombre : es.pacienteNombre;
 
+  // Cuando el término es ambiguo (alquiler, luz, expensas...) se avisa, porque
+  // el default es consultorio y quizá no sea lo que el usuario quiso.
+  const avisoAmbiguo = es.ambiguoAmbito
+    ? `\n⚠️ _Asumí que es del consultorio. Si es de tu casa, tocá el botón._\n`
+    : '';
+
   return (
     `📋 *Entendí esto:*\n\n` +
+    `• Ámbito: 🏥 Consultorio\n` +
     `• Tipo: ${tipoTexto}\n` +
     `• Monto: ${montoTexto}${es.monto ? monedaLabel : ''}\n` +
     `• ${nombreLabel}: ${v(nombreValor)}\n` +
     `• Método: ${v(metodo)}\n` +
     `• Estado: ${estadoTexto}\n` +
     `• Tratamiento: ${v(es.tratamientoNombre)}\n` +
+    avisoAmbiguo +
     `\n_¿Es correcto?_`
   );
 }
 
 // ── Buttons ──────────────────────────────────────────────────────────────────
 
-function confirmationButtons() {
-  return Markup.inlineKeyboard([
+function confirmationButtons(entities) {
+  const personal = esAmbitoPersonal(entities);
+  const filas = [
     [
       Markup.button.callback('✅ Guardar', 'nlp_save'),
       Markup.button.callback('❌ Cancelar', 'nlp_cancel'),
     ],
     [
-      Markup.button.callback('✏️ Editar un campo', 'nlp_edit'),
+      Markup.button.callback(
+        personal ? '🏥 Es del consultorio' : '🏠 Es personal',
+        'nlp_toggle_ambito'
+      ),
     ],
-  ]);
+  ];
+
+  // Un gasto atribuido a un viaje se puede desatribuir sin tocar nada más: es
+  // el caso de pagar la luz mientras estás de viaje.
+  if (personal && (entities || {}).viajeId) {
+    filas.push([Markup.button.callback('🚫 No es del viaje', 'nlp_quitar_viaje')]);
+  }
+
+  filas.push([Markup.button.callback('✏️ Editar un campo', 'nlp_edit')]);
+  return Markup.inlineKeyboard(filas);
 }
 
 function editFieldButtons() {
@@ -92,7 +137,7 @@ async function mostrarConfirmacion(ctx, entities) {
   state.pendingNlpMovimientos.set(userId, { entities, editingCampo: null });
   await ctx.reply(crearMensajeConfirmacion(entities), {
     parse_mode: 'Markdown',
-    ...confirmationButtons(),
+    ...confirmationButtons(entities),
   });
 }
 
@@ -151,7 +196,131 @@ async function actualizarCampoNlp(ctx, userId, pending, text) {
   state.pendingNlpMovimientos.set(userId, { entities, editingCampo: null });
   return ctx.reply(crearMensajeConfirmacion(entities), {
     parse_mode: 'Markdown',
-    ...confirmationButtons(),
+    ...confirmationButtons(entities),
+  });
+}
+
+// ── Ámbito personal ──────────────────────────────────────────────────────────
+
+async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities) {
+  const personalService = require('../services/personal.service');
+
+  try {
+    const { movimiento, viaje } = await personalService.registrarMovimientoPersonal(userId, {
+      descripcion: entities.descripcion,
+      monto: entities.monto,
+      tipo: entities.tipo,
+      moneda: entities.moneda,
+      metodoPago: entities.metodo_pago,
+      categoria: entities.categoria,
+      comercio: entities.comercio || null,
+      fecha: entities.fecha || undefined,
+      // Pasar la clave explícitamente hace que el servicio NO recalcule la
+      // atribución: así "No es del viaje" efectivamente guarda sin viaje.
+      viajeId: entities.viajeId || null,
+    });
+
+    const categoriaTexto = escapeMarkdown(String(movimiento.categoria || '').replace(/_/g, ' '));
+    const viajeTexto = viaje ? `\n✈️ Viaje: ${escapeMarkdown(viaje.nombre)}` : '';
+
+    // Aviso de presupuesto: solo para egresos y solo si hay uno definido.
+    let alerta = '';
+    if (String(movimiento.tipo).toLowerCase() === 'egreso') {
+      const estado = await personalService.evaluarPresupuesto(userId, movimiento.categoria, movimiento.fecha);
+      if (estado && estado.enAlerta) {
+        const icono = estado.excedido ? '🔴' : '⚠️';
+        alerta =
+          `\n\n${icono} *${categoriaTexto}*: ${formatMonto(estado.gastado, estado.moneda)} ` +
+          `de ${formatMonto(estado.limite, estado.moneda)} (${estado.porcentaje}%)` +
+          (estado.excedido
+            ? `\n_Te pasaste del presupuesto del mes._`
+            : `\n_Te quedan ${formatMonto(estado.restante, estado.moneda)} este mes._`);
+      }
+    }
+
+    const extra = { parse_mode: 'Markdown' };
+    if (DASHBOARD_URL) extra.reply_markup = { inline_keyboard: [[{ text: '📊 Ver Dashboard', url: DASHBOARD_URL }]] };
+
+    return ctx.editMessageText(
+      `✅ *Gasto personal registrado*\n\n` +
+      `🏠 ${escapeMarkdown(movimiento.descripcion)}\n` +
+      `💰 ${formatMonto(movimiento.monto, movimiento.moneda)}\n` +
+      `🏷️ ${categoriaTexto}${viajeTexto}${alerta}`,
+      extra
+    );
+  } catch (error) {
+    if (error.message === 'monto_invalido') {
+      return ctx.editMessageText('⚠️ El monto no es válido. Mandá el movimiento de nuevo.');
+    }
+    if (error.message === 'descripcion_invalida') {
+      return ctx.editMessageText('⚠️ Falta una descripción más clara. Mandalo de nuevo.');
+    }
+    console.error('Error al guardar movimiento personal:', error.message);
+    return ctx.editMessageText('❌ Error al guardar el gasto personal. Intentá de nuevo.');
+  }
+}
+
+// Alterna consultorio <-> personal y RECUERDA la elección: la próxima vez que
+// aparezca ese término ambiguo ya arranca en el ámbito correcto.
+async function handleNlpToggleAmbito(ctx) {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingNlpMovimientos.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
+
+  const personalService = require('../services/personal.service');
+  const { inferirCategoriaPersonal } = require('../services/personal-nlp.service');
+
+  const entities = { ...pending.entities };
+  const nuevoAmbito = esAmbitoPersonal(entities) ? 'consultorio' : 'personal';
+  entities.ambito = nuevoAmbito;
+  entities.ambiguoAmbito = false;
+
+  if (nuevoAmbito === 'personal') {
+    entities.categoriaConsultorio = entities.categoria;
+    entities.categoria = inferirCategoriaPersonal(
+      entities.tipo,
+      `${entities.descripcion || ''} ${entities.textoOriginal || ''}`
+    );
+
+    const viaje = await personalService.obtenerViajeActivo(userId);
+    if (viaje && personalService.correspondeAlViaje(viaje, {
+      fecha: entities.fecha || personalService.fechaHoyStr(),
+      categoria: entities.categoria,
+    })) {
+      entities.viajeId = viaje.idViaje;
+      entities.viajeNombre = viaje.nombre;
+    }
+  } else {
+    // Volviendo al consultorio: se restaura la categoría clínica original.
+    entities.categoria = entities.categoriaConsultorio || null;
+    entities.viajeId = null;
+    entities.viajeNombre = null;
+  }
+
+  // Aprender la corrección para no volver a preguntar por este término.
+  if (entities.terminoAmbito) {
+    await personalService.guardarPreferencia(userId, entities.terminoAmbito, nuevoAmbito);
+  }
+
+  state.pendingNlpMovimientos.set(userId, { entities, editingCampo: null });
+  return ctx.editMessageText(crearMensajeConfirmacion(entities), {
+    parse_mode: 'Markdown',
+    ...confirmationButtons(entities),
+  });
+}
+
+async function handleNlpQuitarViaje(ctx) {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingNlpMovimientos.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
+
+  const entities = { ...pending.entities, viajeId: null, viajeNombre: null };
+  state.pendingNlpMovimientos.set(userId, { entities, editingCampo: null });
+  return ctx.editMessageText(crearMensajeConfirmacion(entities), {
+    parse_mode: 'Markdown',
+    ...confirmationButtons(entities),
   });
 }
 
@@ -165,6 +334,12 @@ async function handleNlpSave(ctx) {
     return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
   }
   state.pendingNlpMovimientos.delete(userId);
+
+  // El ámbito personal tiene su propio almacenamiento (pestañas aparte) y no
+  // pasa por el modelo del consultorio.
+  if (esAmbitoPersonal(pending.entities)) {
+    return guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, pending.entities);
+  }
 
   try {
     const resultado = await cmd.registrarMovimientoDesdeNLP(userId, pending.entities);
@@ -229,7 +404,7 @@ async function handleNlpKeepOld(ctx) {
   state.pendingNlpMovimientos.set(userId, pending);
   return ctx.editMessageText(crearMensajeConfirmacion(pending.entities), {
     parse_mode: 'Markdown',
-    ...confirmationButtons(),
+    ...confirmationButtons(pending.entities),
   });
 }
 
@@ -248,6 +423,8 @@ const handleNlpEditEstado   = makeEditCampoHandler('estado',        '📋 Ingres
 // ── Register bot actions ──────────────────────────────────────────────────────
 
 bot.action('nlp_save',           handleNlpSave);
+bot.action('nlp_toggle_ambito',  handleNlpToggleAmbito);
+bot.action('nlp_quitar_viaje',   handleNlpQuitarViaje);
 bot.action('nlp_cancel',         handleNlpCancel);
 bot.action('nlp_edit',           handleNlpEdit);
 bot.action('nlp_edit_monto',     handleNlpEditMonto);
@@ -261,6 +438,9 @@ bot.action('nlp_discard_old',    handleNlpDiscardOld);
 
 module.exports = {
   crearMensajeConfirmacion,
+  esAmbitoPersonal,
+  handleNlpToggleAmbito,
+  handleNlpQuitarViaje,
   mostrarConfirmacion,
   actualizarCampoNlp,
   discardButtons,
