@@ -12,6 +12,7 @@ import Dashboard from './pages/Dashboard'
 import AgendaPage from './pages/AgendaPage'
 import MovimientosPage from './pages/MovimientosPage'
 import ConfigPage from './pages/ConfigPage'
+import PersonalPage from './pages/PersonalPage'
 import { api } from './services/api'
 
 function LayoutWithModal() {
@@ -41,6 +42,7 @@ function LayoutWithModal() {
           <Route path="/movimientos" element={<MovimientosPage />} />
           <Route path="/agenda"      element={<AgendaPage />} />
           <Route path="/config"      element={<ConfigPage />} />
+          <Route path="/personal"    element={<PersonalPage />} />
           <Route path="*"            element={<Navigate to="/" replace />} />
         </Routes>
       </main>

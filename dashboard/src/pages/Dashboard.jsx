@@ -1,58 +1,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
 import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
+import { CurrencyBadge, StatusBadge, MontoCell } from '../components/Money'
+import { formatFecha as fmtFecha } from '../utils/format'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import { ordenarPorFechaDesc } from '../utils/movimientos'
 
-// ── Helpers ────────────────────────────────────────────────
+const formatFecha = (v) => fmtFecha(v, 'dd/MM')
 
-function formatFecha(value) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return String(value)
-  return format(d, 'dd/MM', { locale: es })
-}
-
-const MONEDA_KEY = { Pesos: 'ARS', Dólares: 'USD', Euros: 'EUR' }
-
-function currencyKey(moneda) { return MONEDA_KEY[moneda] || 'ARS' }
 
 // ── Sub-components ─────────────────────────────────────────
 
-function CurrencyBadge({ moneda }) {
-  const k = currencyKey(moneda)
-  return <span className={`badge-cur ${k}`}>{k}</span>
-}
-
-function StatusBadge({ estado }) {
-  const key = (estado || '').toLowerCase()
-  return <span className={`badge-status ${key}`}>{estado || '—'}</span>
-}
-
-function MontoCell({ mov }) {
-  const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
-  const moneda   = mov.moneda || 'Pesos'
-  const abs      = Math.abs(Number(mov.monto || 0))
-  const absPesos = Math.abs(Number(mov.montoPesos || 0))
-  const cfg      = { Dólares: 'U$S', Euros: '€' }
-  const sim      = cfg[moneda]
-  const montoStr = sim ? `${sim} ${abs.toLocaleString('es-AR')}` : `$${abs.toLocaleString('es-AR')}`
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-      <span className={`mv-monto ${esEgreso ? 'egreso' : 'ingreso'}`}>
-        {esEgreso ? '−' : '+'}{montoStr}
-      </span>
-      {sim && absPesos > 0 && (
-        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>≈ ${absPesos.toLocaleString('es-AR')}</span>
-      )}
-    </div>
-  )
-}
 
 // ── Main component ─────────────────────────────────────────
 

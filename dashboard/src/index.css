@@ -444,3 +444,121 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
     margin-bottom: 12px;
   }
 }
+
+/* ── Switch de ámbito (Consultorio / Personal) ─────────────── */
+
+.ambito-switch {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.ambito-btn {
+  padding: 6px 12px; font-size: 12.5px; font-weight: 500;
+  color: var(--text-2); background: transparent; border: none;
+  white-space: nowrap; transition: all 0.15s;
+}
+.ambito-btn + .ambito-btn { border-left: 1px solid var(--border); }
+.ambito-btn:hover:not(.active) { background: var(--primary-light); color: var(--primary); }
+.ambito-btn.active { background: var(--primary); color: var(--white); font-weight: 600; }
+
+/* ── Página Personal ──────────────────────────────────────── */
+
+/* Son 3 métricas, no 4 como en el consultorio. */
+.pers-metric-grid { grid-template-columns: repeat(3, 1fr); }
+
+.pers-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+.pers-card-body { padding: 16px 22px 20px; }
+
+.pers-bar-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin-bottom: 15px; }
+.pers-bar-row:last-child { margin-bottom: 0; }
+
+.pers-bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pers-bar-label { font-size: 13px; color: var(--text); font-weight: 500; }
+.pers-bar-value { font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.pers-bar-track {
+  grid-column: 1;
+  height: 8px; border-radius: 4px;
+  background: var(--bg); overflow: hidden;
+}
+.pers-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.pers-bar-pct {
+  grid-column: 2; grid-row: 2;
+  font-size: 11.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums; min-width: 34px; text-align: right;
+}
+
+/* ── Viaje activo ─────────────────────────────────────────── */
+
+.pers-viaje { margin-bottom: 18px; }
+.pers-viaje-body {
+  padding: 16px 22px 20px;
+  display: grid; grid-template-columns: auto 1fr; gap: 24px; align-items: center;
+}
+.pers-viaje-total {
+  font-size: 24px; font-weight: 700; color: var(--text);
+  letter-spacing: -0.5px; font-variant-numeric: tabular-nums;
+}
+.pers-viaje-sub { font-size: 12.5px; color: var(--text-3); margin-top: 2px; }
+.pers-viaje-presu { min-width: 0; }
+
+/* ── Lista de movimientos personales ──────────────────────── */
+
+.pers-lista { display: flex; flex-direction: column; }
+.pers-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 12px 22px; border-bottom: 1px solid var(--bg);
+}
+.pers-item:last-child { border-bottom: none; }
+.pers-item:hover { background: var(--surface); }
+.pers-item-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pers-item-desc {
+  font-size: 13.5px; color: var(--text); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pers-item-meta { font-size: 11.5px; color: var(--text-3); }
+
+@media (max-width: 900px) {
+  .pers-cols { grid-template-columns: 1fr; }
+  .pers-metric-grid { grid-template-columns: 1fr; }
+  .pers-viaje-body { grid-template-columns: 1fr; gap: 16px; }
+}
+
+@media (max-width: 768px) {
+  .ambito-btn { padding: 6px 9px; font-size: 11.5px; }
+}
+
+/* ── Ajustes responsive del switch de ámbito ───────────────── */
+/* El switch ocupa lugar en el header, así que en pantallas chicas hay que
+   evitar que el botón "+ Nuevo" se parta en dos líneas y que el selector de
+   período se superponga al subtítulo. */
+
+.btn-nuevo { white-space: nowrap; }
+
+@media (max-width: 768px) {
+  /* Título arriba, selector abajo: en fila se pisan. */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  /* Varios meses no entran en 390px: se scrollea en su propio contenedor
+     en vez de comprimir los botones hasta hacerlos ilegibles. */
+  .period-sel { overflow-x: auto; }
+  .period-btn { flex: 0 0 auto; min-width: 62px; }
+
+  .navbar-left { gap: 10px; min-width: 0; }
+  .btn-nuevo { padding: 6px 10px; font-size: 12px; }
+}
+
+@media (max-width: 768px) {
+  /* Solo los iconos: con texto, el switch y "+ Nuevo" se solapan en 390px. */
+  .ambito-label { display: none; }
+  .ambito-btn { padding: 7px 11px; font-size: 14px; }
+  .navbar-right { flex-shrink: 0; }
+}

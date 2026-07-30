@@ -28,6 +28,8 @@ const {
   fechaHoyStr,
 } = require('../services/agenda.service');
 const clienteService = require('../services/cliente.service');
+const personalService = require('../services/personal.service');
+const { normalizarCategoriaPersonal } = require('../services/personal-nlp.service');
 const { sanitizarInput } = require('../utils/formatter');
 const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
@@ -560,6 +562,179 @@ app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Finanzas personales ──
+// Ámbito separado del consultorio: vive en sus propias pestañas del Sheet y no
+// pasa por el modelo de movimientos clínicos.
+
+const MES_REGEX = /^\d{4}-\d{2}$/;
+
+// Un solo request trae todo lo que la vista Personal necesita (totales, por
+// categoría, presupuestos y viaje activo), en vez de encadenar cuatro.
+app.get('/api/personal/resumen', authMiddleware, async (req, res) => {
+  try {
+    const mes = MES_REGEX.test(String(req.query.mes || '')) ? String(req.query.mes) : undefined;
+    const resumen = await personalService.calcularResumenPersonal(req.user.userId, mes);
+    res.json(resumen);
+  } catch (err) {
+    logger.error('API', 'Error GET /api/personal/resumen', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener el resumen personal' });
+  }
+});
+
+app.get('/api/personal/movimientos', authMiddleware, async (req, res) => {
+  try {
+    const movimientos = await personalService.obtenerMovimientosPersonales(req.user.userId);
+    res.json({ movimientos });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/personal/movimientos', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener movimientos personales' });
+  }
+});
+
+app.post('/api/personal/movimientos', authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    const descripcionValidada = normalizarDescripcion(body.descripcion);
+    if (!descripcionValidada.ok) return res.status(400).json({ error: 'La descripción es inválida' });
+
+    const montoValidado = validarMonto(body.monto);
+    if (!montoValidado.ok) return res.status(400).json({ error: 'El monto es inválido' });
+
+    const tipo = body.tipo === 'Ingreso' ? 'ingreso' : 'gasto';
+    const categoria = normalizarCategoriaPersonal(body.categoria);
+    if (!categoria) return res.status(400).json({ error: 'La categoría no es válida para el ámbito personal' });
+
+    const moneda = ['Dolares', 'Dólares'].includes(body.moneda) ? 'Dólares'
+      : body.moneda === 'Euros' ? 'Euros' : 'Pesos';
+    const metodoPago = ['efectivo', 'transferencia', 'tarjeta', 'debito'].includes(body.metodoPago)
+      ? body.metodoPago : null;
+
+    if ((moneda === 'Dólares' && !state.cotizacionDolar) || (moneda === 'Euros' && !state.cotizacionEuro)) {
+      await obtenerCotizacionDolar();
+    }
+
+    const { movimiento } = await personalService.registrarMovimientoPersonal(req.user.userId, {
+      descripcion: descripcionValidada.valor,
+      monto: Math.abs(montoValidado.valor),
+      tipo,
+      moneda,
+      metodoPago,
+      categoria,
+      comercio: sanitizarInput(body.comercio, 100) || null,
+      notas: sanitizarInput(body.notas, 200) || null,
+      origenCarga: 'web',
+    });
+
+    res.status(201).json({ movimiento });
+  } catch (err) {
+    if (err.message === 'monto_invalido') return res.status(400).json({ error: 'El monto es inválido' });
+    if (err.message === 'descripcion_invalida') return res.status(400).json({ error: 'La descripción es inválida' });
+    logger.error('API', 'Error POST /api/personal/movimientos', { err: err.message });
+    res.status(500).json({ error: 'Error al guardar el movimiento personal' });
+  }
+});
+
+app.delete('/api/personal/movimientos/:idMov', authMiddleware, async (req, res) => {
+  try {
+    const eliminado = await personalService.eliminarMovimientoPersonal(req.user.userId, req.params.idMov);
+    if (!eliminado) return res.status(404).json({ error: 'Movimiento no encontrado' });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('API', 'Error DELETE /api/personal/movimientos', { err: err.message });
+    res.status(500).json({ error: 'Error al eliminar el movimiento personal' });
+  }
+});
+
+app.get('/api/personal/presupuestos', authMiddleware, async (req, res) => {
+  try {
+    const presupuestos = await personalService.obtenerPresupuestos(req.user.userId);
+    res.json({ presupuestos });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/personal/presupuestos', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener presupuestos' });
+  }
+});
+
+// Upsert por categoría. Monto 0 desactiva el presupuesto sin borrar el registro.
+app.put('/api/personal/presupuestos', authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const categoria = normalizarCategoriaPersonal(body.categoria);
+    if (!categoria) return res.status(400).json({ error: 'La categoría no es válida' });
+
+    const monto = Number(body.montoMensual);
+    if (!Number.isFinite(monto) || monto < 0) return res.status(400).json({ error: 'El monto es inválido' });
+
+    const moneda = ['Dolares', 'Dólares'].includes(body.moneda) ? 'Dólares'
+      : body.moneda === 'Euros' ? 'Euros' : 'Pesos';
+
+    const presupuesto = await personalService.guardarPresupuesto(req.user.userId, categoria, monto, moneda);
+    res.json({ presupuesto });
+  } catch (err) {
+    logger.error('API', 'Error PUT /api/personal/presupuestos', { err: err.message });
+    res.status(500).json({ error: 'Error al guardar el presupuesto' });
+  }
+});
+
+app.get('/api/personal/viajes', authMiddleware, async (req, res) => {
+  try {
+    const viaje = await personalService.obtenerViajeActivo(req.user.userId);
+    // `_row` es la fila del Sheet: no debe salir por la API.
+    res.json({ viaje: viaje ? { ...viaje, _row: undefined } : null });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/personal/viajes', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener el viaje activo' });
+  }
+});
+
+app.post('/api/personal/viajes', authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const nombre = sanitizarInput(body.nombre, 80);
+    if (!nombre) return res.status(400).json({ error: 'El nombre del viaje es obligatorio' });
+
+    const activo = await personalService.obtenerViajeActivo(req.user.userId);
+    if (activo) return res.status(409).json({ error: 'Ya hay un viaje activo. Cerralo primero.' });
+
+    // El front manda YYYY-MM-DD; el Sheet guarda DD/MM/YYYY.
+    const desde = validarFechaOpcional(body.fechaInicio);
+    if (!desde.ok) return res.status(400).json({ error: 'La fecha de inicio es inválida' });
+    const hasta = validarFechaOpcional(body.fechaFin);
+    if (!hasta.ok) return res.status(400).json({ error: 'La fecha de fin es inválida' });
+
+    const isoADdmmyyyy = (iso) => {
+      if (!iso) return '';
+      const [a, m, d] = iso.split('-');
+      return `${d}/${m}/${a}`;
+    };
+
+    const viaje = await personalService.crearViaje(req.user.userId, {
+      nombre,
+      fechaInicio: isoADdmmyyyy(desde.valor),
+      fechaFin: isoADdmmyyyy(hasta.valor),
+      presupuesto: Number.isFinite(Number(body.presupuesto)) && Number(body.presupuesto) > 0
+        ? Number(body.presupuesto) : null,
+    });
+
+    res.status(201).json({ viaje });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/personal/viajes', { err: err.message });
+    res.status(500).json({ error: 'Error al crear el viaje' });
+  }
+});
+
+app.post('/api/personal/viajes/cerrar', authMiddleware, async (req, res) => {
+  try {
+    const cerrado = await personalService.cerrarViaje(req.user.userId);
+    if (!cerrado) return res.status(404).json({ error: 'No hay ningún viaje activo' });
+    res.json({ ok: true, viaje: { ...cerrado, _row: undefined } });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/personal/viajes/cerrar', { err: err.message });
+    res.status(500).json({ error: 'Error al cerrar el viaje' });
   }
 });
 

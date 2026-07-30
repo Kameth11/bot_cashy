@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { api } from '../services/api'
+import { CurrencyBadge, StatusBadge, MontoCell } from '../components/Money'
+import { formatFecha as fmtFecha } from '../utils/format'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import DatePickerButton from '../components/DatePickerButton'
@@ -9,49 +11,13 @@ import { ordenarPorFechaDesc } from '../utils/movimientos'
 
 // ── Helpers ────────────────────────────────────────────────
 
-function formatFecha(value) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return String(value)
-  return format(d, 'dd/MM/yy', { locale: es })
-}
+const formatFecha = (v) => fmtFecha(v, 'dd/MM/yy')
 
 // Para valores de <input type="date"> ("yyyy-mm-dd"), evita el corrimiento
 // de un día que produce `new Date(value)` al interpretarlo como UTC.
 function formatFechaInput(value) {
   const [y, m, d] = value.split('-').map(Number)
   return format(new Date(y, m - 1, d), 'dd/MM/yy', { locale: es })
-}
-
-const MONEDA_KEY = { Pesos: 'ARS', Dólares: 'USD', Euros: 'EUR' }
-
-function CurrencyBadge({ moneda }) {
-  const k = MONEDA_KEY[moneda] || 'ARS'
-  return <span className={`badge-cur ${k}`}>{k}</span>
-}
-
-function StatusBadge({ estado }) {
-  return <span className={`badge-status ${(estado || '').toLowerCase()}`}>{estado || '—'}</span>
-}
-
-function MontoCell({ mov }) {
-  const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
-  const moneda   = mov.moneda || 'Pesos'
-  const abs      = Math.abs(Number(mov.monto || 0))
-  const absPesos = Math.abs(Number(mov.montoPesos || 0))
-  const cfg      = { Dólares: 'U$S', Euros: '€' }
-  const sim      = cfg[moneda]
-  const montoStr = sim ? `${sim} ${abs.toLocaleString('es-AR')}` : `$${abs.toLocaleString('es-AR')}`
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-      <span className={`mv-monto ${esEgreso ? 'egreso' : 'ingreso'}`}>
-        {esEgreso ? '−' : '+'}{montoStr}
-      </span>
-      {sim && absPesos > 0 && (
-        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>≈ ${absPesos.toLocaleString('es-AR')}</span>
-      )}
-    </div>
-  )
 }
 
 // ── Main ───────────────────────────────────────────────────

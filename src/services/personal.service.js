@@ -340,24 +340,9 @@ async function evaluarPresupuesto(userId, categoria, fecha = fechaHoyStr()) {
   if (!mes) return null;
 
   const movimientos = await obtenerMovimientosPersonales(userId);
-  const gastado = movimientos
-    .filter(m => esEgreso(m.tipo) && m.categoria === categoria)
-    .filter(m => (fechaStrAIso(m.fecha) || '').startsWith(mes))
-    .reduce((acc, m) => acc + Math.abs(Number(m.montoPesos) || Number(m.monto) || 0), 0);
-
-  const limite = presupuesto.montoMensual;
-  const porcentaje = limite > 0 ? Math.round((gastado / limite) * 100) : 0;
-
-  return {
-    categoria,
-    limite,
-    gastado,
-    restante: Math.max(limite - gastado, 0),
-    porcentaje,
-    moneda: presupuesto.moneda,
-    excedido: gastado > limite,
-    enAlerta: porcentaje >= 80,
-  };
+  // Reusa el mismo cálculo que el resumen para no tener dos definiciones de
+  // "cuánto gasté" que puedan divergir.
+  return evaluarPresupuestosDesde(movimientos, [presupuesto], mes)[0] || null;
 }
 
 // ── Movimientos ──────────────────────────────────────────────────────────────
@@ -517,9 +502,177 @@ async function registrarMovimientoPersonal(userId, datos) {
   return { movimiento, viaje: viajeId ? viajeActivo : null };
 }
 
+async function eliminarMovimientoPersonal(userId, idMov) {
+  const sheet = await getTabConReintento(userId, TAB_MOVIMIENTOS);
+  if (!sheet) throw new Error('sin_sheet');
+
+  const rows = await sheet.getRows();
+  const fila = rows.find(r => String(r.get('ID_Mov') || '') === String(idMov));
+  if (!fila) return false;
+
+  await withUserWriteLock(userId, () => fila.delete());
+  invalidateCache(userId);
+
+  const caps = await resolvePersonalCapabilities();
+  if (caps.movimientos) {
+    const { error } = await getSupabase()
+      .from('movimientos_personales')
+      .delete()
+      .eq('legacy_id', String(idMov));
+    if (error) console.error('Supabase movimientos_personales delete error:', error.message);
+  }
+
+  emitMovimientosUpdated(userId);
+  logger.audit('personal_movimiento_eliminado', { userId, idMov });
+  return true;
+}
+
+async function guardarPresupuesto(userId, categoria, montoMensual, moneda = 'Pesos') {
+  const cat = String(categoria || '').trim().toLowerCase();
+  const monto = parseFloat(montoMensual);
+  if (!cat) throw new Error('categoria_invalida');
+  if (!Number.isFinite(monto) || monto < 0) throw new Error('monto_invalido');
+
+  const sheet = await getTabConReintento(userId, TAB_PRESUPUESTOS);
+  if (!sheet) throw new Error('sin_sheet');
+
+  await withUserWriteLock(userId, async () => {
+    const rows = await sheet.getRows();
+    const existente = rows.find(r => String(r.get('Categoria') || '').trim().toLowerCase() === cat);
+
+    // Monto 0 = desactivar el presupuesto, sin borrar la fila.
+    if (existente) {
+      existente.set('MontoMensual', monto);
+      existente.set('Moneda', moneda);
+      existente.set('Activo', monto > 0 ? 'si' : 'no');
+      await existente.save();
+      return;
+    }
+    if (monto > 0) {
+      await sheet.addRow({ Categoria: cat, MontoMensual: monto, Moneda: moneda, Activo: 'si' });
+    }
+  });
+
+  logger.audit('personal_presupuesto_guardado', { userId, categoria: cat, monto });
+  return { categoria: cat, montoMensual: monto, moneda, activo: monto > 0 };
+}
+
+function mesActualIso() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function montoEnPesos(movimiento) {
+  return Math.abs(Number(movimiento.montoPesos) || Number(movimiento.monto) || 0);
+}
+
+/**
+ * Evalúa los presupuestos a partir de movimientos ya cargados.
+ * Puro y sin I/O — evita una lectura del Sheet por categoría (N+1) cuando se
+ * arma el resumen completo.
+ */
+function evaluarPresupuestosDesde(movimientos, presupuestos, mes) {
+  const gastoPorCategoria = new Map();
+  for (const m of movimientos) {
+    if (!esEgreso(m.tipo)) continue;
+    if (!(fechaStrAIso(m.fecha) || '').startsWith(mes)) continue;
+    const cat = m.categoria || 'otros';
+    gastoPorCategoria.set(cat, (gastoPorCategoria.get(cat) || 0) + montoEnPesos(m));
+  }
+
+  return presupuestos.map(p => {
+    const gastado = gastoPorCategoria.get(p.categoria) || 0;
+    const porcentaje = p.montoMensual > 0 ? Math.round((gastado / p.montoMensual) * 100) : 0;
+    return {
+      categoria: p.categoria,
+      limite: p.montoMensual,
+      gastado,
+      restante: Math.max(p.montoMensual - gastado, 0),
+      porcentaje,
+      moneda: p.moneda,
+      excedido: gastado > p.montoMensual,
+      enAlerta: porcentaje >= 80,
+    };
+  });
+}
+
+/**
+ * Resumen del ámbito personal para un mes (default: el actual).
+ * Fuente única de los números que muestran el bot (/personal) y el dashboard,
+ * para que no se puedan desincronizar.
+ */
+async function calcularResumenPersonal(userId, mes = mesActualIso()) {
+  const [movimientos, presupuestos, viaje] = await Promise.all([
+    obtenerMovimientosPersonales(userId),
+    obtenerPresupuestos(userId),
+    obtenerViajeActivo(userId),
+  ]);
+
+  const delMes = movimientos.filter(m => (fechaStrAIso(m.fecha) || '').startsWith(mes));
+
+  let ingresos = 0;
+  let egresos = 0;
+  const acumCategoria = new Map();
+
+  for (const m of delMes) {
+    const monto = montoEnPesos(m);
+    if (esEgreso(m.tipo)) {
+      egresos += monto;
+      const cat = m.categoria || 'otros';
+      acumCategoria.set(cat, (acumCategoria.get(cat) || 0) + monto);
+    } else {
+      ingresos += monto;
+    }
+  }
+
+  const porCategoria = [...acumCategoria.entries()]
+    .map(([categoria, total]) => ({
+      categoria,
+      total,
+      porcentaje: egresos > 0 ? Math.round((total / egresos) * 100) : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  let viajeResumen = null;
+  if (viaje) {
+    const delViaje = movimientos.filter(m => m.viajeId === viaje.idViaje);
+    viajeResumen = {
+      idViaje: viaje.idViaje,
+      nombre: viaje.nombre,
+      fechaInicio: viaje.fechaInicio,
+      fechaFin: viaje.fechaFin,
+      presupuesto: viaje.presupuesto,
+      moneda: viaje.moneda,
+      total: delViaje.filter(esEgresoMov).reduce((acc, m) => acc + montoEnPesos(m), 0),
+      cantidad: delViaje.length,
+    };
+  }
+
+  return {
+    mes,
+    ingresos,
+    egresos,
+    balance: ingresos - egresos,
+    cantidad: delMes.length,
+    porCategoria,
+    presupuestos: evaluarPresupuestosDesde(movimientos, presupuestos, mes),
+    viaje: viajeResumen,
+    movimientos: delMes,
+  };
+}
+
+function esEgresoMov(m) {
+  return esEgreso(m.tipo);
+}
+
 module.exports = {
   registrarMovimientoPersonal,
   obtenerMovimientosPersonales,
+  eliminarMovimientoPersonal,
+  guardarPresupuesto,
+  calcularResumenPersonal,
+  evaluarPresupuestosDesde,
+  mesActualIso,
   leerPreferencias,
   guardarPreferencia,
   obtenerViajeActivo,

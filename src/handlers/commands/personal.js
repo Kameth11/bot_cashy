@@ -1,16 +1,6 @@
 const { bot } = require('../../lib/telegraf');
 const personalService = require('../../services/personal.service');
-const { formatMonto } = require('../../utils/formatter');
-const { escapeMarkdown } = require('../../utils/formatter');
-
-function mesActualIso() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function esEgreso(tipo) {
-  return ['gasto', 'egreso'].includes(String(tipo || '').toLowerCase());
-}
+const { formatMonto, escapeMarkdown } = require('../../utils/formatter');
 
 // Barra de progreso en texto, para el estado de los presupuestos.
 function barra(porcentaje) {
@@ -18,16 +8,14 @@ function barra(porcentaje) {
   return '█'.repeat(llenos) + '░'.repeat(10 - llenos);
 }
 
-async function construirResumenPersonal(userId) {
-  const movimientos = await personalService.obtenerMovimientosPersonales(userId);
-  const mes = mesActualIso();
+function etiqueta(categoria) {
+  return escapeMarkdown(String(categoria || '').replace(/_/g, ' '));
+}
 
-  const delMes = movimientos.filter(m => {
-    const iso = personalService.fechaStrAIso(m.fecha);
-    return iso && iso.startsWith(mes);
-  });
-
-  if (delMes.length === 0) {
+// Los números salen de calcularResumenPersonal, el mismo que usa el dashboard,
+// para que bot y web no puedan mostrar totales distintos.
+function construirMensajeResumen(resumen) {
+  if (resumen.cantidad === 0) {
     return (
       '🏠 *Finanzas personales*\n\n' +
       'Todavía no hay movimientos personales este mes.\n\n' +
@@ -38,66 +26,35 @@ async function construirResumenPersonal(userId) {
     );
   }
 
-  let ingresos = 0;
-  let egresos = 0;
-  const porCategoria = new Map();
-
-  for (const m of delMes) {
-    const monto = Math.abs(Number(m.montoPesos) || Number(m.monto) || 0);
-    if (esEgreso(m.tipo)) {
-      egresos += monto;
-      const cat = m.categoria || 'otros';
-      porCategoria.set(cat, (porCategoria.get(cat) || 0) + monto);
-    } else {
-      ingresos += monto;
-    }
-  }
-
-  const balance = ingresos - egresos;
-  const ordenadas = [...porCategoria.entries()].sort((a, b) => b[1] - a[1]);
-
   let msg = '🏠 *Finanzas personales — este mes*\n\n';
-  msg += `💚 Ingresos: ${formatMonto(ingresos, 'Pesos')}\n`;
-  msg += `🔴 Gastos: ${formatMonto(egresos, 'Pesos')}\n`;
-  msg += `${balance >= 0 ? '✅' : '⚠️'} Balance: ${formatMonto(balance, 'Pesos')}\n\n`;
+  msg += `💚 Ingresos: ${formatMonto(resumen.ingresos, 'Pesos')}\n`;
+  msg += `🔴 Gastos: ${formatMonto(resumen.egresos, 'Pesos')}\n`;
+  msg += `${resumen.balance >= 0 ? '✅' : '⚠️'} Balance: ${formatMonto(resumen.balance, 'Pesos')}\n`;
 
-  msg += '*Gastos por categoría:*\n';
-  for (const [cat, total] of ordenadas) {
-    const pct = egresos > 0 ? Math.round((total / egresos) * 100) : 0;
-    msg += `• ${escapeMarkdown(cat.replace(/_/g, ' '))}: ${formatMonto(total, 'Pesos')} (${pct}%)\n`;
-  }
-
-  // Estado de los presupuestos definidos, si hay alguno.
-  const presupuestos = await personalService.obtenerPresupuestos(userId);
-  if (presupuestos.length > 0) {
-    const lineas = [];
-    for (const p of presupuestos) {
-      const estado = await personalService.evaluarPresupuesto(userId, p.categoria);
-      if (!estado) continue;
-      const icono = estado.excedido ? '🔴' : estado.enAlerta ? '⚠️' : '✅';
-      lineas.push(
-        `${icono} ${escapeMarkdown(p.categoria.replace(/_/g, ' '))}\n` +
-        `   ${barra(estado.porcentaje)} ${estado.porcentaje}% ` +
-        `(${formatMonto(estado.gastado, estado.moneda)} de ${formatMonto(estado.limite, estado.moneda)})`
-      );
-    }
-    if (lineas.length > 0) {
-      msg += `\n*Presupuestos:*\n${lineas.join('\n')}\n`;
+  if (resumen.porCategoria.length > 0) {
+    msg += '\n*Gastos por categoría:*\n';
+    for (const c of resumen.porCategoria) {
+      msg += `• ${etiqueta(c.categoria)}: ${formatMonto(c.total, 'Pesos')} (${c.porcentaje}%)\n`;
     }
   }
 
-  // Viaje activo con su total acumulado.
-  const viaje = await personalService.obtenerViajeActivo(userId);
-  if (viaje) {
-    const totalViaje = movimientos
-      .filter(m => m.viajeId === viaje.idViaje && esEgreso(m.tipo))
-      .reduce((acc, m) => acc + Math.abs(Number(m.montoPesos) || Number(m.monto) || 0), 0);
+  if (resumen.presupuestos.length > 0) {
+    msg += '\n*Presupuestos:*\n';
+    for (const p of resumen.presupuestos) {
+      const icono = p.excedido ? '🔴' : p.enAlerta ? '⚠️' : '✅';
+      msg += `${icono} ${etiqueta(p.categoria)}\n`;
+      msg += `   ${barra(p.porcentaje)} ${p.porcentaje}% `;
+      msg += `(${formatMonto(p.gastado, p.moneda)} de ${formatMonto(p.limite, p.moneda)})\n`;
+    }
+  }
 
-    msg += `\n✈️ *Viaje activo: ${escapeMarkdown(viaje.nombre)}*\n`;
-    msg += `   Gastado: ${formatMonto(totalViaje, 'Pesos')}`;
-    if (viaje.presupuesto) {
-      const pct = Math.round((totalViaje / viaje.presupuesto) * 100);
-      msg += ` de ${formatMonto(viaje.presupuesto, viaje.moneda)} (${pct}%)`;
+  if (resumen.viaje) {
+    const v = resumen.viaje;
+    msg += `\n✈️ *Viaje activo: ${escapeMarkdown(v.nombre)}*\n`;
+    msg += `   Gastado: ${formatMonto(v.total, 'Pesos')}`;
+    if (v.presupuesto) {
+      const pct = Math.round((v.total / v.presupuesto) * 100);
+      msg += ` de ${formatMonto(v.presupuesto, v.moneda)} (${pct}%)`;
     }
     msg += '\n';
   }
@@ -107,12 +64,12 @@ async function construirResumenPersonal(userId) {
 
 bot.command('personal', async (ctx) => {
   try {
-    const msg = await construirResumenPersonal(ctx.from.id);
-    return ctx.reply(msg, { parse_mode: 'Markdown' });
+    const resumen = await personalService.calcularResumenPersonal(ctx.from.id);
+    return ctx.reply(construirMensajeResumen(resumen), { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Error en /personal:', error.message);
     return ctx.reply('❌ No pude armar el resumen personal. Intentá de nuevo.');
   }
 });
 
-module.exports = { construirResumenPersonal };
+module.exports = { construirMensajeResumen, barra };
