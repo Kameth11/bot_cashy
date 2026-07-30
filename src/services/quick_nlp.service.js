@@ -931,4 +931,13 @@ function quickParse(rawText) {
   return null;
 }
 
-module.exports = { quickParse, INGRESO_WORDS, EGRESO_WORDS, KEYWORD_INTENTS, ENTITY_INTENTS };
+module.exports = {
+  quickParse,
+  INGRESO_WORDS,
+  EGRESO_WORDS,
+  KEYWORD_INTENTS,
+  ENTITY_INTENTS,
+  // Reusados por personal-nlp.service.js — no duplicar estas heurísticas.
+  normalizar,
+  tieneContextoClinico,
+};
