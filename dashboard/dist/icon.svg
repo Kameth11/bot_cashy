@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <rect width="512" height="512" rx="112" fill="#0747A6"/>
-  <text x="256" y="340" font-family="-apple-system, BlinkMacSystemFont, 'IBM Plex Sans', sans-serif" font-size="280" font-weight="700" fill="white" text-anchor="middle">C</text>
+  <circle cx="256" cy="116" r="26" fill="white"/>
+  <rect x="244" y="132" width="24" height="46" fill="white"/>
+  <rect x="96"  y="246" width="34" height="84" rx="17" fill="white"/>
+  <rect x="382" y="246" width="34" height="84" rx="17" fill="white"/>
+  <rect x="134" y="176" width="244" height="212" rx="56" fill="white"/>
+  <circle cx="204" cy="258" r="26" fill="#0747A6"/><circle cx="308" cy="258" r="26" fill="#0747A6"/><rect x="206" y="318" width="100" height="20" rx="10" fill="#0747A6"/>
 </svg>
