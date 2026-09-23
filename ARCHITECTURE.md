@@ -190,6 +190,11 @@ preguntarse:
   arrancar la API si queda seteada fuera de development. Antes, cualquiera
   que conociera ese valor entraba como cualquier usuario (incluido el
   admin) en cualquier entorno.
+- **Código de acceso al dashboard: 10 minutos de validez (antes 24h) y se
+  invalida a los 5 intentos fallidos** (`MAX_INTENTOS_CODIGO`, el mismo
+  límite que ya usaba `/unir`). Antes, un código de 6 dígitos numéricos
+  quedaba vigente un día entero sin límite de intentos — fuerza bruta
+  viable en esa ventana.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -382,3 +387,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | Permisos granulares extendidos al bot de Telegram (`src/auth/bot-permisos.js`), cubriendo comandos, texto libre/voz e intents NLP | Revisión de seguridad detectó que solo la API del dashboard aplicaba `resolverPermisos`; en el bot cualquier invitado con cualquier permiso podía usar comandos de plata/agenda sin restricción |
 | 2026-09-23 | Finanzas personales (`/personal`, `/viaje`, `/api/personal/*`, botón "Es personal" del NLP, sección Personal del dashboard) restringidas a dueño/admin | `getSheetId` resuelve al invitado al sheet del dueño, así que sin este cambio cualquier invitado podía leer, cargar y borrar los movimientos personales, presupuestos y viajes del dueño — no hay (ni está previsto) un ámbito personal por invitado |
 | 2026-09-23 | `DASHBOARD_DEV_TOKEN` restringido a `NODE_ENV=development`, comparación en tiempo constante | Revisión de seguridad: sin entorno ni comparación segura, cualquiera que conociera el valor entraba como cualquier usuario (incluido el admin) en cualquier entorno, con una comparación `===` filtrable por timing |
+| 2026-09-23 | Código de acceso al dashboard baja a 10 minutos de validez y se invalida a los 5 intentos fallidos (reusa `MAX_INTENTOS_CODIGO`) | Revisión de seguridad: 24h de vigencia y sin límite de intentos hacía viable fuerza bruta sobre un código de 6 dígitos |

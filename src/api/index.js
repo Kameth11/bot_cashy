@@ -201,12 +201,12 @@ app.post('/api/auth/request-code',
     return res.status(403).json({ error: 'Usuario no registrado en el sistema' });
 
   const code = crypto.randomInt(100000, 999999).toString();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   if (isAvailable() && getSupabase()) {
     try {
       await getSupabase().from('auth_codes').upsert(
-        { telegram_user_id: telegramId, code, expires_at: expiresAt.toISOString(), used: false },
+        { telegram_user_id: telegramId, code, expires_at: expiresAt.toISOString(), used: false, intentos: 0 },
         { onConflict: 'telegram_user_id' }
       );
     } catch (err) {
@@ -214,12 +214,12 @@ app.post('/api/auth/request-code',
     }
   }
   if (!global._authCodes) global._authCodes = new Map();
-  global._authCodes.set(telegramId, { code, expiresAt, used: false });
+  global._authCodes.set(telegramId, { code, expiresAt, used: false, intentos: 0 });
 
   try {
     const { bot } = require('../lib/telegraf');
     await bot.telegram.sendMessage(Number(telegramId),
-      `🔐 Codigo de acceso a Cashy Dashboard:\n\n*${code}*\n\nVence en 24 horas.`,
+      `🔐 Codigo de acceso a Cashy Dashboard:\n\n*${code}*\n\nVence en 10 minutos.`,
       { parse_mode: 'Markdown' }
     );
   } catch (err) {
@@ -254,7 +254,7 @@ app.post('/api/auth/verify',
     codeData = global._authCodes.get(telegramId);
   } else if (isAvailable() && getSupabase()) {
     const { data } = await getSupabase().from('auth_codes').select('*').eq('telegram_user_id', telegramId).maybeSingle();
-    if (data) codeData = { code: data.code, expiresAt: new Date(data.expires_at), used: data.used };
+    if (data) codeData = { code: data.code, expiresAt: new Date(data.expires_at), used: data.used, intentos: data.intentos || 0 };
   }
 
   if (!codeData) {
@@ -265,12 +265,29 @@ app.post('/api/auth/verify',
     logger.audit('auth_verify_failed', { telegramId, reason: 'code_already_used' });
     return res.status(400).json({ error: 'Codigo ya utilizado' });
   }
+  if ((codeData.intentos || 0) >= config.MAX_INTENTOS_CODIGO) {
+    logger.audit('auth_verify_failed', { telegramId, reason: 'too_many_attempts' });
+    return res.status(400).json({ error: 'Demasiados intentos fallidos. Pedí un código nuevo.' });
+  }
   if (new Date() > codeData.expiresAt) {
     logger.audit('auth_verify_failed', { telegramId, reason: 'code_expired' });
     return res.status(400).json({ error: 'Codigo expirado' });
   }
   if (codeData.code !== code) {
-    logger.audit('auth_verify_failed', { telegramId, reason: 'code_incorrect' });
+    codeData.intentos = (codeData.intentos || 0) + 1;
+    if (global._authCodes?.has(telegramId)) global._authCodes.set(telegramId, codeData);
+    if (isAvailable() && getSupabase()) {
+      try {
+        await getSupabase().from('auth_codes').update({ intentos: codeData.intentos }).eq('telegram_user_id', telegramId);
+      } catch (err) {
+        logger.warn('AUTH', 'No se pudo persistir intentos de auth_code en Supabase', { telegramId, err: err.message });
+      }
+    }
+
+    logger.audit('auth_verify_failed', { telegramId, reason: 'code_incorrect', intentos: codeData.intentos });
+    if (codeData.intentos >= config.MAX_INTENTOS_CODIGO) {
+      return res.status(400).json({ error: 'Código incorrecto. Se agotaron los intentos — pedí un código nuevo.' });
+    }
     return res.status(400).json({ error: 'Codigo incorrecto' });
   }
 
