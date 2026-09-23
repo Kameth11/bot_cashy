@@ -18,15 +18,17 @@ import { api } from './services/api'
 
 function LayoutWithModal() {
   const { showNuevo, closeNuevo, nuevoError, setNuevoError, creando, setCreando, triggerReload } = useApp()
-  const { puede } = useAuth()
+  const { puede, esDueno } = useAuth()
   const location = useLocation()
 
   // Ruta raíz: redirigir al primer destino permitido según permisos
   const defaultRoute = puede('ver_balance') ? '/' : puede('ver_agenda') ? '/agenda' : '/config'
 
   // El botón "+ Nuevo" es el mismo, pero en la vista Personal tiene que crear
-  // un movimiento personal, no uno del consultorio.
-  const enPersonal = location.pathname.startsWith('/personal')
+  // un movimiento personal, no uno del consultorio. La sección Personal es
+  // solo del dueño — si un invitado llega a esta ruta (redirect en curso),
+  // no la tratamos como "en personal" para no pedir /api/personal/* de más.
+  const enPersonal = esDueno && location.pathname.startsWith('/personal')
 
   const [categoriasPersonal, setCategoriasPersonal] = useState(null)
 
@@ -63,7 +65,7 @@ function LayoutWithModal() {
           <Route path="/movimientos" element={puede('ver_movimientos') ? <MovimientosPage /> : <Navigate to={defaultRoute} replace />} />
           <Route path="/agenda"      element={puede('ver_agenda')      ? <AgendaPage />      : <Navigate to={defaultRoute} replace />} />
           <Route path="/config"      element={<ConfigPage />} />
-          <Route path="/personal"    element={<PersonalPage />} />
+          <Route path="/personal"    element={esDueno ? <PersonalPage /> : <Navigate to={defaultRoute} replace />} />
           <Route path="/solicitudes" element={<Navigate to="/config?tab=solicitudes" replace />} />
           <Route path="/accesos"     element={<Navigate to="/config?tab=accesos" replace />} />
           <Route path="*"            element={<Navigate to={defaultRoute} replace />} />

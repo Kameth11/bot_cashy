@@ -184,6 +184,12 @@ Además del cashflow del consultorio, el bot registra **finanzas personales**
   Siempre corregible con un botón en la confirmación.
 - **Categorías propias y cerradas** (18 egreso + 4 ingreso), distintas de las
   del consultorio.
+- **Solo para el dueño o admin**: son las finanzas personales del dueño de la
+  cuenta (viven en pestañas de su mismo sheet, no hay una copia por invitado).
+  `/personal`, `/viaje`, todo `/api/personal/*` y el botón "Es personal" de la
+  confirmación NLP están restringidos a dueño/admin
+  (`requiereDuenoBot`/`ownerOnly`); para un invitado, la detección automática
+  de ámbito se fuerza siempre a `consultorio`.
 
 Detalle completo en `ROADMAP_CASHY_CLINICA.md` sección 5.b.
 

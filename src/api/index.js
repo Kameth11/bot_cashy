@@ -237,7 +237,7 @@ app.post('/api/auth/verify',
     const cliente = obtenerClientePorUserId(Number(telegramId));
     const esAdmin = esAdminOriginal(Number(telegramId));
     logger.audit('auth_dev_token_login', { telegramId });
-    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId) } });
+    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId) } });
   }
 
   let codeData = null;
@@ -279,14 +279,14 @@ app.post('/api/auth/verify',
   const cliente = obtenerClientePorUserId(Number(telegramId));
   const esAdmin = esAdminOriginal(Number(telegramId));
   logger.audit('auth_verify_success', { telegramId, esAdmin });
-  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId), modoFullIA: cliente?.modoFullIA || false } });
+  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId), modoFullIA: cliente?.modoFullIA || false } });
 });
 
 // ── Auth: me ──
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   const cliente = obtenerClientePorUserId(Number(req.user.userId));
   const esAdmin = esAdminOriginal(Number(req.user.userId));
-  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(req.user.userId), modoFullIA: cliente?.modoFullIA || false } });
+  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(req.user.userId), modoFullIA: cliente?.modoFullIA || false } });
 });
 
 app.post('/api/config/modo-ia', authMiddleware, async (req, res) => {
@@ -843,7 +843,7 @@ const MES_REGEX = /^\d{4}-\d{2}$/;
 
 // Las categorías salen del servicio, no de una lista repetida en el front: si
 // se agrega una, aparece sola en la UI y sigue validando igual en el POST.
-app.get('/api/personal/categorias', authMiddleware, (req, res) => {
+app.get('/api/personal/categorias', authMiddleware, ownerOnly, (req, res) => {
   res.json({
     egreso: CATEGORIAS_EGRESO_PERSONAL,
     ingreso: CATEGORIAS_INGRESO_PERSONAL,
@@ -852,7 +852,7 @@ app.get('/api/personal/categorias', authMiddleware, (req, res) => {
 
 // Un solo request trae todo lo que la vista Personal necesita (totales, por
 // categoría, presupuestos y viaje activo), en vez de encadenar cuatro.
-app.get('/api/personal/resumen', authMiddleware, async (req, res) => {
+app.get('/api/personal/resumen', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const mes = MES_REGEX.test(String(req.query.mes || '')) ? String(req.query.mes) : undefined;
     const resumen = await personalService.calcularResumenPersonal(req.user.userId, mes);
@@ -863,7 +863,7 @@ app.get('/api/personal/resumen', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/personal/movimientos', authMiddleware, async (req, res) => {
+app.get('/api/personal/movimientos', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const movimientos = await personalService.obtenerMovimientosPersonales(req.user.userId);
     res.json({ movimientos });
@@ -873,7 +873,7 @@ app.get('/api/personal/movimientos', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/personal/movimientos', authMiddleware, async (req, res) => {
+app.post('/api/personal/movimientos', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const body = req.body || {};
 
@@ -917,7 +917,7 @@ app.post('/api/personal/movimientos', authMiddleware, async (req, res) => {
   }
 });
 
-app.delete('/api/personal/movimientos/:idMov', authMiddleware, async (req, res) => {
+app.delete('/api/personal/movimientos/:idMov', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const eliminado = await personalService.eliminarMovimientoPersonal(req.user.userId, req.params.idMov);
     if (!eliminado) return res.status(404).json({ error: 'Movimiento no encontrado' });
@@ -928,7 +928,7 @@ app.delete('/api/personal/movimientos/:idMov', authMiddleware, async (req, res) 
   }
 });
 
-app.get('/api/personal/presupuestos', authMiddleware, async (req, res) => {
+app.get('/api/personal/presupuestos', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const presupuestos = await personalService.obtenerPresupuestos(req.user.userId);
     res.json({ presupuestos });
@@ -939,7 +939,7 @@ app.get('/api/personal/presupuestos', authMiddleware, async (req, res) => {
 });
 
 // Upsert por categoría. Monto 0 desactiva el presupuesto sin borrar el registro.
-app.put('/api/personal/presupuestos', authMiddleware, async (req, res) => {
+app.put('/api/personal/presupuestos', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const body = req.body || {};
     const categoria = normalizarCategoriaPersonal(body.categoria);
@@ -959,7 +959,7 @@ app.put('/api/personal/presupuestos', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/personal/viajes', authMiddleware, async (req, res) => {
+app.get('/api/personal/viajes', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const viaje = await personalService.obtenerViajeActivo(req.user.userId);
     // `_row` es la fila del Sheet: no debe salir por la API.
@@ -970,7 +970,7 @@ app.get('/api/personal/viajes', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/personal/viajes', authMiddleware, async (req, res) => {
+app.post('/api/personal/viajes', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const body = req.body || {};
     const nombre = sanitizarInput(body.nombre, 80);
@@ -1006,7 +1006,7 @@ app.post('/api/personal/viajes', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/personal/viajes/cerrar', authMiddleware, async (req, res) => {
+app.post('/api/personal/viajes/cerrar', authMiddleware, ownerOnly, async (req, res) => {
   try {
     const cerrado = await personalService.cerrarViaje(req.user.userId);
     if (!cerrado) return res.status(404).json({ error: 'No hay ningún viaje activo' });

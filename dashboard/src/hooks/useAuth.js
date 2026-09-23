@@ -67,5 +67,9 @@ export function useAuth() {
     return Array.isArray(user.permisos) && user.permisos.includes(permiso);
   }, [user]);
 
-  return { user, loading, login, requestCode, loginDemo, logout, puede };
+  // Dueño del consultorio o admin original — distinto de "tiene todos los
+  // permisos granulares", que un invitado (ej. recepción) también puede tener.
+  const esDueno = !!user && (user.isAdmin || user.isOwner);
+
+  return { user, loading, login, requestCode, loginDemo, logout, puede, esDueno };
 }

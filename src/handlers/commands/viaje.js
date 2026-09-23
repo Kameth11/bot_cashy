@@ -1,6 +1,7 @@
 const { bot } = require('../../lib/telegraf');
 const personalService = require('../../services/personal.service');
 const { formatMonto, escapeMarkdown } = require('../../utils/formatter');
+const { requiereDuenoBot } = require('../../auth/bot-permisos');
 
 const USO =
   '✈️ *Viajes*\n\n' +
@@ -71,6 +72,7 @@ async function mostrarViajeActivo(ctx, userId) {
 }
 
 bot.command('viaje', async (ctx) => {
+  if (!requiereDuenoBot(ctx, '/viaje')) return;
   const userId = ctx.from.id;
   const args = ctx.message.text.trim().split(/\s+/).slice(1);
 

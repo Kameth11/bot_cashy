@@ -1,6 +1,7 @@
 const { bot } = require('../../lib/telegraf');
 const personalService = require('../../services/personal.service');
 const { formatMonto, escapeMarkdown } = require('../../utils/formatter');
+const { requiereDuenoBot } = require('../../auth/bot-permisos');
 
 // Barra de progreso en texto, para el estado de los presupuestos.
 function barra(porcentaje) {
@@ -63,6 +64,7 @@ function construirMensajeResumen(resumen) {
 }
 
 bot.command('personal', async (ctx) => {
+  if (!requiereDuenoBot(ctx, '/personal')) return;
   try {
     const resumen = await personalService.calcularResumenPersonal(ctx.from.id);
     return ctx.reply(construirMensajeResumen(resumen), { parse_mode: 'Markdown' });

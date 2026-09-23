@@ -177,6 +177,14 @@ preguntarse:
   Mismo criterio y misma fuente (`resolverPermisos`) en ambos lados; el
   detalle del mapeo comando/intent → permiso vive en el skill
   `bot-cashy-arquitectura`.
+- **Finanzas personales restringidas a dueño/admin** en las cuatro
+  superficies donde se podían tocar: `/api/personal/*` (`ownerOnly`),
+  `/personal` y `/viaje` del bot (`requiereDuenoBot`), la detección
+  automática de ámbito y el botón "Es personal" de la confirmación NLP, y
+  la sección Personal del dashboard (oculta si `!isOwner && !isAdmin`).
+  Antes, `getSheetId` resolvía a cualquier invitado al sheet del dueño sin
+  ningún chequeo adicional, así que un invitado podía leer/cargar/borrar
+  las finanzas personales del dueño.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -367,3 +375,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-07-13 | Default de permisos = `['ver_agenda']` (mínimo, fail-safe) | Un usuario nuevo nunca ve ni toca plata por accidente |
 | 2026-07-13 | Dueño/admin siempre tiene ADMIN_PERMISOS implícitos, no se persisten | No hay forma de auto-bloquearse como dueño ni de perder el acceso por un bug de escritura |
 | 2026-09-23 | Permisos granulares extendidos al bot de Telegram (`src/auth/bot-permisos.js`), cubriendo comandos, texto libre/voz e intents NLP | Revisión de seguridad detectó que solo la API del dashboard aplicaba `resolverPermisos`; en el bot cualquier invitado con cualquier permiso podía usar comandos de plata/agenda sin restricción |
+| 2026-09-23 | Finanzas personales (`/personal`, `/viaje`, `/api/personal/*`, botón "Es personal" del NLP, sección Personal del dashboard) restringidas a dueño/admin | `getSheetId` resuelve al invitado al sheet del dueño, así que sin este cambio cualquier invitado podía leer, cargar y borrar los movimientos personales, presupuestos y viajes del dueño — no hay (ni está previsto) un ámbito personal por invitado |

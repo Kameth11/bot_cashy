@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useApp } from '../contexts/AppContext'
 
 export default function NavBar() {
-  const { user, logout, puede } = useAuth()
+  const { user, logout, puede, esDueno } = useAuth()
   const { openNuevo }           = useApp()
   const navigate                = useNavigate()
   const location                = useLocation()
@@ -32,20 +32,22 @@ export default function NavBar() {
     <nav className="navbar">
       <div className="navbar-left">
         <span className="navbar-logo">🦷 Cashy</span>
-        <div className="ambito-switch">
-          <button
-            className={`ambito-btn${enPersonal ? '' : ' active'}`}
-            onClick={() => navigate('/')}
-          >
-            🏥 <span className="ambito-label">Consultorio</span>
-          </button>
-          <button
-            className={`ambito-btn${enPersonal ? ' active' : ''}`}
-            onClick={() => navigate('/personal')}
-          >
-            🏠 <span className="ambito-label">Personal</span>
-          </button>
-        </div>
+        {esDueno && (
+          <div className="ambito-switch">
+            <button
+              className={`ambito-btn${enPersonal ? '' : ' active'}`}
+              onClick={() => navigate('/')}
+            >
+              🏥 <span className="ambito-label">Consultorio</span>
+            </button>
+            <button
+              className={`ambito-btn${enPersonal ? ' active' : ''}`}
+              onClick={() => navigate('/personal')}
+            >
+              🏠 <span className="ambito-label">Personal</span>
+            </button>
+          </div>
+        )}
         <div className="navbar-links">
           {(enPersonal ? [] : links).map(([to, label]) => (
             <NavLink

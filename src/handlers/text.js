@@ -228,6 +228,16 @@ async function marcarAmbito(userId, text, result) {
 
   const personalService = require('../services/personal.service');
   const { resolverAmbito, inferirCategoriaPersonal } = require('../services/personal-nlp.service');
+  const { esDuenoBot } = require('../auth/bot-permisos');
+
+  // Las finanzas personales son las del dueño (viven en pestañas de su
+  // mismo sheet). Un invitado no tiene ámbito personal propio: si el
+  // detector cree que el mensaje es "personal", lo tratamos igual como
+  // consultorio en vez de tocar las pestañas privadas del dueño — mismo
+  // criterio que el fallback histórico de ambigüedad.
+  if (!esDuenoBot(userId)) {
+    return { ...result, entities: { ...(result.entities || {}), ambito: 'consultorio' } };
+  }
 
   const preferencias = await personalService.leerPreferencias(userId);
   const { ambito, ambiguo, termino } = resolverAmbito(text, { preferencias });

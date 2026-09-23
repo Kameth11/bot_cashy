@@ -270,9 +270,17 @@ async function handleNlpToggleAmbito(ctx) {
 
   const personalService = require('../services/personal.service');
   const { inferirCategoriaPersonal } = require('../services/personal-nlp.service');
+  const { requiereDuenoBot } = require('../auth/bot-permisos');
+
+  const nuevoAmbito = esAmbitoPersonal(pending.entities) ? 'consultorio' : 'personal';
+  // Las pestañas personales son las del dueño: un invitado no puede pasar
+  // un movimiento a ese ámbito tocando el botón, aunque haya llegado acá
+  // (mismo criterio que marcarAmbito en text.js).
+  if (nuevoAmbito === 'personal' && !requiereDuenoBot(ctx, 'nlp_toggle_ambito')) {
+    return;
+  }
 
   const entities = { ...pending.entities };
-  const nuevoAmbito = esAmbitoPersonal(entities) ? 'consultorio' : 'personal';
   entities.ambito = nuevoAmbito;
   entities.ambiguoAmbito = false;
 

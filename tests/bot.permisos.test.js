@@ -90,6 +90,14 @@ jest.mock('../src/services/agenda.service', () => ({
   fechaHoyStr: jest.fn().mockReturnValue('2026-01-01'),
 }));
 
+jest.mock('../src/services/personal.service', () => ({
+  calcularResumenPersonal: jest.fn().mockResolvedValue({ cantidad: 0 }),
+  obtenerViajeActivo: jest.fn().mockResolvedValue(null),
+  obtenerMovimientosPersonales: jest.fn().mockResolvedValue([]),
+  cerrarViaje: jest.fn().mockResolvedValue(null),
+  crearViaje: jest.fn().mockResolvedValue({ nombre: 'Brasil', fechaInicio: '10/01/2026' }),
+}));
+
 global.__handlers = {};
 const handlers = global.__handlers;
 
@@ -98,6 +106,7 @@ const cmd = require('../src/services/command.service');
 const { mostrarCobrar } = require('../src/handlers/cobrar-confirm');
 const dbService = require('../src/services/db.service');
 const agendaService = require('../src/services/agenda.service');
+const personalService = require('../src/services/personal.service');
 
 // Requiere todos los comandos tocados por el ítem 1.1 — cada uno se
 // registra en `handlers` bajo su nombre de comando.
@@ -122,6 +131,8 @@ require('../src/handlers/commands/editarturno');
 require('../src/handlers/commands/limpiar');
 require('../src/handlers/commands/regenerar_ids');
 require('../src/handlers/commands/debug');
+require('../src/handlers/commands/personal');
+require('../src/handlers/commands/viaje');
 
 function ctxFor(userId, text = '') {
   return { from: { id: userId }, message: { text }, reply: jest.fn().mockResolvedValue(true) };
@@ -331,5 +342,39 @@ describe('/limpiar, /regenerar_ids, /debug son solo para el dueño o admin', () 
     const ctx = ctxFor(1111, `/${comando}`);
     await handlers[comando](ctx);
     expect(ctx.reply).not.toHaveBeenCalledWith(expect.stringContaining('solo para el dueño'));
+  });
+});
+
+describe('Ítem 1.2: /personal y /viaje son solo para el dueño o admin', () => {
+  test('invitado recepción (4444) con todos los permisos granulares → denegado igual en /personal', async () => {
+    const ctx = ctxFor(4444, '/personal');
+    await handlers.personal(ctx);
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining('solo para el dueño'));
+    expect(personalService.calcularResumenPersonal).not.toHaveBeenCalled();
+  });
+
+  test('owner (2222) → permitido en /personal', async () => {
+    const ctx = ctxFor(2222, '/personal');
+    await handlers.personal(ctx);
+    expect(personalService.calcularResumenPersonal).toHaveBeenCalledWith(2222);
+  });
+
+  test('admin (1111) → permitido en /personal', async () => {
+    const ctx = ctxFor(1111, '/personal');
+    await handlers.personal(ctx);
+    expect(personalService.calcularResumenPersonal).toHaveBeenCalledWith(1111);
+  });
+
+  test('invitado recepción (4444) → denegado en /viaje', async () => {
+    const ctx = ctxFor(4444, '/viaje');
+    await handlers.viaje(ctx);
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining('solo para el dueño'));
+    expect(personalService.obtenerViajeActivo).not.toHaveBeenCalled();
+  });
+
+  test('owner (2222) → permitido en /viaje', async () => {
+    const ctx = ctxFor(2222, '/viaje');
+    await handlers.viaje(ctx);
+    expect(personalService.obtenerViajeActivo).toHaveBeenCalledWith(2222);
   });
 });
