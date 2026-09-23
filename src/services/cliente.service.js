@@ -2,6 +2,7 @@ const fs = require('fs');
 const { CLIENTES_FILE, USE_SUPABASE } = require('../config');
 const { getSupabase, isAvailable } = require('../lib/supabase');
 const { DEFAULT_PERMISOS, ADMIN_PERMISOS, validarPermisos } = require('../auth/permisos');
+const { resolveOrCreateTenantId } = require('./tenant-provisioning.service');
 
 let clientes = {};
 
@@ -15,8 +16,13 @@ function encolarEscritura(fn) {
   return result;
 }
 
-function buildProfileRow(userId, clienteData = {}) {
-  return {
+// tenantId puede venir null (no se pudo resolver/crear el tenant): en ese
+// caso se omite `tenant_id` del row en vez de mandar `null` — profiles.tenant_id
+// es NOT NULL (migración 003), así que un `null` explícito rompe tanto el
+// insert de una fila nueva como, si alguna vez se relajara el default,
+// pisaría el tenant_id ya asignado de una fila existente.
+function buildProfileRow(userId, clienteData = {}, tenantId = null) {
+  const row = {
     id: parseInt(userId, 10),
     web_user_id: clienteData.webUserId || null,
     email: clienteData.email || null,
@@ -26,6 +32,8 @@ function buildProfileRow(userId, clienteData = {}) {
     usuarios: Array.isArray(clienteData.usuarios) ? clienteData.usuarios : [],
     permisos: clienteData.permisos && typeof clienteData.permisos === 'object' ? clienteData.permisos : {},
   };
+  if (tenantId) row.tenant_id = tenantId;
+  return row;
 }
 
 async function cargarClientes() {
@@ -85,8 +93,49 @@ function cargarClientesLocal() {
   return clientes;
 }
 
-async function guardarClientes(clientesObj) {
+// Sube a Supabase el/los perfiles indicados en `changedUserIds` (un array de
+// keys de `clientesObj`, o null para sincronizar TODOS — solo tiene sentido
+// para el seed inicial cuando Supabase está vacío, ver cargarClientes). Cada
+// fila nueva necesita un tenant_id resuelto porque profiles.tenant_id es
+// NOT NULL (migración 003); antes buildProfileRow no lo incluía nunca, así
+// que el insert de cualquier perfil nuevo fallaba por constraint violation
+// — y como supabase-js devuelve el error en vez de lanzarlo, y esto estaba
+// en un try/catch que solo atrapa excepciones reales, la falla era 100%
+// silenciosa (el usuario quedaba sin fila en Supabase sin ningún log).
+async function sincronizarPerfilesConSupabase(clientesObj, changedUserIds) {
+  if (!USE_SUPABASE || !isAvailable()) return;
+
+  const supabase = getSupabase();
+  const ids = changedUserIds || Object.keys(clientesObj);
+
+  for (const userId of ids) {
+    const clienteData = clientesObj[userId];
+    if (!clienteData) continue;
+
+    try {
+      const tenantId = await resolveOrCreateTenantId(supabase, clienteData.sheetId);
+      const { error } = await supabase
+        .from('profiles')
+        .upsert(buildProfileRow(userId, clienteData, tenantId), { onConflict: 'id' });
+
+      if (error) {
+        console.error(`Supabase guardarClientes upsert error (userId=${userId}):`, error.message);
+      }
+    } catch (err) {
+      console.error(`Supabase guardarClientes catch (userId=${userId}, local backup OK):`, err.message);
+    }
+  }
+}
+
+// changedUserIds: key (o array de keys) de clientesObj que efectivamente
+// cambiaron. Con eso alcanza para sincronizar Supabase — evita reescribir
+// TODOS los perfiles (con sus resoluciones de tenant_id) en cada guardado.
+// Se omite (null) solo para el seed inicial de cargarClientes.
+async function guardarClientes(clientesObj, changedUserIds = null) {
   clientes = clientesObj;
+  const ids = changedUserIds == null ? null
+    : Array.isArray(changedUserIds) ? changedUserIds.map(String)
+    : [String(changedUserIds)];
 
   return encolarEscritura(async () => {
     // always save locally as backup
@@ -96,18 +145,7 @@ async function guardarClientes(clientesObj) {
       console.error('Error al guardar clientes local:', error.message);
     }
 
-    if (USE_SUPABASE && isAvailable()) {
-      try {
-        const supabase = getSupabase();
-        for (const [userId, clienteData] of Object.entries(clientesObj)) {
-          await supabase
-            .from('profiles')
-            .upsert(buildProfileRow(userId, clienteData), { onConflict: 'id' });
-        }
-      } catch (err) {
-        console.error('Supabase guardarClientes catch (local backup OK):', err.message);
-      }
-    }
+    await sincronizarPerfilesConSupabase(clientesObj, ids);
   });
 }
 
@@ -142,12 +180,21 @@ async function eliminarCliente(userId) {
     if (USE_SUPABASE && isAvailable()) {
       try {
         const supabase = getSupabase();
-        await supabase.from('profiles').delete().eq('id', parseInt(key, 10));
+        const { error: deleteError } = await supabase.from('profiles').delete().eq('id', parseInt(key, 10));
+        if (deleteError) {
+          console.error(`Supabase eliminarCliente delete error (userId=${key}):`, deleteError.message);
+        }
         for (const ownerId of ownersActualizados) {
-          await supabase.from('profiles').update({ usuarios: clientes[ownerId].usuarios }).eq('id', parseInt(ownerId, 10));
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ usuarios: clientes[ownerId].usuarios })
+            .eq('id', parseInt(ownerId, 10));
+          if (updateError) {
+            console.error(`Supabase eliminarCliente usuarios[] update error (ownerId=${ownerId}):`, updateError.message);
+          }
         }
       } catch (e) {
-        console.error('Supabase eliminarCliente error:', e.message);
+        console.error('Supabase eliminarCliente catch (local backup OK):', e.message);
       }
     }
 
@@ -164,7 +211,7 @@ async function setModoFullIA(ownerId, enabled) {
   if (!clientes[key]) return false;
 
   clientes[key] = { ...clientes[key], modoFullIA: Boolean(enabled) };
-  await guardarClientes(clientes);
+  await guardarClientes(clientes, key);
   return true;
 }
 
@@ -232,12 +279,15 @@ async function setPermisos(ownerUserId, guestUserId, permisosArray) {
   if (USE_SUPABASE && isAvailable()) {
     try {
       const nuevoMapa = { ...clientes[ownerKey].permisos };
-      await getSupabase()
+      const { error } = await getSupabase()
         .from('profiles')
         .update({ permisos: nuevoMapa })
         .eq('id', parseInt(ownerKey, 10));
+      if (error) {
+        console.error(`Supabase setPermisos update error (ownerId=${ownerKey}, clientes.json actualizado igual):`, error.message);
+      }
     } catch (err) {
-      console.error('Supabase setPermisos error (clientes.json actualizado igual):', err.message);
+      console.error('Supabase setPermisos catch (clientes.json actualizado igual):', err.message);
     }
   }
 
@@ -271,4 +321,5 @@ module.exports = {
   setModoFullIA,
   getPermisos,
   setPermisos,
+  buildProfileRow,
 };

@@ -1,6 +1,7 @@
 const { getSupabase, isAvailable } = require('../lib/supabase');
 const { forTenant } = require('../lib/tenant-db');
 const { resolveTenantId, invalidateTenantCache } = require('./tenant.service');
+const { resolveOrCreateTenantId } = require('./tenant-provisioning.service');
 const { USE_SUPABASE, SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
@@ -99,36 +100,6 @@ function invalidateCache(userId) {
   getSheetService().invalidateCache(userId);
 }
 
-// Resuelve el tenant de un sheet_id (otro profile ya creado con el mismo
-// sheet, ej: el owner cuando este perfil es de un usuario invitado) o crea
-// un tenant nuevo. profiles/tenants quedan fuera de tenant-db.js a
-// proposito: son las tablas que definen el mapeo userId -> tenantId, no
-// tiene sentido pedirles el tenantId a si mismas (ver tenant.service.js).
-async function resolveOrCreateTenantId(supabase, sheetId) {
-  if (sheetId) {
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('tenant_id')
-      .eq('sheet_id', sheetId)
-      .not('tenant_id', 'is', null)
-      .limit(1)
-      .maybeSingle();
-    if (existing?.tenant_id) return existing.tenant_id;
-  }
-
-  const { data: tenant, error } = await supabase
-    .from('tenants')
-    .insert({ nombre: sheetId ? `Consultorio ${sheetId.slice(0, 8)}` : 'Consultorio sin sheet' })
-    .select('id')
-    .single();
-
-  if (error) {
-    console.error('Supabase resolveOrCreateTenantId error:', error.message);
-    return null;
-  }
-  return tenant.id;
-}
-
 async function ensureProfile(userId) {
   if (!USE_SUPABASE) return;
 
@@ -154,8 +125,12 @@ async function ensureProfile(userId) {
     if (!data.tenant_id) {
       const tenantId = await resolveOrCreateTenantId(supabase, sheetId);
       if (tenantId) {
-        await supabase.from('profiles').update({ tenant_id: tenantId }).eq('id', userId);
-        invalidateTenantCache(userId);
+        const { error: backfillError } = await supabase.from('profiles').update({ tenant_id: tenantId }).eq('id', userId);
+        if (backfillError) {
+          console.error('Supabase ensureProfile tenant_id backfill error:', backfillError.message);
+        } else {
+          invalidateTenantCache(userId);
+        }
       }
     }
     return;

@@ -96,7 +96,7 @@ async function beginInviteRegistration(userId, rawCode) {
   }
 
   clientes[ownerId].usuarios.push(userId);
-  await clienteService.guardarClientes(clientes);
+  await clienteService.guardarClientes(clientes, ownerId);
   state.pendingCodigos.delete(codigo);
 
   // El owner que generó el código ya validó a la persona, así que no va a la

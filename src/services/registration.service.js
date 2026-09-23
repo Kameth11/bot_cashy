@@ -193,7 +193,7 @@ async function handleSheetIdStep(userId, text, registro) {
 
     const clientes = clienteService.clientes;
     clientes[userId] = datosCliente;
-    await clienteService.guardarClientes(clientes);
+    await clienteService.guardarClientes(clientes, userId);
 
     state.pendingRegistros.delete(userId);
 

@@ -227,9 +227,11 @@ bot.action('confirm_reset', async (ctx) => {
   state.pendingReinicios.delete(userId);
   const cliente = obtenerClientePorUserId(userId);
 
-  const clientes = clienteService.clientes;
-  delete clientes[userId];
-  await clienteService.guardarClientes(clientes);
+  // eliminarCliente (no un delete manual + guardarClientes) porque también
+  // borra la fila en Supabase y saca al usuario de usuarios[] si en algún
+  // momento quedó como invitado de otra cuenta — guardarClientes solo hace
+  // upserts, nunca deletes.
+  await clienteService.eliminarCliente(userId);
 
   if (cliente && cliente.sheetId) {
     try {

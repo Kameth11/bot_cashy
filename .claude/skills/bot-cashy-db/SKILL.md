@@ -47,6 +47,19 @@ tabla de negocio (`movimientos`, `profesionales`) DEBE pasar por
 - `profiles` y `tenants` quedan **fuera** de `forTenant` a propósito: son las
   tablas que definen el mapeo userId→tenantId, se consultan con `getSupabase()`
   directo antes de tener el tenant resuelto.
+- `resolveOrCreateTenantId(supabase, sheetId)` (`src/services/tenant-provisioning.service.js`)
+  es el único lugar que resuelve/crea el `tenant_id` de un `sheet_id` nuevo.
+  Vive separado de `tenant.service.js` y `db.service.js` a propósito: ambos
+  requieren `../auth`, que a su vez requiere `cliente.service.js` — si
+  `resolveOrCreateTenantId` viviera ahí, `cliente.service.js` importándolo
+  cerraría un require circular. Lo usan `db.service.js` (`ensureProfile`,
+  antes de la primera escritura de un usuario) y `cliente.service.js`
+  (`guardarClientes`, al registrar/editar un cliente). **Cualquier insert
+  nuevo en `profiles` necesita pasar por acá** — `profiles.tenant_id` es
+  `NOT NULL` desde la migración 003; un insert sin `tenant_id` viola el
+  constraint, y como supabase-js devuelve `{ error }` en vez de lanzar,
+  queda silencioso si no se chequea explícitamente (ver 2026-09-23 en el
+  registro de decisiones de `ARCHITECTURE.md`).
 - Red de seguridad: `scripts/check-tenant-isolation.js` (step de CI
   `npm run check:tenant`) falla el build si aparece `.from('movimientos'|
   'profesionales')` fuera de `tenant-db.js`. Excepción: comentario

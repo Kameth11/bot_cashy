@@ -219,6 +219,38 @@ preguntarse:
   usuario de `usuarios[]` de cualquier dueño donde figure — antes solo
   borraba su registro propio, así que un invitado que se daba de baja
   conservaba el acceso.
+- **Persistencia de clientes en Supabase (`profiles`), corregida.**
+  `buildProfileRow` (`cliente.service.js`) nunca incluía `tenant_id`, que es
+  `NOT NULL` desde la migración 003 — el upsert de cualquier perfil NUEVO
+  fallaba por constraint violation. Como supabase-js devuelve `{ error }` en
+  vez de lanzarlo, y el try/catch alrededor solo atrapa excepciones reales,
+  la falla era 100% silenciosa: el usuario quedaba sin fila en `profiles`
+  y nada lo registraba. Como `clientes.json` (el respaldo local) se borra en
+  cada deploy de Railway, un usuario que se registraba pero no llegaba a
+  cargar ningún movimiento antes del próximo deploy (`ensureProfile` nunca
+  corría para él) perdía el alta por completo.
+  - Se agregó `src/services/tenant-provisioning.service.js`
+    (`resolveOrCreateTenantId`, extraído de `db.service.js` a un módulo sin
+    dependencias internas para que `cliente.service.js` pueda usarlo sin
+    crear un require circular vía `auth/index.js`).
+  - `guardarClientes` ahora recibe qué usuario(s) cambiaron y solo sube esa
+    fila (con `tenant_id` resuelto), en vez de reescribir todos los
+    perfiles en cada guardado. El único caso que sigue sincronizando todo
+    es el seed inicial cuando Supabase está vacío.
+  - Se revisaron TODAS las escrituras a Supabase del repo: la mayoría
+    (`db.service.js` para movimientos/movimientos_v2, `personal.service.js`,
+    `tenant-request.service.js`, `profesional.service.js`) ya chequeaban
+    `{ error }` correctamente. Se agregó el chequeo donde faltaba:
+    `eliminarCliente`, `setPermisos` y el backfill de `tenant_id` en
+    `ensureProfile`.
+  - `db.service.js` tiene una función `upsertProfile` sin usar en ningún
+    lado (confirmado por grep) — también le falta `tenant_id`, pero al no
+    tener callers no representa un riesgo activo. Queda pendiente decidir
+    si se borra.
+  - `modoFullIA` sigue sin persistir en Supabase (la columna no existe) —
+    migración propuesta en `sql/migrations/009_modo_full_ia.sql`, sin
+    correr todavía. Falta además actualizar `buildProfileRow`/`cargarClientes`
+    para escribirla y leerla una vez aplicada.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -414,3 +446,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | Código de acceso al dashboard baja a 10 minutos de validez y se invalida a los 5 intentos fallidos (reusa `MAX_INTENTOS_CODIGO`) | Revisión de seguridad: 24h de vigencia y sin límite de intentos hacía viable fuerza bruta sobre un código de 6 dígitos |
 | 2026-09-23 | Modo Full IA (`/api/config/modo-ia`, `/modoia`) restringido a dueño/admin | Revisión de seguridad: cualquier invitado podía activarlo/desactivarlo para todo el consultorio, generando costo real en OpenRouter |
 | 2026-09-23 | El invitado usa el sheet del dueño (sin uno propio); `obtenerClientePorUserId` resuelve por `ownerId` explícito, no por orden de iteración de IDs | Revisión de seguridad: el resultado dependía de si el ID de Telegram del invitado era mayor o menor al del dueño — con cierto orden, el invitado terminaba como dueño de su propio sheet con permisos completos, ignorando lo configurado en /accesos. Decisión de producto confirmada con el usuario: sheet compartido con permisos granulares, no sheet propio aislado |
+| 2026-09-23 | `buildProfileRow` incluye `tenant_id` (vía nuevo `tenant-provisioning.service.js`); `guardarClientes` sube solo el perfil que cambió, no todos | Revisión de seguridad: `profiles.tenant_id` es NOT NULL desde la migración 003, pero el insert de un perfil nuevo nunca lo mandaba — fallaba en silencio (supabase-js devuelve `{ error }`, no lo lanza, y no se chequeaba) y el usuario quedaba sin fila en Supabase, con riesgo real de perder el alta en el próximo deploy de Railway |
