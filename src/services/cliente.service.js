@@ -133,6 +133,19 @@ async function eliminarCliente(userId) {
   });
 }
 
+// Nota: modoFullIA solo persiste de forma confiable en clientes.json local.
+// Si USE_SUPABASE=true, buildProfileRow no lo incluye (la tabla profiles no
+// tiene esa columna), así que no sobrevive a un restart con Supabase como
+// fuente de verdad — requeriría una migración SQL para agregarla.
+async function setModoFullIA(ownerId, enabled) {
+  const key = String(ownerId);
+  if (!clientes[key]) return false;
+
+  clientes[key] = { ...clientes[key], modoFullIA: Boolean(enabled) };
+  await guardarClientes(clientes);
+  return true;
+}
+
 async function getCliente(userId) {
   if (USE_SUPABASE && isAvailable()) {
     const supabase = getSupabase();
@@ -175,4 +188,5 @@ module.exports = {
   guardarClientes,
   getCliente,
   eliminarCliente,
+  setModoFullIA,
 };

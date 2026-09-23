@@ -2,15 +2,31 @@ import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 import CotizacionWidget from '../components/CotizacionWidget'
+import { api } from '../services/api'
 
 export default function ConfigPage() {
   const { user, logout } = useAuth()
   const navigate         = useNavigate()
   const [showToken, setShowToken] = useState(false)
+  const [modoFullIA, setModoFullIA] = useState(Boolean(user?.modoFullIA))
+  const [savingModoIA, setSavingModoIA] = useState(false)
 
   function handleLogout() {
     logout()
     navigate('/login')
+  }
+
+  async function handleToggleModoIA() {
+    const next = !modoFullIA
+    setSavingModoIA(true)
+    try {
+      await api.post('/api/config/modo-ia', { enabled: next })
+      setModoFullIA(next)
+    } catch (err) {
+      console.error('Error al cambiar modo IA:', err)
+    } finally {
+      setSavingModoIA(false)
+    }
   }
 
   const userId    = user?.userId || '—'
@@ -51,6 +67,33 @@ export default function ConfigPage() {
             Estado: <span style={{ color: '#36B37E', fontWeight: 600 }}>● Conectado</span>
             {userEmail !== '—' && ` · ${userEmail}`}
           </p>
+        </div>
+      </div>
+
+      {/* Modo IA */}
+      <div className="config-card">
+        <div className="config-card-header"><h2>Modo IA</h2></div>
+        <div className="config-card-body">
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 13.5, marginBottom: 4 }}>
+                Full IA: {modoFullIA
+                  ? <span style={{ color: '#36B37E', fontWeight: 600 }}>Activado ✅</span>
+                  : <span style={{ color: 'var(--text-3)', fontWeight: 600 }}>Desactivado</span>}
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                Cuando está activado, todos tus mensajes se procesan con un motor de IA (OpenRouter) en vez de las reglas rápidas locales. Puede ser más lento y tiene costo por mensaje.
+              </p>
+            </div>
+            <button
+              className={modoFullIA ? 'btn-danger' : 'btn-secondary'}
+              style={{ whiteSpace: 'nowrap' }}
+              disabled={savingModoIA}
+              onClick={handleToggleModoIA}
+            >
+              {modoFullIA ? 'Desactivar' : 'Activar'}
+            </button>
+          </div>
         </div>
       </div>
 

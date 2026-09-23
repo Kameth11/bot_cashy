@@ -33,6 +33,9 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || 'gemini-2.5-flash';
 const CODIGO_EXPIRACION_HORAS = 24;
 
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+
 // Mapeo de nombre de consultorio → profesional. Clave en minúsculas.
 // Valor vacío ('') significa que no se muestra nombre de profesional.
 const CONSULTORIO_MAP = {
@@ -83,6 +86,8 @@ module.exports = {
   GEMINI_API_KEY,
   GEMINI_MODEL,
   GEMINI_VISION_MODEL,
+  OPENROUTER_API_KEY,
+  OPENROUTER_MODEL,
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY,

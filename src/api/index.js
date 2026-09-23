@@ -255,7 +255,16 @@ app.post('/api/auth/verify',
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   const cliente = obtenerClientePorUserId(Number(req.user.userId));
   const esAdmin = esAdminOriginal(Number(req.user.userId));
-  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
+  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), modoFullIA: cliente?.modoFullIA || false } });
+});
+
+app.post('/api/config/modo-ia', authMiddleware, async (req, res) => {
+  const cliente = obtenerClientePorUserId(Number(req.user.userId));
+  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+  const enabled = Boolean(req.body?.enabled);
+  await clienteService.setModoFullIA(cliente.ownerId, enabled);
+  res.json({ modoFullIA: enabled });
 });
 
 // ── Cache de movimientos (30s) ──

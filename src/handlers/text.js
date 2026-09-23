@@ -4,6 +4,7 @@ const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { formatMonto, sanitizarInput, escapeMarkdown } = require('../utils/formatter');
 const geminiService = require('../services/gemini.service');
+const openrouterService = require('../services/openrouter.service');
 const { handleNLPIntent } = require('../handlers/nlp');
 const { quickParse } = require('../services/quick_nlp.service');
 const registrationService = require('../services/registration.service');
@@ -219,36 +220,66 @@ async function procesarTextoConNlp(ctx, text) {
   }
   state.processingNlp.add(userId);
   try {
+    const cliente = obtenerClientePorUserId(userId);
+    const fullIA = Boolean(cliente?.modoFullIA) && openrouterService.canAttemptFullIA();
+
     const quickResult = quickParse(text);
-    if (shouldHandleWithQuickParseFirst(quickResult)) {
-      try {
-        const handled = await handleNLPIntent(ctx, quickResult);
-        if (handled) return;
-      } catch (e) {
-        console.error('Error quick NLP:', e.message);
-      }
-    }
 
-    if (geminiService.canAttemptRemoteNlp()) {
-      await ctx.reply('🧠 Procesando...').catch(() => {});
+    if (fullIA) {
+      await ctx.reply('🧠 Procesando (Full IA)...').catch(() => {});
 
       try {
-        const nlpResult = await geminiService.parseMessage(userId, text);
+        const nlpResult = await openrouterService.parseMessage(userId, text);
         if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
           const handled = await handleNLPIntent(ctx, nlpResult);
           if (handled) return;
         }
       } catch (nlpError) {
-        console.error('Error NLP fallback:', nlpError.message);
+        console.error('Error Full IA:', nlpError.message);
       }
-    }
 
-    if (quickResult) {
-      try {
-        const handled = await handleNLPIntent(ctx, quickResult);
-        if (handled) return;
-      } catch (e) {
-        console.error('Error quick NLP:', e.message);
+      // Full IA no resolvió (o falló): quick_nlp actúa como red de emergencia,
+      // no como parte normal del flujo — evita dejar al usuario sin respuesta
+      // si OpenRouter está caído.
+      if (quickResult) {
+        try {
+          const handled = await handleNLPIntent(ctx, quickResult);
+          if (handled) return;
+        } catch (e) {
+          console.error('Error quick NLP (fallback de emergencia):', e.message);
+        }
+      }
+    } else {
+      if (shouldHandleWithQuickParseFirst(quickResult)) {
+        try {
+          const handled = await handleNLPIntent(ctx, quickResult);
+          if (handled) return;
+        } catch (e) {
+          console.error('Error quick NLP:', e.message);
+        }
+      }
+
+      if (geminiService.canAttemptRemoteNlp()) {
+        await ctx.reply('🧠 Procesando...').catch(() => {});
+
+        try {
+          const nlpResult = await geminiService.parseMessage(userId, text);
+          if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
+            const handled = await handleNLPIntent(ctx, nlpResult);
+            if (handled) return;
+          }
+        } catch (nlpError) {
+          console.error('Error NLP fallback:', nlpError.message);
+        }
+      }
+
+      if (quickResult) {
+        try {
+          const handled = await handleNLPIntent(ctx, quickResult);
+          if (handled) return;
+        } catch (e) {
+          console.error('Error quick NLP:', e.message);
+        }
       }
     }
 

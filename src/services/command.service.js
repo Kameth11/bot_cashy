@@ -887,7 +887,10 @@ function buildHelpMessage() {
     '`/dolar` - Ver cotización actual\n' +
     '`/actualizardolar` - Actualizar cotización\n\n' +
     '📄 *Sheet:*\n' +
-    '`/sheet` - Ver link de tu Google Sheet'
+    '`/sheet` - Ver link de tu Google Sheet\n\n' +
+    '🧠 *Modo IA:*\n' +
+    '`/modoia` - Ver estado del modo Full IA\n' +
+    '`/modoia on` / `/modoia off` - Activar/desactivar'
   );
 }
 
