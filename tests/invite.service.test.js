@@ -30,15 +30,17 @@ beforeEach(() => {
 });
 
 describe('beginInviteRegistration — código válido', () => {
-  test('deja al invitado en el paso de configurar SU propio sheet', async () => {
+  test('agrega al invitado a usuarios[] del owner directamente, sin pedirle su propio sheet', async () => {
     const codigo = createInviteCode(OWNER);
     const res = await beginInviteRegistration(INVITADO, codigo);
 
-    expect(res.message).toMatch(/Código válido/);
-    expect(res.message).toMatch(/tu propio Google Sheet/i);
+    expect(res.message).toMatch(/ya formás parte del consultorio/i);
+    expect(res.message).not.toMatch(/tu propio Google Sheet/i);
 
-    const registro = state.pendingRegistros.get(INVITADO);
-    expect(registro).toMatchObject({ step: 'sheetId', ownerId: OWNER });
+    expect(clienteService.clientes[OWNER].usuarios).toContain(INVITADO);
+    // El invitado NO tiene su propio registro — usa el sheet del owner.
+    expect(clienteService.clientes[INVITADO]).toBeUndefined();
+    expect(state.pendingRegistros.has(INVITADO)).toBe(false);
   });
 
   test('consume el código para que no se pueda reusar', async () => {
@@ -54,7 +56,7 @@ describe('beginInviteRegistration — código válido', () => {
   test('acepta el código en minúsculas y con espacios', async () => {
     const codigo = createInviteCode(OWNER);
     const res = await beginInviteRegistration(INVITADO, `  ${codigo.toLowerCase()}  `);
-    expect(res.message).toMatch(/Código válido/);
+    expect(res.message).toMatch(/ya formás parte del consultorio/i);
   });
 
   test('registra el alta como solicitud aprobada (no saltea la auditoría)', async () => {
@@ -73,8 +75,8 @@ describe('beginInviteRegistration — código válido', () => {
     const codigo = createInviteCode(OWNER);
     const res = await beginInviteRegistration(INVITADO, codigo);
 
-    expect(res.message).toMatch(/Código válido/);
-    expect(state.pendingRegistros.get(INVITADO)).toMatchObject({ step: 'sheetId' });
+    expect(res.message).toMatch(/ya formás parte del consultorio/i);
+    expect(clienteService.clientes[OWNER].usuarios).toContain(INVITADO);
   });
 });
 

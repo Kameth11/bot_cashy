@@ -19,6 +19,21 @@ function obtenerClientePorUserId(userId) {
   const clientes = clienteService.clientes;
   const numId = Number(userId);
   const strId = String(userId);
+
+  // Resolución determinística: si el propio registro del usuario declara un
+  // ownerId explícito (invitados dados de alta antes de que /unir dejara de
+  // crearles un sheet propio), es invitado de esa cuenta — sin depender del
+  // orden de iteración de las claves numéricas de `clientes` más abajo.
+  // Object.entries recorre claves con forma de índice (todas acá, son IDs de
+  // Telegram) en orden ascendente, no en el orden en que se insertaron, así
+  // que antes el resultado cambiaba según si el ID del invitado era mayor o
+  // menor que el del dueño.
+  const propio = clientes[strId];
+  if (propio && propio.ownerId != null && clientes[String(propio.ownerId)]) {
+    const ownerId = String(propio.ownerId);
+    return { userId: ownerId, ownerId, isOwner: false, ...clientes[ownerId] };
+  }
+
   for (const [ownerId, cliente] of Object.entries(clientes)) {
     if (parseInt(ownerId) === numId) return { userId: ownerId, ownerId: ownerId, isOwner: true, ...cliente };
     if (cliente.usuarios && (cliente.usuarios.includes(strId) || cliente.usuarios.includes(numId))) {

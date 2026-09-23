@@ -192,12 +192,6 @@ async function handleSheetIdStep(userId, text, registro) {
     };
 
     const clientes = clienteService.clientes;
-
-    if (registro.ownerId && clientes[registro.ownerId]) {
-      datosCliente.ownerId = registro.ownerId;
-      clientes[registro.ownerId].usuarios.push(userId);
-    }
-
     clientes[userId] = datosCliente;
     await clienteService.guardarClientes(clientes);
 
@@ -207,26 +201,12 @@ async function handleSheetIdStep(userId, text, registro) {
       ? { inline_keyboard: [[{ text: '📊 Abrir Dashboard', url: DASHBOARD_URL }]] }
       : undefined;
 
-    if (registro.email) {
-      return {
-        message:
-          `✅ *¡Registro completado!*\n\n` +
-          `📧 Email: ${registro.email}\n\n` +
-          `Tu sheet ha sido configurado.\n` +
-          `Ahora puedes usar el bot.\n\n` +
-          `Usa /start para comenzar.`,
-        parse_mode: 'Markdown',
-        reply_markup: dashboardBtn,
-      };
-    }
-
     return {
       message:
         `✅ *¡Registro completado!*\n\n` +
-        `Te uniste a la cuenta del owner.\n\n` +
-        `📝 *Próximos pasos:*\n` +
-        `1. Comparte este email con tu sheet: *${GOOGLE_SERVICE_ACCOUNT_EMAIL}*\n` +
-        `2. Dale permisos de "Editor"\n\n` +
+        `📧 Email: ${registro.email}\n\n` +
+        `Tu sheet ha sido configurado.\n` +
+        `Ahora puedes usar el bot.\n\n` +
         `Usa /start para comenzar.`,
       parse_mode: 'Markdown',
       reply_markup: dashboardBtn,

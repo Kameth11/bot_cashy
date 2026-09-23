@@ -120,15 +120,26 @@ TTL default 30 min salvo donde se indica:
 - `obtenerClientePorUserId(userId)` — recorre `clienteService.clientes`
   (mapa ownerId → {sheetId, email, usuarios[]}); un usuario puede ser
   `isOwner: true` (dueño de la cuenta/sheet) o estar en `usuarios[]` de otro
-  owner (invitado).
+  owner (invitado). Antes de mirar `usuarios[]`, chequea si el propio
+  registro del usuario declara un `ownerId` explícito (invitados legacy, de
+  antes de 2026-09-23, que llegaron a tener también su propio `sheetId`) —
+  si lo tiene, ese `ownerId` manda siempre. Esto es a propósito
+  determinístico: `Object.entries(clientes)` itera claves con forma de
+  índice (los IDs de Telegram lo son) en orden numérico ascendente, no en
+  orden de inserción, así que sin este chequeo el resultado dependía de si
+  el ID del invitado era mayor o menor que el del dueño.
 - `esAdminOriginal(userId)` — compara contra `AUTHORIZED_USER_ID` (admin
   original, usa `SPREADSHEET_ID` del `.env` directo, sin pasar por
   `clientes.json`).
 - Flujo de invitación: owner genera código (`/codigo` →
   `invite.service.createInviteCode`) → invitado usa `/unir <codigo>`
-  (único camino público; `joinWithInviteCode`) → `resolveInviteCode` valida
-  (con límite de intentos `MAX_INTENTOS_CODIGO`) → se agrega a
-  `usuarios[]` del owner.
+  (único camino público; `beginInviteRegistration`) → `resolveInviteCode`
+  valida (con límite de intentos `MAX_INTENTOS_CODIGO`) → se agrega
+  directo a `usuarios[]` del owner. **El invitado no tiene sheet propio** —
+  usa el del owner, acotado por los permisos granulares que el owner le
+  asigna en `/accesos`. `eliminarCliente` (`/salir`) saca al usuario tanto
+  de su propio registro (si tiene uno, legacy) como de `usuarios[]` de
+  cualquier owner donde figure.
 - **Permisos granulares en el bot** (`src/auth/bot-permisos.js`): mismo
   `resolverPermisos` que usa la API del dashboard (`requierePermiso` en
   `src/api/index.js`), aplicado también del lado de Telegram. Cada comando

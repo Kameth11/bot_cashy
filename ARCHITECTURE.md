@@ -67,8 +67,14 @@ otra.
   defensa a nivel de base de datos. Para un solo cliente esto es un riesgo
   aceptable; **para SaaS con clientes pagos externos, no lo es.**
 - **El concepto de "invitado"** (`/unir CODIGO`) no es una organización
-  real — el invitado puede terminar con su propio Sheet separado, vinculado
-  al owner solo por un array `usuarios` informal en `clientes.json`.
+  real — es un array `usuarios` informal en `clientes.json`, dentro del
+  registro del owner. Desde 2026-09-23 el invitado **no** tiene su propio
+  Sheet (ver sección 8, ítem 2.1): usa el del owner, acotado por permisos
+  granulares. Invitados dados de alta antes de ese fix pueden tener un
+  registro propio legacy (con su propio `sheetId`) que ya no se usa para
+  resolver identidad — la resolución mira primero el `ownerId` explícito de
+  ese registro, así que no queda huérfano ni compite con la membresía en
+  `usuarios[]`.
 
 ### Plan por fases (en orden, cada una habilita la siguiente)
 
@@ -200,6 +206,19 @@ preguntarse:
   desactivar — ver el estado con `/modoia` sin argumento sigue abierto a
   cualquier miembro). Antes, cualquier invitado podía prenderlo o apagarlo
   para todo el consultorio, generando costo real en OpenRouter.
+- **Resolución de invitados determinística** (`obtenerClientePorUserId`,
+  `src/auth/index.js`): antes dependía del orden de iteración de las claves
+  numéricas de `clientes` (`Object.entries` en un objeto con IDs de Telegram
+  itera en orden ascendente, no de inserción), así que un invitado con ID
+  numéricamente menor al del dueño resolvía como dueño de su propio sheet
+  con permisos completos en vez de invitado acotado. Se decidió el modelo
+  definitivo: **el invitado usa el sheet del dueño, sin uno propio**
+  (`/unir` ya no le pide configurar un spreadsheet); la resolución prioriza
+  un `ownerId` explícito en el registro del usuario por sobre el orden de
+  iteración. De paso, `eliminarCliente` (`/salir`) ahora también saca al
+  usuario de `usuarios[]` de cualquier dueño donde figure — antes solo
+  borraba su registro propio, así que un invitado que se daba de baja
+  conservaba el acceso.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -394,3 +413,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | `DASHBOARD_DEV_TOKEN` restringido a `NODE_ENV=development`, comparación en tiempo constante | Revisión de seguridad: sin entorno ni comparación segura, cualquiera que conociera el valor entraba como cualquier usuario (incluido el admin) en cualquier entorno, con una comparación `===` filtrable por timing |
 | 2026-09-23 | Código de acceso al dashboard baja a 10 minutos de validez y se invalida a los 5 intentos fallidos (reusa `MAX_INTENTOS_CODIGO`) | Revisión de seguridad: 24h de vigencia y sin límite de intentos hacía viable fuerza bruta sobre un código de 6 dígitos |
 | 2026-09-23 | Modo Full IA (`/api/config/modo-ia`, `/modoia`) restringido a dueño/admin | Revisión de seguridad: cualquier invitado podía activarlo/desactivarlo para todo el consultorio, generando costo real en OpenRouter |
+| 2026-09-23 | El invitado usa el sheet del dueño (sin uno propio); `obtenerClientePorUserId` resuelve por `ownerId` explícito, no por orden de iteración de IDs | Revisión de seguridad: el resultado dependía de si el ID de Telegram del invitado era mayor o menor al del dueño — con cierto orden, el invitado terminaba como dueño de su propio sheet con permisos completos, ignorando lo configurado en /accesos. Decisión de producto confirmada con el usuario: sheet compartido con permisos granulares, no sheet propio aislado |

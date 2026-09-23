@@ -1,4 +1,4 @@
-const { CODIGO_EXPIRACION_HORAS, MAX_INTENTOS_CODIGO, GOOGLE_SERVICE_ACCOUNT_EMAIL } = require('../config');
+const { CODIGO_EXPIRACION_HORAS, MAX_INTENTOS_CODIGO } = require('../config');
 const {
   obtenerClientePorUserId,
   codigoInvitacionExpirado,
@@ -70,10 +70,9 @@ function resolveInviteCode(userId, rawCode) {
   return { ok: true, codigo, ownerId, clientes, codigoData };
 }
 
-// Camino público único de invitación: el invitado valida el código y queda
-// con su PROPIO Google Sheet aislado (no comparte el del owner). Valida el
-// código y arranca el flujo de alta de sheet (paso `sheetId`), que termina
-// de configurarse en registration.service.handleSheetIdStep.
+// Camino público único de invitación: el invitado queda vinculado al MISMO
+// Google Sheet del owner (no tiene uno propio) — el owner después le asigna
+// permisos granulares en /accesos para acotar qué puede ver/hacer ahí.
 async function beginInviteRegistration(userId, rawCode) {
   if (obtenerClientePorUserId(userId)) {
     return { message: '⚠️ Ya tienes una cuenta registrada. Habla con el owner si necesitas agregar otro usuario.' };
@@ -90,16 +89,14 @@ async function beginInviteRegistration(userId, rawCode) {
     clientes[ownerId].usuarios = [];
   }
 
+  state.pendingRegistros.delete(userId);
+
   if (clientes[ownerId].usuarios.includes(userId)) {
-    state.pendingRegistros.delete(userId);
     return { message: '⚠️ Ya estás autorizado.' };
   }
 
-  state.pendingRegistros.set(userId, {
-    step: 'sheetId',
-    ownerId,
-    codigo
-  });
+  clientes[ownerId].usuarios.push(userId);
+  await clienteService.guardarClientes(clientes);
   state.pendingCodigos.delete(codigo);
 
   // El owner que generó el código ya validó a la persona, así que no va a la
@@ -113,13 +110,9 @@ async function beginInviteRegistration(userId, rawCode) {
 
   return {
     message:
-      '✅ *Código válido!*\n\n' +
-      'Ahora configura tu propio Google Sheet (cada usuario tiene el suyo).\n\n' +
-      '📊 *Paso 1:* Compártelo con mi service account:\n\n' +
-      `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
-      'Dale permisos de "Editor" y luego ingresa el ID de tu spreadsheet:\n' +
-      'Ejemplo: `1abc123def456GHI789jkl012`\n\n' +
-      'Usa /cancelar para salir.',
+      '✅ *¡Listo, ya formás parte del consultorio!*\n\n' +
+      'Vas a poder usar los comandos que el dueño te habilite — pedile que te asigne permisos con `/accesos`.\n\n' +
+      'Usá /ayuda para ver los comandos disponibles.',
     parse_mode: 'Markdown'
   };
 }

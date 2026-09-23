@@ -113,8 +113,24 @@ async function guardarClientes(clientesObj) {
 
 async function eliminarCliente(userId) {
   const key = String(userId);
-  const existia = Boolean(clientes[key]);
+  const numId = Number(userId);
+  let existia = Boolean(clientes[key]);
   delete clientes[key];
+
+  // Un invitado no tiene registro propio (ver src/auth/index.js) — sacarlo
+  // acá solo borraría un `clientes[key]` que nunca existió y /salir quedaría
+  // "sin efecto" en los hechos: hay que sacarlo también de usuarios[] de
+  // cualquier dueño donde figure, si no conserva el acceso.
+  const ownersActualizados = [];
+  for (const [ownerId, cliente] of Object.entries(clientes)) {
+    if (!Array.isArray(cliente.usuarios) || cliente.usuarios.length === 0) continue;
+    const antes = cliente.usuarios.length;
+    cliente.usuarios = cliente.usuarios.filter(u => String(u) !== key && Number(u) !== numId);
+    if (cliente.usuarios.length !== antes) {
+      existia = true;
+      ownersActualizados.push(ownerId);
+    }
+  }
 
   return encolarEscritura(async () => {
     try {
@@ -127,6 +143,9 @@ async function eliminarCliente(userId) {
       try {
         const supabase = getSupabase();
         await supabase.from('profiles').delete().eq('id', parseInt(key, 10));
+        for (const ownerId of ownersActualizados) {
+          await supabase.from('profiles').update({ usuarios: clientes[ownerId].usuarios }).eq('id', parseInt(ownerId, 10));
+        }
       } catch (e) {
         console.error('Supabase eliminarCliente error:', e.message);
       }

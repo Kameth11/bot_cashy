@@ -197,12 +197,19 @@ Detalle completo en `ROADMAP_CASHY_CLINICA.md` sección 5.b.
 
 ## Autenticación de usuarios
 
+**Dueño (registro directo):**
 1. Usuario hace `/start`
 2. Bot pide email corporativo
 3. Si está en `ALLOWED_EMAILS` → validado
 4. Usuario configura su propio Google Sheet
 5. Queda registrado en `clientes.json` (NO commitear)
 6. Máximo 3 intentos de email fallidos
+
+**Invitado (vía `/unir CODIGO`):** el dueño genera un código con `/codigo`;
+el invitado hace `/unir CODIGO` y queda agregado directo a `usuarios[]` del
+dueño — **no configura ni tiene su propio sheet**, usa el del dueño. El
+dueño le asigna qué puede ver/hacer ahí con permisos granulares en
+`/accesos` (ver skill `bot-cashy-arquitectura`).
 
 `ALLOWED_EMAILS` hoy vive en `.env` (cambiarlo requiere redeploy) — es un
 bloqueante conocido para self-service, ver `ARCHITECTURE.md` sección 3,
@@ -212,8 +219,11 @@ Fase 1.
 
 ## Privacidad
 
-- Cada usuario tiene su propio Google Sheet **aislado**
-- Nadie puede ver el sheet de otro usuario
+- Cada **dueño** tiene su propio Google Sheet **aislado**; nadie puede ver
+  el sheet de otro dueño
+- Un **invitado** comparte el sheet del dueño que lo agregó — su alcance
+  ahí lo define el dueño con permisos granulares (`/accesos`), no una
+  separación de datos física
 - `clientes.json` y `.env` están en `.gitignore`
 
 ---
