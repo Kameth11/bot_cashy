@@ -91,15 +91,16 @@ describe('POST /api/config/modo-ia', () => {
     expect(clienteService.setModoFullIA).toHaveBeenCalledWith('2222', true);
   });
 
-  test('invitado (3333) activa el modo → setModoFullIA se llama con el ownerId del dueño (2222), no el suyo', async () => {
+  test('invitado (3333) → 403, no puede activar el modo aunque afecte al dueño (2222)', async () => {
     const res = await postModoIA(true, 3333);
-    expect(res.status).toBe(200);
-    expect(clienteService.setModoFullIA).toHaveBeenCalledWith('2222', true);
+    expect(res.status).toBe(403);
+    expect(clienteService.setModoFullIA).not.toHaveBeenCalled();
   });
 
-  test('usuario no registrado (9999) → 404', async () => {
+  test('usuario no registrado (9999) → 403 (ownerOnly corre antes que la validación de cliente)', async () => {
     const res = await postModoIA(true, 9999);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
+    expect(clienteService.setModoFullIA).not.toHaveBeenCalled();
   });
 });
 

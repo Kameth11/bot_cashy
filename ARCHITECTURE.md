@@ -195,6 +195,11 @@ preguntarse:
   límite que ya usaba `/unir`). Antes, un código de 6 dígitos numéricos
   quedaba vigente un día entero sin límite de intentos — fuerza bruta
   viable en esa ventana.
+- **Modo Full IA (OpenRouter) restringido a dueño/admin**: `/api/config/modo-ia`
+  (`ownerOnly`) y `/modoia` del bot (`requiereDuenoBot`, solo al activar/
+  desactivar — ver el estado con `/modoia` sin argumento sigue abierto a
+  cualquier miembro). Antes, cualquier invitado podía prenderlo o apagarlo
+  para todo el consultorio, generando costo real en OpenRouter.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -388,3 +393,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | Finanzas personales (`/personal`, `/viaje`, `/api/personal/*`, botón "Es personal" del NLP, sección Personal del dashboard) restringidas a dueño/admin | `getSheetId` resuelve al invitado al sheet del dueño, así que sin este cambio cualquier invitado podía leer, cargar y borrar los movimientos personales, presupuestos y viajes del dueño — no hay (ni está previsto) un ámbito personal por invitado |
 | 2026-09-23 | `DASHBOARD_DEV_TOKEN` restringido a `NODE_ENV=development`, comparación en tiempo constante | Revisión de seguridad: sin entorno ni comparación segura, cualquiera que conociera el valor entraba como cualquier usuario (incluido el admin) en cualquier entorno, con una comparación `===` filtrable por timing |
 | 2026-09-23 | Código de acceso al dashboard baja a 10 minutos de validez y se invalida a los 5 intentos fallidos (reusa `MAX_INTENTOS_CODIGO`) | Revisión de seguridad: 24h de vigencia y sin límite de intentos hacía viable fuerza bruta sobre un código de 6 dígitos |
+| 2026-09-23 | Modo Full IA (`/api/config/modo-ia`, `/modoia`) restringido a dueño/admin | Revisión de seguridad: cualquier invitado podía activarlo/desactivarlo para todo el consultorio, generando costo real en OpenRouter |

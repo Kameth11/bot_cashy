@@ -315,7 +315,7 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
   res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(req.user.userId), modoFullIA: cliente?.modoFullIA || false } });
 });
 
-app.post('/api/config/modo-ia', authMiddleware, async (req, res) => {
+app.post('/api/config/modo-ia', authMiddleware, ownerOnly, async (req, res) => {
   const cliente = obtenerClientePorUserId(Number(req.user.userId));
   if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
 
