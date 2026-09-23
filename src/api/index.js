@@ -126,6 +126,15 @@ function adminOnly(req, res, next) {
   next();
 }
 
+// Comparación en tiempo constante para no filtrar el DASHBOARD_DEV_TOKEN por
+// timing (una comparación === corta apenas difiere el primer caracter).
+function timingSafeEqualStr(a, b) {
+  const bufA = Buffer.from(String(a ?? ''));
+  const bufB = Buffer.from(String(b ?? ''));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 // Permite el acceso solo al dueño del consultorio (isOwner) o al admin global.
 function ownerOnly(req, res, next) {
   const cliente = obtenerClientePorUserId(Number(req.user?.userId));
@@ -232,7 +241,7 @@ app.post('/api/auth/verify',
   const telegramId = String(userId);
 
   const DEV_TOKEN = process.env.DASHBOARD_DEV_TOKEN;
-  if (DEV_TOKEN && code === DEV_TOKEN) {
+  if (DEV_TOKEN && process.env.NODE_ENV === 'development' && timingSafeEqualStr(code, DEV_TOKEN)) {
     const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: SESSION_DURATION });
     const cliente = obtenerClientePorUserId(Number(telegramId));
     const esAdmin = esAdminOriginal(Number(telegramId));
@@ -1048,7 +1057,14 @@ if (fs.existsSync(DIST)) {
   });
 }
 
+function warnIfDevTokenMisconfigured() {
+  if (process.env.DASHBOARD_DEV_TOKEN && process.env.NODE_ENV !== 'development') {
+    logger.warn('API', 'DASHBOARD_DEV_TOKEN está seteado pero NODE_ENV no es "development" — el login con dev token queda deshabilitado. Si no la usás, quitala.');
+  }
+}
+
 function startApi() {
+  warnIfDevTokenMisconfigured();
   return new Promise((resolve) => {
     const server = app.listen(PORT, () => {
       logger.info('API', `Escuchando en http://localhost:${PORT}`);
@@ -1057,6 +1073,6 @@ function startApi() {
   });
 }
 
-module.exports = { app, startApi, authMiddleware, JWT_SECRET };
+module.exports = { app, startApi, authMiddleware, JWT_SECRET, warnIfDevTokenMisconfigured };
 
 if (require.main === module) startApi();

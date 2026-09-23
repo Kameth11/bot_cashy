@@ -185,6 +185,11 @@ preguntarse:
   Antes, `getSheetId` resolvía a cualquier invitado al sheet del dueño sin
   ningún chequeo adicional, así que un invitado podía leer/cargar/borrar
   las finanzas personales del dueño.
+- **`DASHBOARD_DEV_TOKEN` limitado a `NODE_ENV=development`**, comparado con
+  `crypto.timingSafeEqual` en vez de `===`, y con un `logger.warn` al
+  arrancar la API si queda seteada fuera de development. Antes, cualquiera
+  que conociera ese valor entraba como cualquier usuario (incluido el
+  admin) en cualquier entorno.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -376,3 +381,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-07-13 | Dueño/admin siempre tiene ADMIN_PERMISOS implícitos, no se persisten | No hay forma de auto-bloquearse como dueño ni de perder el acceso por un bug de escritura |
 | 2026-09-23 | Permisos granulares extendidos al bot de Telegram (`src/auth/bot-permisos.js`), cubriendo comandos, texto libre/voz e intents NLP | Revisión de seguridad detectó que solo la API del dashboard aplicaba `resolverPermisos`; en el bot cualquier invitado con cualquier permiso podía usar comandos de plata/agenda sin restricción |
 | 2026-09-23 | Finanzas personales (`/personal`, `/viaje`, `/api/personal/*`, botón "Es personal" del NLP, sección Personal del dashboard) restringidas a dueño/admin | `getSheetId` resuelve al invitado al sheet del dueño, así que sin este cambio cualquier invitado podía leer, cargar y borrar los movimientos personales, presupuestos y viajes del dueño — no hay (ni está previsto) un ámbito personal por invitado |
+| 2026-09-23 | `DASHBOARD_DEV_TOKEN` restringido a `NODE_ENV=development`, comparación en tiempo constante | Revisión de seguridad: sin entorno ni comparación segura, cualquiera que conociera el valor entraba como cualquier usuario (incluido el admin) en cualquier entorno, con una comparación `===` filtrable por timing |
