@@ -1,9 +1,11 @@
 const { bot } = require('../../lib/telegraf');
 const cmd = require('../../services/command.service');
+const { requierePermisoBot } = require('../../auth/bot-permisos');
 
 const PENDIENTE_REGEX = /^(.+?)\s+(?:\$|U\$|USD)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
 bot.command('pendiente', async (ctx) => {
+  if (!requierePermisoBot(ctx, 'cargar_movimientos', '/pendiente')) return;
   try {
     const input = ctx.message.text.replace('/pendiente', '').trim();
 

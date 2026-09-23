@@ -8,6 +8,7 @@ const { validarTextoUsuario } = require('../utils/validation');
 const { escapeMarkdown } = require('../utils/formatter');
 const { procesarTextoConNlp } = require('./text');
 const { geminiMediaSemaphore } = require('../lib/semaphore');
+const { requierePermisoBot } = require('../auth/bot-permisos');
 
 bot.on('voice', async (ctx) => {
   const userId = ctx.from.id;
@@ -15,6 +16,8 @@ bot.on('voice', async (ctx) => {
   if (!obtenerClientePorUserId(userId) && !esAdminOriginal(userId)) {
     return ctx.reply('⚠️ No tienes una cuenta registrada.\n\nUsa /start para registrarte.');
   }
+
+  if (!requierePermisoBot(ctx, 'cargar_movimientos', 'nota_voz')) return;
 
   if (tieneProcesoPendiente(userId)) {
     return ctx.reply('⚠️ Tenés un proceso pendiente. Usá /cancelar primero.');

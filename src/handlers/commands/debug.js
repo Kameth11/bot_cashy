@@ -2,8 +2,10 @@ const { bot } = require('../../lib/telegraf');
 const { getSheetId, obtenerDatosSheet } = require('../../services/sheet.service');
 const { normalizarFecha, esHoy, esEsteMes } = require('../../utils/date');
 const { formatMonto } = require('../../utils/formatter');
+const { requiereDuenoBot } = require('../../auth/bot-permisos');
 
 bot.command('debug', async (ctx) => {
+  if (!requiereDuenoBot(ctx, '/debug')) return;
   try {
     await ctx.reply('🔍 *DIAGNÓSTICO DEL SISTEMA*\n\n⏳ Analizando...');
 

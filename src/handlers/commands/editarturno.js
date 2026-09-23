@@ -2,8 +2,10 @@ const { bot } = require('../../lib/telegraf');
 const { Markup } = require('telegraf');
 const { obtenerTurnosPorFecha, fechaHoyStr } = require('../../services/agenda.service');
 const state = require('../../state');
+const { requierePermisoBot } = require('../../auth/bot-permisos');
 
 bot.command('editarturno', async (ctx) => {
+  if (!requierePermisoBot(ctx, 'editar_agenda', '/editarturno')) return;
   const userId = ctx.from.id;
 
   let turnos;

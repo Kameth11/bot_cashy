@@ -10,6 +10,7 @@ const { quickParse } = require('../services/quick_nlp.service');
 const registrationService = require('../services/registration.service');
 const { validarTextoUsuario, normalizarDescripcion, validarMonto, validarCotizacion } = require('../utils/validation');
 const { actualizarCampoNlp, crearMensajeConfirmacion, discardButtons } = require('./nlp-confirm');
+const { requierePermisoBot } = require('../auth/bot-permisos');
 
 const CATEGORIAS_INGRESO_PACIENTE = {
   consulta: 'consulta',
@@ -861,6 +862,8 @@ bot.on('text', async (ctx) => {
   if (!match) {
     return procesarTextoConNlp(ctx, text);
   }
+
+  if (!requierePermisoBot(ctx, 'cargar_movimientos', 'texto_libre')) return;
 
   const comando = match[1].toLowerCase();
   const descripcionValidada = normalizarDescripcion(match[2]);

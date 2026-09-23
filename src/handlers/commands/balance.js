@@ -1,8 +1,10 @@
 const { bot } = require('../../lib/telegraf');
 const cmd = require('../../services/command.service');
 const { DASHBOARD_URL } = require('../../config');
+const { requierePermisoBot } = require('../../auth/bot-permisos');
 
 bot.command('balance', async (ctx) => {
+  if (!requierePermisoBot(ctx, 'ver_balance', '/balance')) return;
   try {
     await ctx.reply('⏳ Cargando...');
     const msg = await cmd.ejecutarBalance(ctx.from.id);

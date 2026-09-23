@@ -3,8 +3,10 @@ const { getSheetCliente } = require('../../services/sheet.service');
 const { generarIDUnico } = require('../../services/movimiento.service');
 const { getRowIdUnico } = require('../../utils/sheet-row');
 const { withUserWriteLock } = require('../../lib/write-queue');
+const { requiereDuenoBot } = require('../../auth/bot-permisos');
 
 bot.command('regenerar_ids', async (ctx) => {
+  if (!requiereDuenoBot(ctx, '/regenerar_ids')) return;
   try {
     await ctx.reply('🔄 Buscando filas sin ID...');
     

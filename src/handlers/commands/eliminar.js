@@ -4,6 +4,7 @@ const state = require('../../state');
 const { escapeMarkdown } = require('../../utils/formatter');
 const { getRowDescripcion, getRowMonto, getRowMoneda, getRowFecha, getRowIdUnico } = require('../../utils/sheet-row');
 const { buildDeleteListKeyboard } = require('../actions');
+const { requierePermisoBot } = require('../../auth/bot-permisos');
 
 function rowToItem(fila) {
   return {
@@ -17,6 +18,7 @@ function rowToItem(fila) {
 }
 
 bot.command('eliminar', async (ctx) => {
+  if (!requierePermisoBot(ctx, 'editar_movimientos', '/eliminar')) return;
   const userId = ctx.from.id;
   const query = ctx.message.text.replace(/^\/eliminar(@\w+)?/i, '').trim();
 

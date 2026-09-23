@@ -129,6 +129,19 @@ TTL default 30 min salvo donde se indica:
   (único camino público; `joinWithInviteCode`) → `resolveInviteCode` valida
   (con límite de intentos `MAX_INTENTOS_CODIGO`) → se agrega a
   `usuarios[]` del owner.
+- **Permisos granulares en el bot** (`src/auth/bot-permisos.js`): mismo
+  `resolverPermisos` que usa la API del dashboard (`requierePermiso` en
+  `src/api/index.js`), aplicado también del lado de Telegram. Cada comando
+  de plata/agenda llama `requierePermisoBot(ctx, permiso, comando)` como
+  primera línea del handler (`if (!requierePermisoBot(...)) return;`);
+  `/limpiar`, `/regenerar_ids` y `/debug` usan `requiereDuenoBot(ctx, comando)`
+  en vez de un permiso granular (son solo para el dueño/admin). El mismo
+  mapa se aplica a los intents de lenguaje natural dentro de
+  `handleNLPIntent` (`src/handlers/nlp.js`, tabla `INTENT_PERMISOS`) y al
+  comando rápido por regex de `src/handlers/text.js`, así que cargar un
+  movimiento por texto libre o nota de voz exige `cargar_movimientos` igual
+  que `/cobrar`. Toda denegación se audita con
+  `logger.audit('permiso_denegado', { userId, permiso, comando, canal: 'bot' })`.
 
 ## Persistencia de clientes (`src/services/cliente.service.js`)
 

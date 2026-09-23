@@ -8,6 +8,7 @@ const { confirmButtons } = require('./actions');
 const { MAX_PHOTO_SIZE_BYTES, MAX_TURNOS_POR_IMAGEN } = require('../config');
 const { tieneProcesoPendiente } = require('./guards');
 const { geminiMediaSemaphore } = require('../lib/semaphore');
+const { requierePermisoBot } = require('../auth/bot-permisos');
 
 bot.on('photo', async (ctx) => {
   const userId = ctx.from.id;
@@ -15,6 +16,8 @@ bot.on('photo', async (ctx) => {
   if (!obtenerClientePorUserId(userId) && !esAdminOriginal(userId)) {
     return ctx.reply('⚠️ No tienes una cuenta registrada.\n\nUsa /start para registrarte.');
   }
+
+  if (!requierePermisoBot(ctx, 'editar_agenda', 'foto_agenda')) return;
 
   if (tieneProcesoPendiente(userId)) {
     return ctx.reply('⚠️ Tenés un proceso pendiente. Usá /cancelar primero.');

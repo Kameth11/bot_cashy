@@ -1,8 +1,10 @@
 const { bot } = require('../../lib/telegraf');
 const cmd = require('../../services/command.service');
 const state = require('../../state');
+const { requierePermisoBot } = require('../../auth/bot-permisos');
 
 bot.command('editar', async (ctx) => {
+  if (!requierePermisoBot(ctx, 'editar_movimientos', '/editar')) return;
   try {
     const texto = ctx.message.text.replace('/editar', '').trim().toLowerCase();
     const result = await cmd.prepararEdicion(ctx.from.id, texto || null);

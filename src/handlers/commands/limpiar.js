@@ -3,8 +3,10 @@ const { getSheetId, getSheetCliente } = require('../../services/sheet.service');
 const state = require('../../state');
 const { confirmButtons } = require('../actions');
 const { toMovimiento, isValidMovimientoRow, getRowMontoRaw } = require('../../utils/sheet-row');
+const { requiereDuenoBot } = require('../../auth/bot-permisos');
 
 bot.command('limpiar', async (ctx) => {
+  if (!requiereDuenoBot(ctx, '/limpiar')) return;
   try {
     const userId = ctx.from.id;
     const sheetId = getSheetId(userId);

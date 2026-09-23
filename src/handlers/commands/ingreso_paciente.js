@@ -1,7 +1,9 @@
 const { bot } = require('../../lib/telegraf');
 const state = require('../../state');
+const { requierePermisoBot } = require('../../auth/bot-permisos');
 
 bot.command('ingreso_paciente', async (ctx) => {
+  if (!requierePermisoBot(ctx, 'cargar_movimientos', '/ingreso_paciente')) return;
   const userId = ctx.from.id;
 
   state.pendingIngresoPacientes.set(userId, {

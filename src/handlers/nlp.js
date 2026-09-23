@@ -6,6 +6,27 @@ const { confirmButtons } = require('./actions');
 const { mostrarConfirmacion } = require('./nlp-confirm');
 const { mostrarCobrar } = require('./cobrar-confirm');
 const { DASHBOARD_URL } = require('../config');
+const { requierePermisoBot } = require('../auth/bot-permisos');
+
+// Permiso requerido por intent NLP. Mismo criterio que el mapa de comandos
+// del bot — un intent sin entrada acá se considera público/informativo
+// (dólar, ayuda, sheet) y no requiere permiso.
+const INTENT_PERMISOS = {
+  ver_balance: 'ver_balance',
+  ver_semana: 'ver_balance',
+  ver_mes: 'ver_balance',
+  ver_hoy: 'ver_movimientos',
+  ver_ingresos: 'ver_movimientos',
+  ver_egresos: 'ver_movimientos',
+  ver_pendientes: 'ver_movimientos',
+  listar_movimientos: 'ver_movimientos',
+  cobrar_movimiento: 'cargar_movimientos',
+  registrar_movimiento: 'cargar_movimientos',
+  cobro_parcial_con_deuda: 'cargar_movimientos',
+  pago_parcial_con_deuda: 'cargar_movimientos',
+  editar_movimiento: 'editar_movimientos',
+  eliminar_movimiento: 'editar_movimientos',
+};
 
 function replyWithDashboard(ctx, msg) {
   const extra = { parse_mode: 'Markdown' };
@@ -292,6 +313,11 @@ async function handleNLPIntent(ctx, nlpResult) {
   const handler = INTENT_HANDLERS[intent];
   if (!handler) {
     return false;
+  }
+
+  const permisoRequerido = INTENT_PERMISOS[intent];
+  if (permisoRequerido && !requierePermisoBot(ctx, permisoRequerido, `nlp:${intent}`)) {
+    return true;
   }
 
   try {

@@ -169,6 +169,14 @@ preguntarse:
 - Mutex de escritura por usuario (`src/lib/write-queue.js`) — evita race
   conditions Sheets/Supabase entre bot y dashboard.
 - CI con tests + build en cada push, notificación a Discord.
+- **Permisos granulares aplicados también en el bot de Telegram**
+  (`src/auth/bot-permisos.js`), no solo en la API del dashboard. Antes de
+  esto, un invitado con un único permiso (ej. `ver_agenda`) podía usar
+  cualquier comando de plata o agenda por Telegram sin restricción — la
+  única capa de permisos vivía en `requierePermiso` de `src/api/index.js`.
+  Mismo criterio y misma fuente (`resolverPermisos`) en ambos lados; el
+  detalle del mapeo comando/intent → permiso vive en el skill
+  `bot-cashy-arquitectura`.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -358,3 +366,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-07-13 | `/cobrado` en agenda requiere `cargar_movimientos`, no `editar_agenda` | Cobrar un turno crea un movimiento de plata; un odontólogo con solo agenda no debe poder cobrar |
 | 2026-07-13 | Default de permisos = `['ver_agenda']` (mínimo, fail-safe) | Un usuario nuevo nunca ve ni toca plata por accidente |
 | 2026-07-13 | Dueño/admin siempre tiene ADMIN_PERMISOS implícitos, no se persisten | No hay forma de auto-bloquearse como dueño ni de perder el acceso por un bug de escritura |
+| 2026-09-23 | Permisos granulares extendidos al bot de Telegram (`src/auth/bot-permisos.js`), cubriendo comandos, texto libre/voz e intents NLP | Revisión de seguridad detectó que solo la API del dashboard aplicaba `resolverPermisos`; en el bot cualquier invitado con cualquier permiso podía usar comandos de plata/agenda sin restricción |
