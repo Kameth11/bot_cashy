@@ -280,6 +280,52 @@ reevaluar alcance de la web (ya cubierto, en la práctica).
 
 ---
 
+## 5.b Finanzas personales (ámbito personal) — implementado
+
+Segundo ámbito, separado del consultorio: gastos e ingresos de la vida privada
+(casa, viajes, nafta, supermercado) con categorización automática.
+
+**Decisiones de fondo:**
+
+- **Almacenamiento**: pestañas propias en el spreadsheet del usuario
+  (`Personal`, `Viajes`, `Presupuestos`, `Preferencias`), auto-creadas con el
+  mismo patrón que la hoja `Turnos`. Dual-write opcional a tablas propias de
+  Supabase (`sql/schema_personal.sql`).
+- **No toca `movimientos_v2`**: su CHECK sólo admite categorías del
+  consultorio y rechaza `supermercado`; ese error está silenciado en
+  `db.service.js`, así que la fila quedaría desincronizada sin avisar.
+  Verificado contra un Postgres real.
+- **Categorías propias y cerradas**: 18 de egreso + 4 de ingreso, distintas de
+  las del consultorio.
+
+**Resolución de ámbito en 3 capas** (`personal-nlp.service.js`):
+
+1. Calificadores explícitos — "luz **de casa**" vs "luz **del consultorio**",
+   y posesivo + término ambiguo ("mi sueldo").
+2. Memoria de correcciones — al usar el botón de toggle se guarda la
+   preferencia de ese término y la próxima vez arranca en el ámbito correcto.
+3. Fallback a consultorio, avisando en la confirmación. Preserva el
+   comportamiento histórico: los términos ambiguos (`alquiler`, `luz`,
+   `expensas`, `sueldo`) siguen resolviéndose como antes.
+
+**Viajes**: un viaje activo (persistido en su pestaña, no en memoria) atribuye
+los gastos por rango de fechas, **excluyendo** las categorías domésticas
+recurrentes (alquiler, servicios, expensas, impuestos, salud, educación,
+mascotas) más un botón "No es del viaje" para el caso puntual.
+
+**Presupuestos**: límite mensual por categoría, con aviso en la confirmación de
+Telegram al cruzar 80%/100% (reactivo al guardar, sin cron) y barras + banner de
+excedidos en el dashboard.
+
+**Superficies**: comandos `/personal` y `/viaje`; vista Personal en el
+dashboard con switch de ámbito en el header; 9 endpoints bajo `/api/personal`.
+
+**Pendiente**: validación manual extremo a extremo con el Sheet real (las
+pestañas se auto-crean pero no se probó contra credenciales productivas), y el
+resumen periódico por Telegram (hoy el aviso es sólo al momento de cargar).
+
+---
+
 ## 6. IA Agéntica — evaluación para Cashy
 
 Hoy el bot es un pipeline lineal: `text.js` parsea con regex/quick_nlp/Gemini
@@ -363,10 +409,16 @@ este historial.
 Supabase + Sheets + `npm test` (sin pruebas manuales extremo a extremo en
 Telegram real). Hallazgos que siguen siendo relevantes:
 
-- **Inconsistencia en el flujo de invitación**: la documentación sugiere
+- ~~**Inconsistencia en el flujo de invitación**: la documentación sugiere
   `/start` + ingresar código, pero el camino operativo real es `/unir
-  CODIGO`. Conviene unificar a un solo camino público antes de considerar
-  esto cerrado.
+  CODIGO`.~~ **Resuelto.** Se unificó a un solo camino público: `/unir
+  CODIGO` → `beginInviteRegistration`, que valida el código y arranca el alta
+  del **sheet propio** del invitado (cada usuario tiene su Google Sheet
+  aislado, según el modelo de privacidad del proyecto). Se eliminó el paso
+  muerto `codigoInvitacion` de `handlePendingRegistration` (nunca se
+  activaba), se corrigió el mensaje de `/codigo` para que apunte a `/unir`, y
+  se documentó el comando en `/ayuda` y en el mensaje de registro de
+  `/start`.
 - **`movimientos_v2` y `movimiento_eventos_v2` no estaban desplegadas** en
   Supabase al momento de la auditoría (solo existían `profiles` y
   `movimientos`) — relevante para cuando se arranque la etapa 1 del roadmap

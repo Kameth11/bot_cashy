@@ -1,4 +1,4 @@
-const { CODIGO_EXPIRACION_HORAS, GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_CODIGO } = require('../config');
+const { CODIGO_EXPIRACION_HORAS, MAX_INTENTOS_CODIGO, GOOGLE_SERVICE_ACCOUNT_EMAIL } = require('../config');
 const {
   obtenerClientePorUserId,
   codigoInvitacionExpirado,
@@ -8,6 +8,7 @@ const {
 } = require('../auth');
 const clienteService = require('./cliente.service');
 const state = require('../state');
+const tenantRequestService = require('./tenant-request.service');
 
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -23,7 +24,8 @@ function buildInviteCodeMessage(codigo) {
     `🔑 *Código de invitación*\n\n` +
     `Comparte este código (vigencia ${CODIGO_EXPIRACION_HORAS}h):\n\n` +
     `*${codigo}*\n\n` +
-    `La persona debe usar /start y luego ingresar el código.`
+    `La persona debe enviar:\n` +
+    `\`/unir ${codigo}\``
   );
 }
 
@@ -68,7 +70,11 @@ function resolveInviteCode(userId, rawCode) {
   return { ok: true, codigo, ownerId, clientes, codigoData };
 }
 
-async function joinWithInviteCode(userId, rawCode) {
+// Camino público único de invitación: el invitado valida el código y queda
+// con su PROPIO Google Sheet aislado (no comparte el del owner). Valida el
+// código y arranca el flujo de alta de sheet (paso `sheetId`), que termina
+// de configurarse en registration.service.handleSheetIdStep.
+async function beginInviteRegistration(userId, rawCode) {
   if (obtenerClientePorUserId(userId)) {
     return { message: '⚠️ Ya tienes una cuenta registrada. Habla con el owner si necesitas agregar otro usuario.' };
   }
@@ -76,35 +82,6 @@ async function joinWithInviteCode(userId, rawCode) {
   const resolved = resolveInviteCode(userId, rawCode);
   if (!resolved.ok) {
     return { message: resolved.message };
-  }
-
-  const { codigo, ownerId, clientes } = resolved;
-
-  if (!clientes[ownerId].usuarios) {
-    clientes[ownerId].usuarios = [];
-  }
-
-  if (clientes[ownerId].usuarios.includes(userId)) {
-    return { message: '⚠️ Ya estás autorizado en esta cuenta.' };
-  }
-
-  clientes[ownerId].usuarios.push(userId);
-  await clienteService.guardarClientes(clientes);
-  state.pendingCodigos.delete(codigo);
-
-  return {
-    message:
-      `✅ *¡Te uniste correctamente!*\n\n` +
-      `Ahora puedes usar el bot con la cuenta del owner.\n` +
-      `Usa /start para ver los comandos disponibles.`,
-    parse_mode: 'Markdown'
-  };
-}
-
-async function beginInviteRegistration(userId, rawCode) {
-  const resolved = resolveInviteCode(userId, rawCode);
-  if (!resolved.ok) {
-    return { message: resolved.message.replace('o expirado. ', '. ').replace('❌ El owner ya no existe.', '❌ El owner ya no existe. Pide un código nuevo.') };
   }
 
   const { codigo, ownerId, clientes } = resolved;
@@ -125,13 +102,22 @@ async function beginInviteRegistration(userId, rawCode) {
   });
   state.pendingCodigos.delete(codigo);
 
+  // El owner que generó el código ya validó a la persona, así que no va a la
+  // cola de aprobación. Pero se asienta como solicitud aprobada para que el
+  // alta por invitación no quede fuera del circuito de auditoría del resto del
+  // onboarding. Best-effort: si Supabase no está, el alta sigue igual.
+  const resultado = await tenantRequestService.registrarInvitacionAprobada(userId, ownerId);
+  if (!resultado.ok && resultado.error !== 'Supabase no disponible') {
+    console.error('No se pudo registrar la invitación en tenant_requests:', resultado.error);
+  }
+
   return {
     message:
       '✅ *Código válido!*\n\n' +
-      'Ahora configura tu sheet.\n\n' +
-      '📊 *Paso 1:* Comparte tu Google Sheet con mi service account:\n\n' +
+      'Ahora configura tu propio Google Sheet (cada usuario tiene el suyo).\n\n' +
+      '📊 *Paso 1:* Compártelo con mi service account:\n\n' +
       `📧 *Email:* ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
-      'Luego ingresa el ID de tu spreadsheet:\n' +
+      'Dale permisos de "Editor" y luego ingresa el ID de tu spreadsheet:\n' +
       'Ejemplo: `1abc123def456GHI789jkl012`\n\n' +
       'Usa /cancelar para salir.',
     parse_mode: 'Markdown'
@@ -142,6 +128,5 @@ module.exports = {
   generateInviteCode,
   buildInviteCodeMessage,
   createInviteCode,
-  joinWithInviteCode,
   beginInviteRegistration,
 };

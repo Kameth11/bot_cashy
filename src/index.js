@@ -3,6 +3,8 @@ const { bot } = require('./lib/telegraf');
 const { obtenerCotizacionDolar } = require('./services/cotizacion.service');
 const { initModel } = require('./services/gemini.service');
 const { startApi } = require('./api');
+const { seedApprovedEmails } = require('./services/tenant-request.service');
+const { ALLOWED_EMAILS } = require('./config');
 const state = require('./state');
 const logger = require('./lib/logger');
 
@@ -47,6 +49,12 @@ require('./handlers/commands/nlptest');
 require('./handlers/commands/profesional');
 require('./handlers/commands/editarturno');
 require('./handlers/commands/modoia');
+require('./handlers/commands/solicitudes');
+require('./handlers/commands/aprobar');
+require('./handlers/commands/rechazar');
+require('./handlers/commands/accesos');
+require('./handlers/commands/personal');
+require('./handlers/commands/viaje');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');
@@ -70,6 +78,7 @@ bot.launch().then(async () => {
   logger.info('BOT', 'Bot iniciado correctamente');
   initModel();
   await obtenerCotizacionDolar();
+  await seedApprovedEmails(ALLOWED_EMAILS);
   logger.info('BOT', `Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
   const timer = setInterval(() => obtenerCotizacionDolar(), 3 * 60 * 60 * 1000);
   if (timer.unref) timer.unref();

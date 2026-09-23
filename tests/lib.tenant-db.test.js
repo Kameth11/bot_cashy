@@ -61,7 +61,13 @@ describe('lib/tenant-db forTenant', () => {
   });
 
   test('SCOPED_TABLES contiene solo las tablas reales de negocio', () => {
-    expect([...SCOPED_TABLES].sort()).toEqual(['movimientos', 'profesionales']);
+    expect([...SCOPED_TABLES].sort()).toEqual([
+      'movimientos',
+      'movimientos_personales',
+      'presupuestos_personales',
+      'profesionales',
+      'viajes_personales',
+    ]);
   });
 
   test('select inyecta .eq(tenant_id) automaticamente', () => {

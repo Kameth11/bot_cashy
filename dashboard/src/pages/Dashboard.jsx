@@ -1,58 +1,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
 import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
+import { CurrencyBadge, StatusBadge, MontoCell } from '../components/Money'
+import { formatFecha as fmtFecha } from '../utils/format'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import { ordenarPorFechaDesc } from '../utils/movimientos'
 
-// ── Helpers ────────────────────────────────────────────────
+const formatFecha = (v) => fmtFecha(v, 'dd/MM')
 
-function formatFecha(value) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return String(value)
-  return format(d, 'dd/MM', { locale: es })
-}
-
-const MONEDA_KEY = { Pesos: 'ARS', Dólares: 'USD', Euros: 'EUR' }
-
-function currencyKey(moneda) { return MONEDA_KEY[moneda] || 'ARS' }
 
 // ── Sub-components ─────────────────────────────────────────
 
-function CurrencyBadge({ moneda }) {
-  const k = currencyKey(moneda)
-  return <span className={`badge-cur ${k}`}>{k}</span>
-}
-
-function StatusBadge({ estado }) {
-  const key = (estado || '').toLowerCase()
-  return <span className={`badge-status ${key}`}>{estado || '—'}</span>
-}
-
-function MontoCell({ mov }) {
-  const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
-  const moneda   = mov.moneda || 'Pesos'
-  const abs      = Math.abs(Number(mov.monto || 0))
-  const absPesos = Math.abs(Number(mov.montoPesos || 0))
-  const cfg      = { Dólares: 'U$S', Euros: '€' }
-  const sim      = cfg[moneda]
-  const montoStr = sim ? `${sim} ${abs.toLocaleString('es-AR')}` : `$${abs.toLocaleString('es-AR')}`
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-      <span className={`mv-monto ${esEgreso ? 'egreso' : 'ingreso'}`}>
-        {esEgreso ? '−' : '+'}{montoStr}
-      </span>
-      {sim && absPesos > 0 && (
-        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>≈ ${absPesos.toLocaleString('es-AR')}</span>
-      )}
-    </div>
-  )
-}
 
 // ── Main component ─────────────────────────────────────────
 
@@ -62,6 +22,7 @@ export default function Dashboard() {
 
   const [period,      setPeriod]      = useState('este-mes')
   const [movimientos, setMovimientos] = useState([])
+  const [pendientesTotales, setPendientesTotales] = useState([])
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState(null)
   const [reload,      setReload]      = useState(0)
@@ -100,10 +61,14 @@ export default function Dashboard() {
       setLoading(true)
       setError(null)
       try {
-        const { data } = await api.get('/api/movimientos', {
-          params: { desde: range.desde, hasta: range.hasta }
-        })
-        if (active) setMovimientos(Array.isArray(data?.movimientos) ? data.movimientos : [])
+        const [{ data }, { data: dataPend }] = await Promise.all([
+          api.get('/api/movimientos', { params: { desde: range.desde, hasta: range.hasta } }),
+          api.get('/api/movimientos', { params: { estado: 'Pendiente' } }),
+        ])
+        if (active) {
+          setMovimientos(Array.isArray(data?.movimientos) ? data.movimientos : [])
+          setPendientesTotales(Array.isArray(dataPend?.movimientos) ? dataPend.movimientos : [])
+        }
       } catch (err) {
         if (active) setError('No se pudieron cargar los movimientos')
       } finally {
@@ -119,7 +84,8 @@ export default function Dashboard() {
   const metricas = useMemo(() => {
     const cobrados      = movimientos.filter(m => m.tipo?.toLowerCase() === 'ingreso' && m.estado?.toLowerCase() === 'cobrado')
     const egresosArr    = movimientos.filter(m => m.tipo?.toLowerCase() === 'egreso')
-    const pendientesArr = movimientos.filter(m => m.estado?.toLowerCase() === 'pendiente')
+    // Pendientes: todos los impagos sin importar el período seleccionado
+    const pendientesArr = pendientesTotales
     const pendientes    = pendientesArr.length
 
     const sumPesos = arr => arr.reduce((acc, m) => acc + Math.abs(Number(m.montoPesos || m.monto || 0)), 0)
@@ -153,7 +119,7 @@ export default function Dashboard() {
         return b
       })(),
     }
-  }, [movimientos])
+  }, [movimientos, pendientesTotales])
 
   // ── Edit / delete handlers ────────────────────────────────
 
@@ -251,7 +217,7 @@ export default function Dashboard() {
         <MetricCard
           label="Pendientes"
           value={String(metricas.pendientes)}
-          subtitle={metricas.pendientes === 1 ? '1 movimiento' : `${metricas.pendientes} movimientos`}
+          subtitle={metricas.pendientes === 1 ? 'total acumulado' : `${metricas.pendientes} total acumulado`}
           variant="pendientes"
           items={metricas.pendientesArr}
         />

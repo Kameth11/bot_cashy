@@ -11,7 +11,9 @@
   --green:         #006644;
   --red:           #BF2600;
   --amber:         #FF8B00;
-  --shadow-card:   0 1px 2px rgba(9,30,66,0.08), 0 0 0 1px #DFE1E6;
+  --success:       #006644;
+  --danger:        #BF2600;
+  --shadow-card:   0 1px 3px rgba(9,30,66,0.10), 0 0 0 1px #DFE1E6;
   font-family: 'IBM Plex Sans', -apple-system, sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -445,11 +447,43 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 
 /* ── Config ──────────────────────────────────────────────── */
 
-.config-card { background: var(--white); border-radius: 8px; margin-bottom: 14px; overflow: hidden; box-shadow: 0 0 0 1px var(--border); }
-.config-card-header { padding: 13px 20px; border-bottom: 1px solid var(--bg); }
-.config-card-header h2 { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.config-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 20px;
+  gap: 0;
+}
+.config-tab-btn {
+  padding: 9px 18px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.config-tab-btn:hover  { color: var(--text); }
+.config-tab-btn.active { font-weight: 700; color: var(--primary); border-bottom-color: var(--primary); }
+
+.config-card {
+  background: var(--white);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
+}
+.config-card-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.config-card-header h2 { font-size: 13px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; }
 .config-card-body { padding: 16px 20px; }
-.config-row { display: grid; grid-template-columns: 140px 1fr; align-items: center; gap: 8px; }
+.config-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 8px; }
 .config-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
 
 /* ── Bottom Nav (mobile only) ───────────────────────────── */
@@ -532,4 +566,185 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
     flex-shrink: 0;
     margin-bottom: 12px;
   }
+}
+
+/* ── Switch de ámbito (Consultorio / Personal) ─────────────── */
+
+.ambito-switch {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.ambito-btn {
+  padding: 6px 12px; font-size: 12.5px; font-weight: 500;
+  color: var(--text-2); background: transparent; border: none;
+  white-space: nowrap; transition: all 0.15s;
+}
+.ambito-btn + .ambito-btn { border-left: 1px solid var(--border); }
+.ambito-btn:hover:not(.active) { background: var(--primary-light); color: var(--primary); }
+.ambito-btn.active { background: var(--primary); color: var(--white); font-weight: 600; }
+
+/* ── Página Personal ──────────────────────────────────────── */
+
+/* Son 3 métricas, no 4 como en el consultorio. */
+.pers-metric-grid { grid-template-columns: repeat(3, 1fr); }
+
+.pers-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+.pers-card-body { padding: 16px 22px 20px; }
+
+.pers-bar-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin-bottom: 15px; }
+.pers-bar-row:last-child { margin-bottom: 0; }
+
+.pers-bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pers-bar-label { font-size: 13px; color: var(--text); font-weight: 500; }
+.pers-bar-value { font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.pers-bar-track {
+  grid-column: 1;
+  height: 8px; border-radius: 4px;
+  background: var(--bg); overflow: hidden;
+}
+.pers-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.pers-bar-pct {
+  grid-column: 2; grid-row: 2;
+  font-size: 11.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums; min-width: 34px; text-align: right;
+}
+
+/* ── Viaje activo ─────────────────────────────────────────── */
+
+.pers-viaje { margin-bottom: 18px; }
+.pers-viaje-body {
+  padding: 16px 22px 20px;
+  display: grid; grid-template-columns: auto 1fr; gap: 24px; align-items: center;
+}
+.pers-viaje-total {
+  font-size: 24px; font-weight: 700; color: var(--text);
+  letter-spacing: -0.5px; font-variant-numeric: tabular-nums;
+}
+.pers-viaje-sub { font-size: 12.5px; color: var(--text-3); margin-top: 2px; }
+.pers-viaje-presu { min-width: 0; }
+
+/* ── Lista de movimientos personales ──────────────────────── */
+
+.pers-lista { display: flex; flex-direction: column; }
+.pers-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 12px 22px; border-bottom: 1px solid var(--bg);
+}
+.pers-item:last-child { border-bottom: none; }
+.pers-item:hover { background: var(--surface); }
+.pers-item-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pers-item-desc {
+  font-size: 13.5px; color: var(--text); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pers-item-meta { font-size: 11.5px; color: var(--text-3); }
+
+@media (max-width: 900px) {
+  .pers-cols { grid-template-columns: 1fr; }
+  .pers-metric-grid { grid-template-columns: 1fr; }
+  .pers-viaje-body { grid-template-columns: 1fr; gap: 16px; }
+}
+
+@media (max-width: 768px) {
+  .ambito-btn { padding: 6px 9px; font-size: 11.5px; }
+}
+
+/* ── Ajustes responsive del switch de ámbito ───────────────── */
+/* El switch ocupa lugar en el header, así que en pantallas chicas hay que
+   evitar que el botón "+ Nuevo" se parta en dos líneas y que el selector de
+   período se superponga al subtítulo. */
+
+.btn-nuevo { white-space: nowrap; }
+
+@media (max-width: 768px) {
+  /* Título arriba, selector abajo: en fila se pisan. */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  /* Solo para selectores con muchas opciones (--scroll): se scrollean en su
+     propio contenedor en vez de comprimir los botones hasta hacerlos
+     ilegibles. NO aplicar al selector general: con pocas opciones los botones
+     tienen que repartirse parejo el ancho (flex:1, más arriba), y si acá se
+     pisa con flex:0 0 auto quedan de anchos distintos y se ve desprolijo. */
+  .period-sel--scroll { overflow-x: auto; }
+  .period-sel--scroll .period-btn { flex: 0 0 auto; min-width: 62px; }
+
+  .navbar-left { gap: 10px; min-width: 0; }
+  .btn-nuevo { padding: 6px 10px; font-size: 12px; }
+}
+
+@media (max-width: 768px) {
+  /* Solo los iconos: con texto, el switch y "+ Nuevo" se solapan en 390px. */
+  .ambito-label { display: none; }
+  .ambito-btn { padding: 7px 11px; font-size: 14px; }
+  .navbar-right { flex-shrink: 0; }
+}
+
+/* ── Presupuestos: alerta y editor ─────────────────────────── */
+
+.presu-alerta {
+  background: #FFF4E5;
+  border: 1px solid var(--amber);
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 11px 14px;
+  font-size: 13px;
+  color: #7A4100;
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+.presu-hint {
+  font-size: 12px; color: var(--text-3); line-height: 1.5;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 9px 11px;
+}
+
+.presu-lista { display: flex; flex-direction: column; gap: 6px; }
+.presu-lista-item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--bg);
+}
+.presu-lista-item:last-child { border-bottom: none; }
+.presu-lista-monto {
+  font-size: 12.5px; color: var(--text-2);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+.btn-link-inline {
+  background: none; border: none; padding: 0;
+  color: var(--primary); font-size: inherit; font-weight: 600;
+  text-decoration: underline; cursor: pointer;
+}
+
+/* El header de card ya se usa con un link a la derecha en el consultorio. */
+.card-header { display: flex; justify-content: space-between; align-items: baseline; }
+
+/* ── Selector de período de Personal ───────────────────────── */
+/* Pocos meses (se reparten parejo el ancho) + calendario al lado para
+   saltar a cualquier otra fecha. Con muchos meses los botones quedaban
+   apretados e ilegibles en el celular. */
+
+.pers-periodo { display: flex; align-items: stretch; gap: 8px; }
+.pers-periodo .period-sel { flex: 1; }
+
+.period-cal-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px 12px; background: var(--white);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-2); cursor: pointer; transition: all 0.15s;
+}
+.period-cal-btn:hover { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+
+@media (max-width: 768px) {
+  .pers-periodo { width: 100%; }
 }

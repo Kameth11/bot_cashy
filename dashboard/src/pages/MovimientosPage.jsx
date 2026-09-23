@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { api } from '../services/api'
+import { CurrencyBadge, StatusBadge, MontoCell } from '../components/Money'
+import { formatFecha as fmtFecha } from '../utils/format'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import DatePickerButton from '../components/DatePickerButton'
@@ -9,12 +11,7 @@ import { ordenarPorFechaDesc } from '../utils/movimientos'
 
 // ── Helpers ────────────────────────────────────────────────
 
-function formatFecha(value) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return String(value)
-  return format(d, 'dd/MM/yy', { locale: es })
-}
+const formatFecha = (v) => fmtFecha(v, 'dd/MM/yy')
 
 // Para valores de <input type="date"> ("yyyy-mm-dd"), evita el corrimiento
 // de un día que produce `new Date(value)` al interpretarlo como UTC.
@@ -23,43 +20,15 @@ function formatFechaInput(value) {
   return format(new Date(y, m - 1, d), 'dd/MM/yy', { locale: es })
 }
 
-const MONEDA_KEY = { Pesos: 'ARS', Dólares: 'USD', Euros: 'EUR' }
-
-function CurrencyBadge({ moneda }) {
-  const k = MONEDA_KEY[moneda] || 'ARS'
-  return <span className={`badge-cur ${k}`}>{k}</span>
-}
-
-function StatusBadge({ estado }) {
-  return <span className={`badge-status ${(estado || '').toLowerCase()}`}>{estado || '—'}</span>
-}
-
+// FechaCobroNote es propio de esta pantalla; el resto de las primitivas
+// (CurrencyBadge, StatusBadge, MontoCell) vienen de components/Money.jsx.
+//
 // Muestra "(cobrado DD/MM/YY)" solo cuando el movimiento se cobró en una
 // fecha distinta a la original (transición real Pendiente -> Cobrado), no en
 // movimientos creados directamente como Cobrado.
 function FechaCobroNote({ mov }) {
   if (mov.estado !== 'Cobrado' || !mov.fechaCobro || mov.fechaCobro === mov.fecha) return null
   return <span style={{ fontSize: 11, color: 'var(--text-3)' }}>(cobrado {formatFecha(mov.fechaCobro)})</span>
-}
-
-function MontoCell({ mov }) {
-  const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
-  const moneda   = mov.moneda || 'Pesos'
-  const abs      = Math.abs(Number(mov.monto || 0))
-  const absPesos = Math.abs(Number(mov.montoPesos || 0))
-  const cfg      = { Dólares: 'U$S', Euros: '€' }
-  const sim      = cfg[moneda]
-  const montoStr = sim ? `${sim} ${abs.toLocaleString('es-AR')}` : `$${abs.toLocaleString('es-AR')}`
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-      <span className={`mv-monto ${esEgreso ? 'egreso' : 'ingreso'}`}>
-        {esEgreso ? '−' : '+'}{montoStr}
-      </span>
-      {sim && absPesos > 0 && (
-        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>≈ ${absPesos.toLocaleString('es-AR')}</span>
-      )}
-    </div>
-  )
 }
 
 // ── Main ───────────────────────────────────────────────────
@@ -75,6 +44,7 @@ export default function MovimientosPage() {
   const [q,      setQ]      = useState('')
   const [tipo,   setTipo]   = useState('todos')
   const [moneda, setMoneda] = useState('todas')
+  const [estado, setEstado] = useState('todos')
   const [fecha,  setFecha]  = useState('') // yyyy-mm-dd
 
   const [editando,      setEditando]      = useState(null)
@@ -106,6 +76,9 @@ export default function MovimientosPage() {
   const filtered = useMemo(() => {
     let r = movimientos
     if (tipo !== 'todos') r = r.filter(m => m.tipo?.toLowerCase() === tipo)
+    // Solo se guardan dos estados: Cobrado y Pendiente. El modal muestra
+    // "Pagado" para egresos, pero la API lo normaliza a Cobrado.
+    if (estado !== 'todos') r = r.filter(m => m.estado?.toLowerCase() === estado)
     if (moneda !== 'todas') {
       const map = { ARS: 'Pesos', USD: 'Dólares', EUR: 'Euros' }
       r = r.filter(m => m.moneda === map[moneda])
@@ -129,7 +102,7 @@ export default function MovimientosPage() {
       })
     }
     return ordenarPorFechaDesc(r)
-  }, [movimientos, tipo, moneda, q, fecha])
+  }, [movimientos, tipo, estado, moneda, q, fecha])
 
   const handleGuardar = useCallback(async (idUnico, updates) => {
     setModalError(null)
@@ -157,7 +130,7 @@ export default function MovimientosPage() {
     } finally { setBorrando(false) }
   }, [])
 
-  const hasFilters = tipo !== 'todos' || moneda !== 'todas' || q.trim() || fecha
+  const hasFilters = tipo !== 'todos' || estado !== 'todos' || moneda !== 'todas' || q.trim() || fecha
 
   return (
     <div className="page">
@@ -203,6 +176,12 @@ export default function MovimientosPage() {
         </div>
         <div className="filter-divider" />
         <div className="filter-chips">
+          {[['todos','Todos'],['pendiente','Pendientes'],['cobrado','Cobrados']].map(([v,l]) => (
+            <button key={v} className={`chip${estado === v ? ' active' : ''}`} onClick={() => setEstado(v)}>{l}</button>
+          ))}
+        </div>
+        <div className="filter-divider" />
+        <div className="filter-chips">
           {[['todas','Todas'],['ARS','ARS'],['USD','USD'],['EUR','EUR']].map(([v,l]) => (
             <button key={v} className={`chip${moneda === v ? ' active' : ''}`} onClick={() => setMoneda(v)}>{l}</button>
           ))}
@@ -217,7 +196,7 @@ export default function MovimientosPage() {
           )}
         </div>
         {hasFilters && (
-          <button className="clear-btn" onClick={() => { setQ(''); setTipo('todos'); setMoneda('todas'); setFecha('') }}>
+          <button className="clear-btn" onClick={() => { setQ(''); setTipo('todos'); setEstado('todos'); setMoneda('todas'); setFecha('') }}>
             Limpiar filtros ×
           </button>
         )}

@@ -9,7 +9,9 @@ const config = require('../config');
 const { notificarLlegadaPaciente } = require('../services/profesional.service');
 const { resolveTenantId } = require('../services/tenant.service');
 const { getSupabase, isAvailable } = require('../lib/supabase');
-const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
+const { esAdminOriginal, obtenerClientePorUserId, resolverPermisos } = require('../auth');
+const { PERMISOS, PRESETS, validarPermisos, detectarPreset } = require('../auth/permisos');
+const { setPermisos: guardarPermisos } = require('../services/cliente.service');
 const { obtenerDatosSheet } = require('../services/sheet.service');
 const { ejecutarBalance, ejecutarHoy, ejecutarSemana, ejecutarMes } = require('../services/command.service');
 const {
@@ -21,6 +23,7 @@ const {
   deleteMovimiento,
   deleteMovimientoByKey,
 } = require('../services/db.service');
+const tenantRequestService = require('../services/tenant-request.service');
 const {
   obtenerTurnosPorFecha,
   obtenerTurnoPorId,
@@ -31,6 +34,12 @@ const {
   fechaHoyStr,
 } = require('../services/agenda.service');
 const clienteService = require('../services/cliente.service');
+const personalService = require('../services/personal.service');
+const {
+  normalizarCategoriaPersonal,
+  CATEGORIAS_EGRESO_PERSONAL,
+  CATEGORIAS_INGRESO_PERSONAL,
+} = require('../services/personal-nlp.service');
 const { sanitizarInput } = require('../utils/formatter');
 const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
@@ -115,6 +124,28 @@ function authMiddleware(req, res, next) {
 function adminOnly(req, res, next) {
   if (!esAdminOriginal(req.user?.userId)) return res.status(403).json({ error: 'Solo el administrador' });
   next();
+}
+
+// Permite el acceso solo al dueño del consultorio (isOwner) o al admin global.
+function ownerOnly(req, res, next) {
+  const cliente = obtenerClientePorUserId(Number(req.user?.userId));
+  if (!cliente?.isOwner && !esAdminOriginal(req.user?.userId)) {
+    return res.status(403).json({ error: 'Solo el dueño del consultorio' });
+  }
+  next();
+}
+
+// Middleware de permiso granular. Resuelve permisos por request (no desde el JWT)
+// para que los cambios de permisos impacten sin necesidad de re-login.
+function requierePermiso(permiso) {
+  return (req, res, next) => {
+    const permisos = resolverPermisos(req.user?.userId);
+    if (!permisos.includes(permiso)) {
+      logger.audit('permiso_denegado', { userId: req.user?.userId, permiso, route: req.path });
+      return res.status(403).json({ error: 'No tenés permiso para esta acción' });
+    }
+    next();
+  };
 }
 
 // Rate limiting de las rutas de auth: doble clave (IP + telegramId) para que
@@ -206,7 +237,7 @@ app.post('/api/auth/verify',
     const cliente = obtenerClientePorUserId(Number(telegramId));
     const esAdmin = esAdminOriginal(Number(telegramId));
     logger.audit('auth_dev_token_login', { telegramId });
-    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
+    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId) } });
   }
 
   let codeData = null;
@@ -248,14 +279,14 @@ app.post('/api/auth/verify',
   const cliente = obtenerClientePorUserId(Number(telegramId));
   const esAdmin = esAdminOriginal(Number(telegramId));
   logger.audit('auth_verify_success', { telegramId, esAdmin });
-  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null) } });
+  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId), modoFullIA: cliente?.modoFullIA || false } });
 });
 
 // ── Auth: me ──
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   const cliente = obtenerClientePorUserId(Number(req.user.userId));
   const esAdmin = esAdminOriginal(Number(req.user.userId));
-  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), modoFullIA: cliente?.modoFullIA || false } });
+  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(req.user.userId), modoFullIA: cliente?.modoFullIA || false } });
 });
 
 app.post('/api/config/modo-ia', authMiddleware, async (req, res) => {
@@ -310,7 +341,7 @@ app.get('/api/events', authMiddleware, (req, res) => {
 });
 
 // ── Movimientos: list ──
-app.get('/api/movimientos', authMiddleware, async (req, res) => {
+app.get('/api/movimientos', authMiddleware, requierePermiso('ver_movimientos'), async (req, res) => {
   try {
     const { tipo, estado, profesional, paciente, desde, hasta, buscar } = req.query;
     const datos = await getDatosConCache(req.user.userId);
@@ -343,7 +374,7 @@ app.get('/api/movimientos', authMiddleware, async (req, res) => {
 });
 
 // ── Movimientos: create ──
-app.post('/api/movimientos', authMiddleware, async (req, res) => {
+app.post('/api/movimientos', authMiddleware, requierePermiso('cargar_movimientos'), async (req, res) => {
   try {
     const body = req.body || {};
 
@@ -398,7 +429,7 @@ app.post('/api/movimientos', authMiddleware, async (req, res) => {
 });
 
 // ── Movimientos: update ──
-app.put('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
+app.put('/api/movimientos/:idUnico', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
   try {
     const { idUnico } = req.params;
     const body = req.body || {};
@@ -423,7 +454,7 @@ app.put('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
 });
 
 // ── Movimientos: delete por ID ──
-app.delete('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
+app.delete('/api/movimientos/:idUnico', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
   try {
     await deleteMovimiento(req.user.userId, req.params.idUnico);
     invalidarCacheMovimientos(req.user.userId);
@@ -437,7 +468,7 @@ app.delete('/api/movimientos/:idUnico', authMiddleware, async (req, res) => {
 });
 
 // ── Movimientos: delete por clave compuesta (filas sin ID_Unico) ──
-app.delete('/api/movimientos-by-key', authMiddleware, async (req, res) => {
+app.delete('/api/movimientos-by-key', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
   try {
     const { descripcion, monto, fecha } = req.body || {};
     if (!descripcion || monto === undefined) return res.status(400).json({ error: 'descripcion y monto son requeridos' });
@@ -479,8 +510,105 @@ app.delete('/api/users/:userId', authMiddleware, adminOnly, async (req, res) => 
   }
 });
 
+// ── Solicitudes de acceso (admin only) ──
+app.get('/api/admin/tenant-requests', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { status } = req.query;
+    let solicitudes;
+    if (status === 'all') {
+      const supabase = require('../lib/supabase').getSupabase();
+      const { data, error } = await supabase
+        .from('tenant_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw new Error(error.message);
+      solicitudes = data || [];
+    } else {
+      solicitudes = await tenantRequestService.listarSolicitudesPendientes();
+    }
+    res.json({ solicitudes });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/admin/tenant-requests', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener solicitudes' });
+  }
+});
+
+app.post('/api/admin/tenant-requests/:id/approve', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supabase = require('../lib/supabase').getSupabase();
+    const { data: solicitud, error: fetchErr } = await supabase
+      .from('tenant_requests')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (fetchErr || !solicitud) return res.status(404).json({ error: 'Solicitud no encontrada' });
+
+    const resultado = await tenantRequestService.aprobarSolicitud(solicitud.email, req.user.userId);
+    if (!resultado.ok) return res.status(500).json({ error: resultado.error });
+
+    if (solicitud.telegram_user_id) {
+      const state = require('../state');
+      state.pendingRegistros.set(solicitud.telegram_user_id, {
+        step: 'sheetId',
+        email: solicitud.email,
+        telegramUserId: solicitud.telegram_user_id,
+      });
+      const { bot } = require('../lib/telegraf');
+      bot.telegram.sendMessage(
+        solicitud.telegram_user_id,
+        '✅ *¡Tu solicitud fue aprobada!*\n\n' +
+        'Ya podés configurar tu cuenta.\n\n' +
+        '📊 *Paso 1:* Compartí tu Google Sheet con mi service account:\n\n' +
+        `📧 *Email:* ${config.GOOGLE_SERVICE_ACCOUNT_EMAIL}\n\n` +
+        'Dale permisos de "Editor"\n\n' +
+        '📝 Ingresá el ID de tu spreadsheet:\n' +
+        'Está en la URL: docs.google.com/spreadsheets/d/**AQUI_EL_ID**/edit\n\n' +
+        'O usá /start si querés retomar más tarde.',
+        { parse_mode: 'Markdown' }
+      ).catch(err => logger.warn('API', 'Error notificando usuario aprobado', { err: err.message }));
+    }
+
+    logger.audit('tenant_request_approved', { adminId: req.user.userId, email: solicitud.email });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/admin/tenant-requests/:id/approve', { err: err.message });
+    res.status(500).json({ error: 'Error al aprobar solicitud' });
+  }
+});
+
+app.post('/api/admin/tenant-requests/:id/reject', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supabase = require('../lib/supabase').getSupabase();
+    const { data: solicitud, error: fetchErr } = await supabase
+      .from('tenant_requests')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (fetchErr || !solicitud) return res.status(404).json({ error: 'Solicitud no encontrada' });
+
+    const resultado = await tenantRequestService.rechazarSolicitud(solicitud.email, req.user.userId);
+    if (!resultado.ok) return res.status(500).json({ error: resultado.error });
+
+    if (solicitud.telegram_user_id) {
+      const { bot } = require('../lib/telegraf');
+      bot.telegram.sendMessage(
+        solicitud.telegram_user_id,
+        '❌ Tu solicitud de acceso fue rechazada.\n\nSi creés que es un error, contactá al administrador.',
+      ).catch(err => logger.warn('API', 'Error notificando usuario rechazado', { err: err.message }));
+    }
+
+    logger.audit('tenant_request_rejected', { adminId: req.user.userId, email: solicitud.email });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/admin/tenant-requests/:id/reject', { err: err.message });
+    res.status(500).json({ error: 'Error al rechazar solicitud' });
+  }
+});
+
 // ── Profesionales ──
-app.get('/api/profesionales', authMiddleware, async (req, res) => {
+app.get('/api/profesionales', authMiddleware, requierePermiso('ver_agenda'), async (req, res) => {
   try {
     const datos = await obtenerDatosSheet(req.user.userId);
     const set = new Set();
@@ -492,7 +620,7 @@ app.get('/api/profesionales', authMiddleware, async (req, res) => {
 });
 
 // ── Metrics ──
-app.get('/api/metrics', authMiddleware, async (req, res) => {
+app.get('/api/metrics', authMiddleware, requierePermiso('ver_balance'), async (req, res) => {
   try {
     const { periodo = 'hoy' } = req.query;
     let texto;
@@ -507,7 +635,7 @@ app.get('/api/metrics', authMiddleware, async (req, res) => {
 });
 
 // ── Agenda ──
-app.get('/api/agenda', authMiddleware, async (req, res) => {
+app.get('/api/agenda', authMiddleware, requierePermiso('ver_agenda'), async (req, res) => {
   try {
     const fecha = req.query.fecha || fechaHoyStr();
     const turnos = await obtenerTurnosPorFecha(req.user.userId, fecha);
@@ -517,7 +645,7 @@ app.get('/api/agenda', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/agenda', authMiddleware, async (req, res) => {
+app.post('/api/agenda', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const { hora, cliente, servicio, profesional, fecha } = req.body || {};
     if (!cliente) return res.status(400).json({ error: 'cliente es requerido' });
@@ -529,7 +657,7 @@ app.post('/api/agenda', authMiddleware, async (req, res) => {
   }
 });
 
-app.delete('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
+app.delete('/api/agenda/:idTurno', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     await eliminarTurno(req.user.userId, req.params.idTurno);
     res.json({ ok: true });
@@ -540,7 +668,7 @@ app.delete('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
   }
 });
 
-app.patch('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
+app.patch('/api/agenda/:idTurno', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const { idTurno } = req.params;
     const { cliente, servicio, profesional, hora } = req.body || {};
@@ -556,7 +684,7 @@ app.patch('/api/agenda/:idTurno', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
+app.post('/api/agenda/:idTurno/llego', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const { idTurno } = req.params;
 
@@ -577,7 +705,8 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, async (req, res) => {
   }
 });
 
-app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
+// cobrado crea movimientos de plata → requiere cargar_movimientos, no solo editar_agenda
+app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, requierePermiso('cargar_movimientos'), async (req, res) => {
   try {
     const { idTurno } = req.params;
     const { montoTotal, pagos, moneda = 'Pesos' } = req.body;
@@ -626,7 +755,7 @@ app.patch('/api/agenda/:idTurno/cobrado', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/agenda/:idTurno/cancelar', authMiddleware, async (req, res) => {
+app.post('/api/agenda/:idTurno/cancelar', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const turno = await obtenerTurnoPorId(req.user.userId, req.params.idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
@@ -637,7 +766,7 @@ app.post('/api/agenda/:idTurno/cancelar', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/agenda/:idTurno/novino', authMiddleware, async (req, res) => {
+app.post('/api/agenda/:idTurno/novino', authMiddleware, requierePermiso('editar_agenda'), async (req, res) => {
   try {
     const turno = await obtenerTurnoPorId(req.user.userId, req.params.idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
@@ -645,6 +774,246 @@ app.post('/api/agenda/:idTurno/novino', authMiddleware, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Accesos: gestión de permisos por el dueño del consultorio ──
+app.get('/api/accesos', authMiddleware, ownerOnly, (req, res) => {
+  const { DEFAULT_PERMISOS: DEF, ADMIN_PERMISOS: ADM } = require('../auth/permisos');
+  const ownerKey = String(req.user.userId);
+  const owner = clienteService.clientes[ownerKey];
+  if (!owner) return res.status(404).json({ error: 'Perfil no encontrado' });
+
+  const miembros = [{
+    userId: ownerKey,
+    email: owner.email || null,
+    isOwner: true,
+    permisos: ADM,
+    preset: 'admin',
+  }];
+
+  for (const guestId of owner.usuarios || []) {
+    const guestKey = String(guestId);
+    const perms = (owner.permisos || {})[guestKey] || DEF;
+    miembros.push({
+      userId: guestKey,
+      email: null,
+      isOwner: false,
+      permisos: perms,
+      preset: detectarPreset(perms),
+    });
+  }
+
+  res.json({ miembros, permisosDisponibles: PERMISOS, presets: PRESETS });
+});
+
+app.put('/api/accesos/:userId/permisos', authMiddleware, ownerOnly, async (req, res) => {
+  const ownerKey = String(req.user.userId);
+  const targetKey = String(req.params.userId);
+
+  // El dueño no puede auto-editarse
+  if (targetKey === ownerKey) return res.status(400).json({ error: 'No podés editar los permisos del dueño' });
+
+  const owner = clienteService.clientes[ownerKey];
+  if (!owner) return res.status(404).json({ error: 'Perfil no encontrado' });
+
+  const esInvitado = (owner.usuarios || []).map(String).includes(targetKey);
+  if (!esInvitado) return res.status(404).json({ error: 'Usuario no es miembro de este consultorio' });
+
+  const { permisos } = req.body;
+  if (!validarPermisos(permisos)) {
+    return res.status(400).json({ error: 'Permisos inválidos', permisosValidos: PERMISOS });
+  }
+
+  try {
+    await guardarPermisos(ownerKey, targetKey, permisos);
+    logger.audit('permisos_updated', { adminId: ownerKey, targetId: targetKey, permisos });
+    res.json({ ok: true, permisos, preset: detectarPreset(permisos) });
+  } catch (err) {
+    logger.error('API', 'Error PUT /api/accesos', { err: err.message });
+    res.status(500).json({ error: 'Error al guardar permisos' });
+  }
+});
+
+// ── Finanzas personales ──
+// Ámbito separado del consultorio: vive en sus propias pestañas del Sheet y no
+// pasa por el modelo de movimientos clínicos.
+
+const MES_REGEX = /^\d{4}-\d{2}$/;
+
+// Las categorías salen del servicio, no de una lista repetida en el front: si
+// se agrega una, aparece sola en la UI y sigue validando igual en el POST.
+app.get('/api/personal/categorias', authMiddleware, (req, res) => {
+  res.json({
+    egreso: CATEGORIAS_EGRESO_PERSONAL,
+    ingreso: CATEGORIAS_INGRESO_PERSONAL,
+  });
+});
+
+// Un solo request trae todo lo que la vista Personal necesita (totales, por
+// categoría, presupuestos y viaje activo), en vez de encadenar cuatro.
+app.get('/api/personal/resumen', authMiddleware, async (req, res) => {
+  try {
+    const mes = MES_REGEX.test(String(req.query.mes || '')) ? String(req.query.mes) : undefined;
+    const resumen = await personalService.calcularResumenPersonal(req.user.userId, mes);
+    res.json(resumen);
+  } catch (err) {
+    logger.error('API', 'Error GET /api/personal/resumen', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener el resumen personal' });
+  }
+});
+
+app.get('/api/personal/movimientos', authMiddleware, async (req, res) => {
+  try {
+    const movimientos = await personalService.obtenerMovimientosPersonales(req.user.userId);
+    res.json({ movimientos });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/personal/movimientos', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener movimientos personales' });
+  }
+});
+
+app.post('/api/personal/movimientos', authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    const descripcionValidada = normalizarDescripcion(body.descripcion);
+    if (!descripcionValidada.ok) return res.status(400).json({ error: 'La descripción es inválida' });
+
+    const montoValidado = validarMonto(body.monto);
+    if (!montoValidado.ok) return res.status(400).json({ error: 'El monto es inválido' });
+
+    const tipo = body.tipo === 'Ingreso' ? 'ingreso' : 'gasto';
+    const categoria = normalizarCategoriaPersonal(body.categoria);
+    if (!categoria) return res.status(400).json({ error: 'La categoría no es válida para el ámbito personal' });
+
+    const moneda = ['Dolares', 'Dólares'].includes(body.moneda) ? 'Dólares'
+      : body.moneda === 'Euros' ? 'Euros' : 'Pesos';
+    const metodoPago = ['efectivo', 'transferencia', 'tarjeta', 'debito'].includes(body.metodoPago)
+      ? body.metodoPago : null;
+
+    if ((moneda === 'Dólares' && !state.cotizacionDolar) || (moneda === 'Euros' && !state.cotizacionEuro)) {
+      await obtenerCotizacionDolar();
+    }
+
+    const { movimiento } = await personalService.registrarMovimientoPersonal(req.user.userId, {
+      descripcion: descripcionValidada.valor,
+      monto: Math.abs(montoValidado.valor),
+      tipo,
+      moneda,
+      metodoPago,
+      categoria,
+      comercio: sanitizarInput(body.comercio, 100) || null,
+      notas: sanitizarInput(body.notas, 200) || null,
+      origenCarga: 'web',
+    });
+
+    res.status(201).json({ movimiento });
+  } catch (err) {
+    if (err.message === 'monto_invalido') return res.status(400).json({ error: 'El monto es inválido' });
+    if (err.message === 'descripcion_invalida') return res.status(400).json({ error: 'La descripción es inválida' });
+    logger.error('API', 'Error POST /api/personal/movimientos', { err: err.message });
+    res.status(500).json({ error: 'Error al guardar el movimiento personal' });
+  }
+});
+
+app.delete('/api/personal/movimientos/:idMov', authMiddleware, async (req, res) => {
+  try {
+    const eliminado = await personalService.eliminarMovimientoPersonal(req.user.userId, req.params.idMov);
+    if (!eliminado) return res.status(404).json({ error: 'Movimiento no encontrado' });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('API', 'Error DELETE /api/personal/movimientos', { err: err.message });
+    res.status(500).json({ error: 'Error al eliminar el movimiento personal' });
+  }
+});
+
+app.get('/api/personal/presupuestos', authMiddleware, async (req, res) => {
+  try {
+    const presupuestos = await personalService.obtenerPresupuestos(req.user.userId);
+    res.json({ presupuestos });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/personal/presupuestos', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener presupuestos' });
+  }
+});
+
+// Upsert por categoría. Monto 0 desactiva el presupuesto sin borrar el registro.
+app.put('/api/personal/presupuestos', authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const categoria = normalizarCategoriaPersonal(body.categoria);
+    if (!categoria) return res.status(400).json({ error: 'La categoría no es válida' });
+
+    const monto = Number(body.montoMensual);
+    if (!Number.isFinite(monto) || monto < 0) return res.status(400).json({ error: 'El monto es inválido' });
+
+    const moneda = ['Dolares', 'Dólares'].includes(body.moneda) ? 'Dólares'
+      : body.moneda === 'Euros' ? 'Euros' : 'Pesos';
+
+    const presupuesto = await personalService.guardarPresupuesto(req.user.userId, categoria, monto, moneda);
+    res.json({ presupuesto });
+  } catch (err) {
+    logger.error('API', 'Error PUT /api/personal/presupuestos', { err: err.message });
+    res.status(500).json({ error: 'Error al guardar el presupuesto' });
+  }
+});
+
+app.get('/api/personal/viajes', authMiddleware, async (req, res) => {
+  try {
+    const viaje = await personalService.obtenerViajeActivo(req.user.userId);
+    // `_row` es la fila del Sheet: no debe salir por la API.
+    res.json({ viaje: viaje ? { ...viaje, _row: undefined } : null });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/personal/viajes', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener el viaje activo' });
+  }
+});
+
+app.post('/api/personal/viajes', authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const nombre = sanitizarInput(body.nombre, 80);
+    if (!nombre) return res.status(400).json({ error: 'El nombre del viaje es obligatorio' });
+
+    const activo = await personalService.obtenerViajeActivo(req.user.userId);
+    if (activo) return res.status(409).json({ error: 'Ya hay un viaje activo. Cerralo primero.' });
+
+    // El front manda YYYY-MM-DD; el Sheet guarda DD/MM/YYYY.
+    const desde = validarFechaOpcional(body.fechaInicio);
+    if (!desde.ok) return res.status(400).json({ error: 'La fecha de inicio es inválida' });
+    const hasta = validarFechaOpcional(body.fechaFin);
+    if (!hasta.ok) return res.status(400).json({ error: 'La fecha de fin es inválida' });
+
+    const isoADdmmyyyy = (iso) => {
+      if (!iso) return '';
+      const [a, m, d] = iso.split('-');
+      return `${d}/${m}/${a}`;
+    };
+
+    const viaje = await personalService.crearViaje(req.user.userId, {
+      nombre,
+      fechaInicio: isoADdmmyyyy(desde.valor),
+      fechaFin: isoADdmmyyyy(hasta.valor),
+      presupuesto: Number.isFinite(Number(body.presupuesto)) && Number(body.presupuesto) > 0
+        ? Number(body.presupuesto) : null,
+    });
+
+    res.status(201).json({ viaje });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/personal/viajes', { err: err.message });
+    res.status(500).json({ error: 'Error al crear el viaje' });
+  }
+});
+
+app.post('/api/personal/viajes/cerrar', authMiddleware, async (req, res) => {
+  try {
+    const cerrado = await personalService.cerrarViaje(req.user.userId);
+    if (!cerrado) return res.status(404).json({ error: 'No hay ningún viaje activo' });
+    res.json({ ok: true, viaje: { ...cerrado, _row: undefined } });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/personal/viajes/cerrar', { err: err.message });
+    res.status(500).json({ error: 'Error al cerrar el viaje' });
   }
 });
 
@@ -661,7 +1030,12 @@ if (fs.existsSync(DIST)) {
     maxAge: '7d',
     index: false,
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith('index.html')) {
+      // Los assets llevan hash en el nombre, así que se pueden cachear fuerte.
+      // index.html y el service worker NO: si el navegador cachea sw.js 7 días,
+      // la PWA instalada sigue sirviendo la versión vieja mucho después del
+      // deploy, y el usuario no ve los cambios aunque estén publicados.
+      const base = path.basename(filePath);
+      if (base === 'index.html' || base === 'sw.js' || base === 'registerSW.js') {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       }
     },

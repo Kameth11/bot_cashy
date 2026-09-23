@@ -1,27 +1,49 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
-import { useCallback } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from './hooks/useAuth'
 import { AppProvider, useApp } from './contexts/AppContext'
 import AuthGuard from './components/AuthGuard'
 import NavBar from './components/NavBar'
 import BottomNav from './components/BottomNav'
 import NuevoMovimientoModal from './components/NuevoMovimientoModal'
+import NuevoPersonalModal from './components/NuevoPersonalModal'
 import ErrorBoundary from './components/ErrorBoundary'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import AgendaPage from './pages/AgendaPage'
 import MovimientosPage from './pages/MovimientosPage'
 import ConfigPage from './pages/ConfigPage'
+import PersonalPage from './pages/PersonalPage'
 import { api } from './services/api'
 
 function LayoutWithModal() {
   const { showNuevo, closeNuevo, nuevoError, setNuevoError, creando, setCreando, triggerReload } = useApp()
+  const { puede } = useAuth()
+  const location = useLocation()
+
+  // Ruta raíz: redirigir al primer destino permitido según permisos
+  const defaultRoute = puede('ver_balance') ? '/' : puede('ver_agenda') ? '/agenda' : '/config'
+
+  // El botón "+ Nuevo" es el mismo, pero en la vista Personal tiene que crear
+  // un movimiento personal, no uno del consultorio.
+  const enPersonal = location.pathname.startsWith('/personal')
+
+  const [categoriasPersonal, setCategoriasPersonal] = useState(null)
+
+  useEffect(() => {
+    if (!enPersonal || categoriasPersonal) return
+    let active = true
+    api.get('/api/personal/categorias')
+      .then(res => { if (active) setCategoriasPersonal(res.data) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [enPersonal, categoriasPersonal])
 
   const handleCrear = useCallback(async (payload) => {
     setNuevoError(null)
     setCreando(true)
     try {
-      await api.post('/api/movimientos', payload)
+      await api.post(enPersonal ? '/api/personal/movimientos' : '/api/movimientos', payload)
       closeNuevo()
       triggerReload()
     } catch (err) {
@@ -30,29 +52,40 @@ function LayoutWithModal() {
     } finally {
       setCreando(false)
     }
-  }, [closeNuevo, triggerReload, setNuevoError, setCreando])
+  }, [closeNuevo, triggerReload, setNuevoError, setCreando, enPersonal])
 
   return (
     <div className="app-layout">
       <NavBar />
       <main className="app-main">
         <Routes>
-          <Route path="/"            element={<Dashboard />} />
-          <Route path="/movimientos" element={<MovimientosPage />} />
-          <Route path="/agenda"      element={<AgendaPage />} />
+          <Route path="/"            element={puede('ver_balance')     ? <Dashboard />       : <Navigate to={defaultRoute} replace />} />
+          <Route path="/movimientos" element={puede('ver_movimientos') ? <MovimientosPage /> : <Navigate to={defaultRoute} replace />} />
+          <Route path="/agenda"      element={puede('ver_agenda')      ? <AgendaPage />      : <Navigate to={defaultRoute} replace />} />
           <Route path="/config"      element={<ConfigPage />} />
-          <Route path="*"            element={<Navigate to="/" replace />} />
+          <Route path="/personal"    element={<PersonalPage />} />
+          <Route path="/solicitudes" element={<Navigate to="/config?tab=solicitudes" replace />} />
+          <Route path="/accesos"     element={<Navigate to="/config?tab=accesos" replace />} />
+          <Route path="*"            element={<Navigate to={defaultRoute} replace />} />
         </Routes>
       </main>
       <BottomNav />
-      {showNuevo && (
+      {showNuevo && (enPersonal ? (
+        <NuevoPersonalModal
+          categorias={categoriasPersonal}
+          guardando={creando}
+          error={nuevoError}
+          onGuardar={handleCrear}
+          onCerrar={closeNuevo}
+        />
+      ) : (
         <NuevoMovimientoModal
           guardando={creando}
           error={nuevoError}
           onGuardar={handleCrear}
           onCerrar={closeNuevo}
         />
-      )}
+      ))}
     </div>
   )
 }

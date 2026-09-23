@@ -12,6 +12,12 @@ const { getSupabase } = require('./supabase');
 const SCOPED_TABLES = new Set([
   'movimientos',
   'profesionales',
+  // Ambito personal (sql/migrations/008): aisladas por tenant igual que el
+  // resto, pero ademas se filtran por user_id en el service — las finanzas
+  // personales son de la persona, no del consultorio.
+  'movimientos_personales',
+  'viajes_personales',
+  'presupuestos_personales',
 ]);
 
 function wrapBuilder(builder, tenantId) {

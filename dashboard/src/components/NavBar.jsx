@@ -1,11 +1,16 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useApp } from '../contexts/AppContext'
 
 export default function NavBar() {
-  const { user, logout } = useAuth()
-  const { openNuevo }    = useApp()
-  const navigate         = useNavigate()
+  const { user, logout, puede } = useAuth()
+  const { openNuevo }           = useApp()
+  const navigate                = useNavigate()
+  const location                = useLocation()
+
+  // El ámbito personal es una vista aparte, no un tab más: el BottomNav ya
+  // tiene 4 items + FAB y un quinto no entra en pantallas de 375px.
+  const enPersonal = location.pathname.startsWith('/personal')
 
   function handleLogout() {
     logout()
@@ -13,9 +18,9 @@ export default function NavBar() {
   }
 
   const links = [
-    ['/', 'Dashboard'],
-    ['/movimientos', 'Movimientos'],
-    ['/agenda', 'Agenda'],
+    ...(puede('ver_balance')     ? [['/', 'Dashboard']]          : []),
+    ...(puede('ver_movimientos') ? [['/movimientos', 'Movimientos']] : []),
+    ...(puede('ver_agenda')      ? [['/agenda', 'Agenda']]        : []),
     ['/config', 'Config'],
   ]
 
@@ -27,8 +32,22 @@ export default function NavBar() {
     <nav className="navbar">
       <div className="navbar-left">
         <span className="navbar-logo">🦷 Cashy</span>
+        <div className="ambito-switch">
+          <button
+            className={`ambito-btn${enPersonal ? '' : ' active'}`}
+            onClick={() => navigate('/')}
+          >
+            🏥 <span className="ambito-label">Consultorio</span>
+          </button>
+          <button
+            className={`ambito-btn${enPersonal ? ' active' : ''}`}
+            onClick={() => navigate('/personal')}
+          >
+            🏠 <span className="ambito-label">Personal</span>
+          </button>
+        </div>
         <div className="navbar-links">
-          {links.map(([to, label]) => (
+          {(enPersonal ? [] : links).map(([to, label]) => (
             <NavLink
               key={to}
               to={to}
@@ -42,7 +61,9 @@ export default function NavBar() {
       </div>
 
       <div className="navbar-right">
-        <button className="btn-nuevo" onClick={openNuevo}>+ Nuevo</button>
+        {puede('cargar_movimientos') && (
+          <button className="btn-nuevo" onClick={openNuevo}>+ Nuevo</button>
+        )}
         <div className="navbar-divider" />
         <div className="bot-status">
           <span className="bot-dot" />
