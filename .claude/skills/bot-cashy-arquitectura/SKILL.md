@@ -25,13 +25,21 @@ handlers en `bot` de Telegraf vía `src/lib/telegraf.js`):
    limitadas por `geminiMediaSemaphore` (ver skill `bot-cashy-nlp`).
 5. `require('./handlers/actions')` y `require('./handlers/nlp-confirm')` —
    callbacks de botones inline.
-6. `startApi()` — levanta la API del dashboard (Express), **independiente** del
+6. `iniciar()` (async, se llama al final del archivo): primero `await
+   clienteService.listo` — la promesa de la carga inicial de
+   `clientes.json`/Supabase (`cliente.service.js`). Recién después arrancan
+   `startApi()` y `bot.launch()`. Antes esto no se esperaba: bot y API
+   empezaban a atender con `clienteService.clientes` todavía vacío mientras
+   `cargarClientes()` seguía en vuelo, así que en los primeros segundos
+   cualquier mensaje o request encontraba a todo el mundo (dueños incluidos)
+   como "no autorizado".
+7. `startApi()` — levanta la API del dashboard (Express), **independiente** del
    bot (no bloquea ni depende de `bot.launch()`). El server se guarda en
    `apiServer` para cerrarlo ordenado en el shutdown.
-7. `bot.launch()` → luego `initModel()` (Gemini) y
+8. `bot.launch()` → luego `initModel()` (Gemini) y
    `obtenerCotizacionDolar()` (inicial + cada 3h, timer `unref()`d para no
    bloquear el shutdown).
-8. **Manejo de fallos del proceso**: `SIGINT`/`SIGTERM` → `bot.stop()`.
+9. **Manejo de fallos del proceso**: `SIGINT`/`SIGTERM` → `bot.stop()`.
    `unhandledRejection` → log. `uncaughtException` → log + cierre ordenado
    (`bot.stop()` + `apiServer.close()`) + `process.exit(1)` con guard
    anti-reentrada, para que Railway levante una instancia limpia (tras un
@@ -162,6 +170,18 @@ TTL default 30 min salvo donde se indica:
 - Todas las escrituras (`guardarClientes`, `eliminarCliente`) pasan por una
   cola (`encolarEscritura`) para serializar accesos concurrentes y evitar
   que dos registros simultáneos pisen el archivo.
+- `guardarClientes(clientesObj, changedUserIds)` sube a Supabase solo los
+  perfiles indicados (resolviendo su `tenant_id` vía
+  `tenant-provisioning.service.js`), no todo `clientesObj` — evita
+  reescribir N perfiles por cada guardado. Sin `changedUserIds` sincroniza
+  todos; solo tiene sentido para el seed inicial cuando Supabase está vacío
+  (dentro de `cargarClientes`).
+- `listo` (exportado) es la promesa de la carga inicial al importar el
+  módulo — `src/index.js` la espera antes de `startApi()`/`bot.launch()`
+  (ver sección Bootstrap). Un script standalone que solo hace `require()` y
+  lee `clientes` de forma síncrona (`scripts/migrate-sheet.js`, pensado para
+  `USE_SUPABASE=false`) sigue andando igual: la carga local no tiene ningún
+  `await` real de por medio.
 
 ## Multi-tenancy (Fase 2)
 

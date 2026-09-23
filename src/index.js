@@ -4,6 +4,7 @@ const { obtenerCotizacionDolar } = require('./services/cotizacion.service');
 const { initModel } = require('./services/gemini.service');
 const { startApi } = require('./api');
 const { seedApprovedEmails } = require('./services/tenant-request.service');
+const clienteService = require('./services/cliente.service');
 const { ALLOWED_EMAILS } = require('./config');
 const state = require('./state');
 const logger = require('./lib/logger');
@@ -66,25 +67,37 @@ require('./handlers/actions');
 require('./handlers/nlp-confirm');
 require('./handlers/cobrar-confirm');
 
-// Start API immediately (does not depend on bot). Guardamos el server para
-// poder cerrarlo ordenadamente ante una senal o un error fatal.
+// Guardamos el server para poder cerrarlo ordenadamente ante una senal o un
+// error fatal.
 let apiServer = null;
-startApi()
-  .then(server => { apiServer = server; })
-  .catch(err => logger.error('PROCESS', 'Error al iniciar API', { err: err.message }));
 
-// Launch bot independently
-bot.launch().then(async () => {
-  logger.info('BOT', 'Bot iniciado correctamente');
-  initModel();
-  await obtenerCotizacionDolar();
-  await seedApprovedEmails(ALLOWED_EMAILS);
-  logger.info('BOT', `Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
-  const timer = setInterval(() => obtenerCotizacionDolar(), 3 * 60 * 60 * 1000);
-  if (timer.unref) timer.unref();
-}).catch(err => {
-  logger.error('PROCESS', 'Error al iniciar bot', { err: err.message });
-});
+// Bot y API esperan a que termine de cargar clientes.json/Supabase antes de
+// empezar a atender — si no, en los primeros segundos (mientras cargarClientes
+// sigue en vuelo) cualquier mensaje o request encuentra `clientes` vacío y
+// todo el mundo (dueños incluidos) parece "no autorizado".
+async function iniciar() {
+  await clienteService.listo;
+
+  // Start API (does not depend on bot).
+  startApi()
+    .then(server => { apiServer = server; })
+    .catch(err => logger.error('PROCESS', 'Error al iniciar API', { err: err.message }));
+
+  // Launch bot independently
+  bot.launch().then(async () => {
+    logger.info('BOT', 'Bot iniciado correctamente');
+    initModel();
+    await obtenerCotizacionDolar();
+    await seedApprovedEmails(ALLOWED_EMAILS);
+    logger.info('BOT', `Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
+    const timer = setInterval(() => obtenerCotizacionDolar(), 3 * 60 * 60 * 1000);
+    if (timer.unref) timer.unref();
+  }).catch(err => {
+    logger.error('PROCESS', 'Error al iniciar bot', { err: err.message });
+  });
+}
+
+if (require.main === module) iniciar();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
@@ -113,4 +126,4 @@ process.on('uncaughtException', (err) => {
   if (timer.unref) timer.unref();
 });
 
-module.exports = { bot };
+module.exports = { bot, iniciar };

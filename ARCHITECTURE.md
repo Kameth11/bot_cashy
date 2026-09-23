@@ -251,6 +251,16 @@ preguntarse:
     migración propuesta en `sql/migrations/009_modo_full_ia.sql`, sin
     correr todavía. Falta además actualizar `buildProfileRow`/`cargarClientes`
     para escribirla y leerla una vez aplicada.
+- **Bot y API esperan a que termine `cargarClientes()` antes de atender.**
+  `clientes.json`/Supabase se cargaban de forma asíncrona sin que
+  `bot.launch()`/`startApi()` esperaran el resultado — en los primeros
+  segundos del proceso, `clienteService.clientes` estaba vacío y cualquier
+  mensaje o request encontraba a todo el mundo (dueños incluidos) como "no
+  autorizado". `cliente.service.js` expone `listo` (la promesa de esa carga
+  inicial); `src/index.js` y el arranque standalone de la API
+  (`src/api/index.js`) la esperan antes de arrancar. Un script que solo hace
+  `require()` y lee `clientes` de forma síncrona (`scripts/migrate-sheet.js`)
+  sigue andando igual — no depende de que nadie espere `listo`.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -447,3 +457,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | Modo Full IA (`/api/config/modo-ia`, `/modoia`) restringido a dueño/admin | Revisión de seguridad: cualquier invitado podía activarlo/desactivarlo para todo el consultorio, generando costo real en OpenRouter |
 | 2026-09-23 | El invitado usa el sheet del dueño (sin uno propio); `obtenerClientePorUserId` resuelve por `ownerId` explícito, no por orden de iteración de IDs | Revisión de seguridad: el resultado dependía de si el ID de Telegram del invitado era mayor o menor al del dueño — con cierto orden, el invitado terminaba como dueño de su propio sheet con permisos completos, ignorando lo configurado en /accesos. Decisión de producto confirmada con el usuario: sheet compartido con permisos granulares, no sheet propio aislado |
 | 2026-09-23 | `buildProfileRow` incluye `tenant_id` (vía nuevo `tenant-provisioning.service.js`); `guardarClientes` sube solo el perfil que cambió, no todos | Revisión de seguridad: `profiles.tenant_id` es NOT NULL desde la migración 003, pero el insert de un perfil nuevo nunca lo mandaba — fallaba en silencio (supabase-js devuelve `{ error }`, no lo lanza, y no se chequeaba) y el usuario quedaba sin fila en Supabase, con riesgo real de perder el alta en el próximo deploy de Railway |
+| 2026-09-23 | `src/index.js` y el arranque standalone de la API esperan `clienteService.listo` antes de `startApi()`/`bot.launch()` | Revisión de seguridad: `cargarClientes()` corría sin esperarse, así que en los primeros segundos del proceso cualquier mensaje o request encontraba `clientes` vacío y a todo el mundo (dueños incluidos) como "no autorizado" |

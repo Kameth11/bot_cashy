@@ -1092,4 +1092,6 @@ function startApi() {
 
 module.exports = { app, startApi, authMiddleware, JWT_SECRET, warnIfDevTokenMisconfigured };
 
-if (require.main === module) startApi();
+// Arranque standalone (`node src/api/index.js`, sin el bot) — también espera
+// a que termine de cargar clientes.json/Supabase antes de atender requests.
+if (require.main === module) clienteService.listo.then(() => startApi());

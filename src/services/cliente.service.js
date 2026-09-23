@@ -301,8 +301,17 @@ async function setPermisos(ownerUserId, guestUserId, permisosArray) {
   });
 }
 
-// initialize on load
-(async () => {
+// Carga inicial al importar el módulo, una sola vez. `listo` es la MISMA
+// promesa para todos los que la esperen — el bootstrap de src/index.js y el
+// arranque standalone de la API la awaitean antes de empezar a atender
+// (bot.launch()/startApi()), así ningún mensaje/request llega mientras
+// `clientes` todavía está vacío y todo el mundo parece "no autorizado".
+// Un script que solo hace require() y lee `clientes` de forma síncrona (ej.
+// scripts/migrate-sheet.js, pensado para USE_SUPABASE=false) sigue
+// funcionando igual que antes: la carga local (fs.readFileSync) no tiene
+// ningún await real de por medio, así que ya terminó para cuando el
+// require() vuelve el control al caller.
+const listo = (async () => {
   try {
     await cargarClientes();
   } catch (e) {
@@ -314,6 +323,7 @@ async function setPermisos(ownerUserId, guestUserId, permisosArray) {
 module.exports = {
   get clientes() { return clientes; },
   set clientes(val) { clientes = val; },
+  listo,
   cargarClientes,
   guardarClientes,
   getCliente,
