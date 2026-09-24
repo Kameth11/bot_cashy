@@ -12,7 +12,7 @@ const { getSupabase, isAvailable } = require('../lib/supabase');
 const { esAdminOriginal, obtenerClientePorUserId, resolverPermisos } = require('../auth');
 const { PERMISOS, PRESETS, validarPermisos, detectarPreset } = require('../auth/permisos');
 const { setPermisos: guardarPermisos } = require('../services/cliente.service');
-const { obtenerDatosSheet } = require('../services/sheet.service');
+const { obtenerDatosSheet, getSheetId } = require('../services/sheet.service');
 const { ejecutarBalance, ejecutarHoy, ejecutarSemana, ejecutarMes } = require('../services/command.service');
 const {
   guardarMovimiento,
@@ -325,18 +325,27 @@ app.post('/api/config/modo-ia', authMiddleware, ownerOnly, async (req, res) => {
 });
 
 // ── Cache de movimientos (30s) ──
+// Keyeada por sheetId (no por userId): el dueño y sus invitados comparten el
+// mismo sheet, así que tienen que compartir la misma entrada de cache — si
+// no, un invitado podía seguir viendo datos viejos después de que el dueño
+// (u otro invitado) cargara/editara un movimiento, y viceversa.
 const _movCache = new Map();
 const MOV_CACHE_TTL = 30 * 1000;
 
+function movCacheKey(userId) {
+  return getSheetId(userId) || String(userId);
+}
+
 async function getDatosConCache(userId) {
-  const cached = _movCache.get(userId);
+  const key = movCacheKey(userId);
+  const cached = _movCache.get(key);
   if (cached && Date.now() - cached.ts < MOV_CACHE_TTL) return cached.data;
   const data = await obtenerDatosSheet(userId);
-  _movCache.set(userId, { data, ts: Date.now() });
+  _movCache.set(key, { data, ts: Date.now() });
   return data;
 }
 
-function invalidarCacheMovimientos(userId) { _movCache.delete(String(userId)); }
+function invalidarCacheMovimientos(userId) { _movCache.delete(movCacheKey(userId)); }
 
 // Cuando un movimiento se crea/edita/borra desde CUALQUIER lado (bot o dashboard),
 // invalidamos la cache de /api/movimientos para que el siguiente fetch del

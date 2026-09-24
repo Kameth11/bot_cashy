@@ -118,7 +118,8 @@ TTL default 30 min salvo donde se indica:
 - `pendingDescripcion` — esperando descripción faltante de un movimiento.
 - `pendingAgendaConfirm` — confirmación de turnos extraídos de una foto.
 - `pendingIngresoPacientes` — wizard de `/ingreso_paciente`.
-- `docsCache` (TTL 2h) — cache de documentos de Google Sheets por usuario.
+- `docsCache` (TTL 2h) — cache de documentos de Google Sheets, keyeada por
+  `sheetId` (no por userId) desde 2026-09-23 — ver sección de escalabilidad.
 - `userRateLimits` (Map simple) — rate limiting general.
 - `processingNlp` (Set) — evita procesar 2 mensajes NLP del mismo usuario en
   paralelo.
@@ -203,15 +204,22 @@ Optimizaciones para aguantar muchos usuarios/peticiones sin caerse (detalle en
   (`src/api/index.js`, `createLimiter` de `src/lib/rate-limiter.js`, 120/min),
   excluye `/api/auth/*`, `/api/events` (SSE) y `/api/cotizacion`. Guard:
   `tests/api.rate-limit.test.js`.
-- **Write-lock por usuario**: `withUserWriteLock(userId, fn)`
-  (`src/lib/write-queue.js`) serializa escrituras del mismo usuario (cobros,
-  ediciones, addRow). `runInBackground(userId, fn)` corre trabajo best-effort
-  bajo el lock sin bloquear al caller (dual-write a Sheets, sync de Agenda).
+- **Write-lock por sheet, no por usuario**: `withUserWriteLock(userId, fn)`
+  (`src/lib/write-queue.js`) toma `userId` por interfaz (no cambia en los
+  callers) pero resuelve la key real al `ownerId` de la cuenta
+  (`obtenerClientePorUserId`) antes de usarla — el dueño y sus invitados
+  comparten el mismo sheet, así que tienen que serializarse entre sí, no
+  solo contra sí mismos. `runInBackground(userId, fn)` corre trabajo
+  best-effort bajo el mismo lock sin bloquear al caller (dual-write a
+  Sheets, sync de Agenda).
 - **Semáforo de Gemini**: `geminiMediaSemaphore` (`src/lib/semaphore.js`, máx
   3) acota la concurrencia de foto/voz.
 - **Lecturas acotadas**: `MAX_MOVIMIENTOS_READ` en `db.service.js`.
 - **Cache de doc de Sheets**: `docsCache` (TTL 2h) en `state`, reusado por
   `getSheetCliente` (no rehace `loadInfo()`/`loadCells()` en cada llamada).
+  Keyeada por `sheetId` (no por `userId`) por el mismo motivo que el
+  write-lock: el dueño y sus invitados tienen que compartir la misma
+  instancia cacheada, si no invalidar desde un lado no afecta al otro.
 
 > Casi todo el estado vive en memoria de un solo proceso (TTLMaps, locks,
 > caches, suscriptores SSE de `events.service.js`). Por eso NO se puede subir

@@ -261,6 +261,17 @@ preguntarse:
   (`src/api/index.js`) la esperan antes de arrancar. Un script que solo hace
   `require()` y lee `clientes` de forma síncrona (`scripts/migrate-sheet.js`)
   sigue andando igual — no depende de que nadie espere `listo`.
+- **Write-lock y caches de Sheets keyeados por sheet, no por usuario.**
+  `withUserWriteLock` (`src/lib/write-queue.js`), `docsCache`/`invalidateCache`
+  (`sheet.service.js`) y `_movCache` (`api/index.js`) usaban el `userId` de
+  quien escribe/lee como key. El dueño y sus invitados comparten el mismo
+  Google Sheet (ver sección 8, ítem 2.1), así que: (a) una escritura del
+  dueño y una de un invitado al mismo sheet no se serializaban entre sí
+  (podían pisarse), y (b) cada uno tenía su propia entrada de cache para los
+  mismos datos — invalidar desde un lado no afectaba al otro, que seguía
+  viendo datos/documento viejo. Las tres ahora resuelven la key real
+  (`ownerId` para el lock, `sheetId` para las caches) sin cambiar la
+  interfaz de ninguno de sus callers.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -458,3 +469,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | El invitado usa el sheet del dueño (sin uno propio); `obtenerClientePorUserId` resuelve por `ownerId` explícito, no por orden de iteración de IDs | Revisión de seguridad: el resultado dependía de si el ID de Telegram del invitado era mayor o menor al del dueño — con cierto orden, el invitado terminaba como dueño de su propio sheet con permisos completos, ignorando lo configurado en /accesos. Decisión de producto confirmada con el usuario: sheet compartido con permisos granulares, no sheet propio aislado |
 | 2026-09-23 | `buildProfileRow` incluye `tenant_id` (vía nuevo `tenant-provisioning.service.js`); `guardarClientes` sube solo el perfil que cambió, no todos | Revisión de seguridad: `profiles.tenant_id` es NOT NULL desde la migración 003, pero el insert de un perfil nuevo nunca lo mandaba — fallaba en silencio (supabase-js devuelve `{ error }`, no lo lanza, y no se chequeaba) y el usuario quedaba sin fila en Supabase, con riesgo real de perder el alta en el próximo deploy de Railway |
 | 2026-09-23 | `src/index.js` y el arranque standalone de la API esperan `clienteService.listo` antes de `startApi()`/`bot.launch()` | Revisión de seguridad: `cargarClientes()` corría sin esperarse, así que en los primeros segundos del proceso cualquier mensaje o request encontraba `clientes` vacío y a todo el mundo (dueños incluidos) como "no autorizado" |
+| 2026-09-23 | `withUserWriteLock`/`docsCache`/`_movCache` resuelven `ownerId`/`sheetId` en vez de usar el `userId` de quien escribe/lee, sin cambiar su interfaz | Revisión de seguridad: el dueño y sus invitados comparten el mismo sheet — con la key vieja, sus escrituras no se serializaban entre sí y sus caches no se invalidaban entre sí |

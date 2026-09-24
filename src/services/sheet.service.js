@@ -112,21 +112,27 @@ function getSheetId(userId) {
   return null;
 }
 
+// Keyeado por sheetId (no por userId): el dueño y sus invitados comparten el
+// mismo sheet, así que tienen que compartir el mismo documento cacheado — si
+// no, cada uno termina con su propia instancia de GoogleSpreadsheet en
+// memoria (desperdicia la cache) y, peor, invalidar desde un lado no afecta
+// la copia cacheada del otro.
 function invalidateCache(userId) {
-  state.docsCache.delete(userId);
+  const sheetId = getSheetId(userId);
+  if (sheetId) state.docsCache.delete(sheetId);
 }
 
 async function getDocCliente(userId, fresh = false) {
   const sheetId = getSheetId(userId);
   if (!sheetId) return null;
 
-  if (fresh || !state.docsCache.has(userId)) {
+  if (fresh || !state.docsCache.has(sheetId)) {
     const docCliente = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
     await docCliente.loadInfo();
-    state.docsCache.set(userId, docCliente);
+    state.docsCache.set(sheetId, docCliente);
   }
 
-  return state.docsCache.get(userId);
+  return state.docsCache.get(sheetId);
 }
 
 async function getSheetCliente(userId) {

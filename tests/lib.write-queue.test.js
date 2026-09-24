@@ -1,4 +1,15 @@
+// obtenerClientePorUserId real (sin mockear) devuelve null para estos IDs
+// inventados (no hay clientes.json en el entorno de test), así que
+// resolverKey cae al userId crudo — el comportamiento de abajo es idéntico
+// al de antes del ítem 2.4 para todos los tests que no configuran el mock.
+jest.mock('../src/auth', () => ({ obtenerClientePorUserId: jest.fn() }));
+
+const { obtenerClientePorUserId } = require('../src/auth');
 const { withUserWriteLock, runInBackground } = require('../src/lib/write-queue');
+
+beforeEach(() => {
+  obtenerClientePorUserId.mockReset();
+});
 
 function deferred() {
   let resolve;
@@ -114,6 +125,62 @@ describe('lib/write-queue', () => {
       await expect(withUserWriteLock('bg3', async () => 'ok')).resolves.toBe('ok');
 
       spy.mockRestore();
+    });
+  });
+
+  describe('ítem 2.4 — la key es el sheet (ownerId), no quien escribe', () => {
+    test('el dueño y su invitado (mismo sheet) SÍ se serializan entre sí', async () => {
+      // 2222 es el owner; 3333 es su invitado — ambos resuelven al mismo ownerId.
+      obtenerClientePorUserId.mockImplementation((userId) => {
+        if (String(userId) === '2222') return { ownerId: '2222', isOwner: true };
+        if (String(userId) === '3333') return { ownerId: '2222', isOwner: false };
+        return null;
+      });
+
+      const order = [];
+      const first = deferred();
+
+      const pDueno = withUserWriteLock(2222, async () => {
+        await first.promise;
+        order.push('dueño');
+      });
+      const pInvitado = withUserWriteLock(3333, async () => {
+        order.push('invitado');
+      });
+
+      // El invitado escribe el MISMO sheet: tiene que esperar a que termine el dueño.
+      await new Promise((r) => setTimeout(r, 10));
+      expect(order).toEqual([]);
+
+      first.resolve();
+      await Promise.all([pDueno, pInvitado]);
+      expect(order).toEqual(['dueño', 'invitado']);
+    });
+
+    test('dos cuentas distintas (owners distintos) NO se bloquean entre sí', async () => {
+      obtenerClientePorUserId.mockImplementation((userId) => {
+        if (String(userId) === '5000') return { ownerId: '5000', isOwner: true };
+        if (String(userId) === '6000') return { ownerId: '6000', isOwner: true };
+        return null;
+      });
+
+      const order = [];
+      const slow = deferred();
+
+      const pSlow = withUserWriteLock(5000, async () => {
+        await slow.promise;
+        order.push('cuenta-5000');
+      });
+      const pFast = withUserWriteLock(6000, async () => {
+        order.push('cuenta-6000');
+      });
+
+      await pFast;
+      expect(order).toEqual(['cuenta-6000']);
+
+      slow.resolve();
+      await pSlow;
+      expect(order).toEqual(['cuenta-6000', 'cuenta-5000']);
     });
   });
 });

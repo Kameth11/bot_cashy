@@ -1,10 +1,22 @@
-// Cola de escritura por usuario: serializa operaciones async para una misma
-// key, dejando que keys distintas corran en paralelo. Sin dependencias externas.
+const { obtenerClientePorUserId } = require('../auth');
 
-const tails = new Map(); // userId -> promise "tail" de la cadena actual
+// Cola de escritura por sheet: serializa operaciones async para una misma
+// key, dejando que keys distintas corran en paralelo.
+//
+// La key es el ownerId de la cuenta, no el userId de quien escribe: el
+// dueño y sus invitados comparten el mismo Google Sheet (ver
+// src/auth/index.js), así que si cada uno tuviera su propio lock, una
+// escritura del dueño y una de un invitado al mismo sheet podían pisarse en
+// paralelo en vez de serializarse.
+function resolverKey(userId) {
+  const cliente = obtenerClientePorUserId(userId);
+  return String(cliente ? cliente.ownerId : userId);
+}
+
+const tails = new Map(); // ownerId -> promise "tail" de la cadena actual
 
 function withUserWriteLock(userId, fn) {
-  const key = String(userId);
+  const key = resolverKey(userId);
   const previous = tails.get(key) || Promise.resolve();
 
   // .then(fn, fn): corre fn aunque la anterior haya fallado, para que un
