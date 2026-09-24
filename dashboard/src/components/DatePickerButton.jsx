@@ -1,29 +1,21 @@
-import { useRef } from 'react'
 import { Calendar } from 'lucide-react'
 
 // Botón con ícono de calendario que abre el date picker nativo del navegador.
+// El <input type="date"> recibe el tap directamente (superpuesto, invisible):
+// en iOS/iPadOS Safari el picker nativo solo se abre con un gesto real del
+// usuario sobre el input, no vía .focus()/.showPicker() disparado desde JS.
 export default function DatePickerButton({ value, onChange, title = 'Elegir fecha', className = 'btn-agenda' }) {
-  const inputRef = useRef(null)
-
-  function abrir() {
-    const el = inputRef.current
-    if (!el) return
-    if (typeof el.showPicker === 'function') el.showPicker()
-    else el.focus()
-  }
-
   return (
     <div style={{ position: 'relative', display: 'inline-flex', overflow: 'hidden' }}>
-      <button type="button" className={className} title={title} onClick={abrir}>
+      <button type="button" className={className} title={title} tabIndex={-1} style={{ pointerEvents: 'none' }}>
         <Calendar size={14} />
       </button>
       <input
-        ref={inputRef}
         type="date"
         value={value || ''}
-        tabIndex={-1}
+        title={title}
         onChange={e => onChange(e.target.value)}
-        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', border: 0, padding: 0, margin: 0, pointerEvents: 'none' }}
+        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', border: 0, padding: 0, margin: 0 }}
       />
     </div>
   )
