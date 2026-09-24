@@ -101,11 +101,18 @@ async function getTurnosSheet(userId) {
   return sheet;
 }
 
-async function guardarTurnosFlat(userId, turnos) {
+async function guardarTurnosFlat(userId, turnos, fecha = fechaHoyStr(), idsAEliminar = []) {
   const sheet = await crearTabTurnosSiNoExiste(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
 
-  const fecha = fechaHoyStr();
+  if (idsAEliminar.length > 0) {
+    const rows = await sheet.getRows();
+    const aBorrar = rows.filter(r => idsAEliminar.includes(r.get('ID_Turno')));
+    for (const row of aBorrar) {
+      await row.delete();
+    }
+  }
+
   const ids = [];
   console.log(`Guardando ${turnos.length} turnos en tab Turnos (${fecha})...`);
 
@@ -129,7 +136,7 @@ async function guardarTurnosFlat(userId, turnos) {
       Servicio: turno.servicio || '',
       Profesional: resolverProfesional(turno.profesional, turno.consultorio),
       Consultorio: turno.consultorio || '',
-      Estado: 'Pendiente',
+      Estado: turno.estado || 'Pendiente',
     };
   });
 
@@ -138,6 +145,59 @@ async function guardarTurnosFlat(userId, turnos) {
   await sheet.addRows(filas);
 
   return ids;
+}
+
+// Clave de comparación para detectar duplicados: hora + nombre de paciente
+// normalizado (sin acentos/mayúsculas). Si falta hora o cliente en alguno de
+// los dos lados, no se considera match (evita falsos positivos entre turnos
+// incompletos).
+function normalizarNombreClave(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function claveTurno(turno) {
+  const hora = String(turno.hora || '').trim();
+  const cliente = normalizarNombreClave(turno.cliente);
+  if (!hora || !cliente) return null;
+  return `${hora}|${cliente}`;
+}
+
+// Compara los turnos a importar contra los ya guardados en "Turnos" para esa
+// fecha (misma hora + paciente normalizado). Devuelve, por cada turno nuevo
+// que matchea, el turno existente correspondiente (con su ID_Turno, para
+// poder borrarlo si el usuario elige reemplazar).
+async function detectarDuplicados(userId, turnos, fecha) {
+  const existentes = await obtenerTurnosPorFecha(userId, fecha);
+  const porClave = new Map();
+  existentes.forEach(ex => {
+    const clave = claveTurno(ex);
+    if (clave) porClave.set(clave, ex);
+  });
+
+  const duplicados = [];
+  turnos.forEach((turno, index) => {
+    const clave = claveTurno(turno);
+    if (clave && porClave.has(clave)) {
+      duplicados.push({ nuevoIndex: index, existente: porClave.get(clave) });
+    }
+  });
+  return duplicados;
+}
+
+// Guarda un lote de turnos (de una foto de agenda) para una fecha elegida por
+// el usuario, y regenera la sección visual de "Agenda" para esa fecha a partir
+// de "Turnos" (fuente de verdad), para que ambas pestañas queden consistentes
+// aunque haya habido reemplazos de duplicados.
+async function guardarAgendaParaFecha(userId, turnos, fecha, { idsAEliminar = [] } = {}) {
+  await guardarTurnosFlat(userId, turnos, fecha, idsAEliminar);
+  const turnosFinales = await obtenerTurnosPorFecha(userId, fecha);
+  await escribirSeccionAgenda(userId, fecha, turnosFinales);
+  return { guardados: turnos.length, total: turnos.length, fechaStr: fecha };
 }
 
 function rowToTurno(r) {
@@ -332,73 +392,6 @@ function escribirBloque(sheet, startRow, startColumn, group, fechaStr) {
   });
 }
 
-async function guardarTurnosAgenda(userId, turnos) {
-  const agendaSheet = await crearTabAgendaSiNoExiste(userId);
-  if (!agendaSheet) {
-    throw new Error('No se pudo acceder a la tab Agenda');
-  }
-
-  if (!Array.isArray(turnos) || turnos.length === 0) {
-    throw new Error('No hay turnos para guardar');
-  }
-
-  const fechaStr = fechaArgentinaStr();
-  const groups = agruparTurnos(turnos);
-
-  // Ensure generous size upfront so loadCells cubre todo el rango de escritura
-  await asegurarTamanoSheet(agendaSheet, Math.max(agendaSheet.columnCount, 60), Math.max(agendaSheet.rowCount, 500));
-  await agendaSheet.loadCells();
-
-  // Buscar sección existente para esta fecha.
-  // fechaStr se escribe en la columna (blockStartCol + 4) de cada fila de datos,
-  // y los bloques están separados cada BLOCK_WIDTH + BLOCK_SPACING = 6 columnas.
-  let minDataRow = Infinity;
-  let maxColUsed = -1;
-
-  for (let r = 0; r < agendaSheet.rowCount; r++) {
-    for (let c = BLOCK_HEADERS.length - 1; c < agendaSheet.columnCount; c += BLOCK_WIDTH + BLOCK_SPACING) {
-      if (agendaSheet.getCell(r, c).value === fechaStr) {
-        if (r < minDataRow) minDataRow = r;
-        if (c > maxColUsed) maxColUsed = c;
-      }
-    }
-  }
-
-  let startRow, startColumnOffset;
-  if (minDataRow !== Infinity) {
-    // Ya existe una sección para esta fecha: agregar bloques a la derecha
-    startRow = minDataRow - 1;
-    startColumnOffset = maxColUsed + 1 + BLOCK_SPACING;
-  } else {
-    // Fecha nueva: buscar la primera fila libre debajo del contenido existente
-    let lastUsedRow = 0;
-    for (let r = 0; r < agendaSheet.rowCount; r++) {
-      for (let c = 0; c < agendaSheet.columnCount; c++) {
-        const v = agendaSheet.getCell(r, c).value;
-        if (v !== null && v !== '') { lastUsedRow = r + 1; break; }
-      }
-    }
-    startRow = lastUsedRow === 0 ? 1 : lastUsedRow + 2;
-    startColumnOffset = 0;
-  }
-
-  groups.forEach((group, groupIndex) => {
-    const startColumn = startColumnOffset + groupIndex * (BLOCK_WIDTH + BLOCK_SPACING);
-    escribirBloque(agendaSheet, startRow, startColumn, group, fechaStr);
-  });
-
-  await agendaSheet.saveUpdatedCells();
-  invalidateCache(userId);
-
-  return {
-    guardados: turnos.length,
-    errores: 0,
-    total: turnos.length,
-    fechaStr,
-    grupos: groups.map(g => g.label),
-  };
-}
-
 // Reescribe la sección visual de la tab "Agenda" para una fecha, tomando los
 // turnos desde la tab "Turnos" (la fuente de verdad que usa el dashboard). La
 // Agenda es solo una vista linda; nadie la lee de vuelta. Sin esto, queda
@@ -495,8 +488,9 @@ function sincronizarAgenda(userId, fechaStr) {
 
 module.exports = {
   crearTabAgendaSiNoExiste,
-  guardarTurnosAgenda,
   guardarTurnosFlat,
+  guardarAgendaParaFecha,
+  detectarDuplicados,
   crearTurno,
   obtenerTurnosPorFecha,
   obtenerTurnoPorId,

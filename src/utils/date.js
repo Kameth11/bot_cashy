@@ -38,6 +38,38 @@ function fechaArgentinaStr(date = new Date()) {
   return `${p.day}/${p.month}/${p.year}`;
 }
 
+// "Mañana" respecto de la fecha actual en Argentina, calculado con aritmética
+// UTC pura (Date.UTC) para no depender de la zona horaria del proceso ni de
+// reglas de DST al cruzar mes/año.
+function fechaMananaArgentinaStr() {
+  const p = partesArgentina();
+  const manana = new Date(Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day) + 1));
+  const dia = String(manana.getUTCDate()).padStart(2, '0');
+  const mes = String(manana.getUTCMonth() + 1).padStart(2, '0');
+  return `${dia}/${mes}/${manana.getUTCFullYear()}`;
+}
+
+// Parsea una fecha escrita a mano por el usuario (DD/MM o DD/MM/AAAA, con "/"
+// o "-") al mismo formato "DD/MM/AAAA" que usa fechaArgentinaStr(). Si falta
+// el año, asume el año actual en Argentina. Devuelve null si el texto no es
+// una fecha válida (incluye chequeo de días fuera de rango para el mes).
+function parsearFechaIngresada(texto) {
+  if (!texto) return null;
+  const match = String(texto).trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
+  if (!match) return null;
+
+  const dia = parseInt(match[1], 10);
+  const mes = parseInt(match[2], 10);
+  let anio = match[3] ? parseInt(match[3], 10) : Number(partesArgentina().year);
+  if (match[3] && match[3].length === 2) anio += 2000;
+
+  if (mes < 1 || mes > 12 || dia < 1) return null;
+  const diasEnMes = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+  if (dia > diasEnMes) return null;
+
+  return `${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${anio}`;
+}
+
 function horaArgentinaStr(date = new Date()) {
   const p = partesArgentina(date);
   return `${p.hour}:${p.minute}`;
@@ -86,5 +118,7 @@ module.exports = {
   esEsteMes,
   ahoraArgentina,
   fechaArgentinaStr,
+  fechaMananaArgentinaStr,
+  parsearFechaIngresada,
   horaArgentinaStr,
 };

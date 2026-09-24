@@ -122,6 +122,10 @@ TTL default 30 min salvo donde se indica:
   cotización del dólar para un movimiento en USD.
 - `pendingDescripcion` — esperando descripción faltante de un movimiento.
 - `pendingAgendaConfirm` — confirmación de turnos extraídos de una foto.
+- `pendingAgendaFecha` — tras confirmar, esperando qué fecha usar (Hoy /
+  Mañana / texto libre "Otra fecha") para guardar los turnos.
+- `pendingAgendaDuplicados` — se detectaron turnos ya cargados para esa fecha
+  (misma hora + paciente normalizado); esperando reemplazar o agregar.
 - `pendingIngresoPacientes` — wizard de `/ingreso_paciente`.
 - `docsCache` (TTL 2h) — cache de documentos de Google Sheets, keyeada por
   `sheetId` (no por userId) desde 2026-09-23 — ver sección de escalabilidad.

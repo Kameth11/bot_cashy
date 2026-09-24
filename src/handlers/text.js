@@ -10,6 +10,7 @@ const { quickParse } = require('../services/quick_nlp.service');
 const registrationService = require('../services/registration.service');
 const { validarTextoUsuario, normalizarDescripcion, validarMonto, validarCotizacion } = require('../utils/validation');
 const { actualizarCampoNlp, crearMensajeConfirmacion, discardButtons } = require('./nlp-confirm');
+const { parsearFechaIngresada } = require('../utils/date');
 const { requierePermisoBot } = require('../auth/bot-permisos');
 
 const CATEGORIAS_INGRESO_PACIENTE = {
@@ -210,7 +211,7 @@ function extraerMetodoDesdeDescripcion(text) {
 }
 
 const cmd = require('../services/command.service');
-const { confirmButtons } = require('./actions');
+const { confirmButtons, procesarFechaAgendaElegida } = require('./actions');
 
 const regexMsg = /^(consulta|servicio|gasto|pendiente)\s+(.+?)\s+(?:\$|U\$|USD|€|EUR)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
@@ -618,6 +619,22 @@ bot.on('text', async (ctx) => {
   }
 
   if (state.pendingAgendaConfirm.has(ctx.from.id)) {
+    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+  }
+
+  if (state.pendingAgendaFecha.has(ctx.from.id)) {
+    const data = state.pendingAgendaFecha.get(ctx.from.id);
+    if (!data.esperandoTexto) {
+      return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+    }
+    const fecha = parsearFechaIngresada(text);
+    if (!fecha) {
+      return ctx.reply('⚠️ Fecha inválida. Escribila como DD/MM o DD/MM/AAAA (ej: 25/09 o 25/09/2026):');
+    }
+    return procesarFechaAgendaElegida(ctx, ctx.from.id, data.turnos, fecha);
+  }
+
+  if (state.pendingAgendaDuplicados.has(ctx.from.id)) {
     return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
   }
 

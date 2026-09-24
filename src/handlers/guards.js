@@ -2,6 +2,8 @@ const state = require('../state');
 
 function tieneProcesoPendiente(userId) {
   return state.pendingAgendaConfirm.has(userId) ||
+    state.pendingAgendaFecha.has(userId) ||
+    state.pendingAgendaDuplicados.has(userId) ||
     state.pendingRegistros.has(userId) ||
     state.pendingDeletes.has(userId) ||
     state.pendingEdits.has(userId) ||

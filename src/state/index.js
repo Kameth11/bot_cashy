@@ -69,6 +69,8 @@ const pendingLimpiezas      = new TTLMap();
 const pendingReinicios      = new TTLMap();
 const pendingDescripcion    = new TTLMap();
 const pendingAgendaConfirm  = new TTLMap();
+const pendingAgendaFecha      = new TTLMap();
+const pendingAgendaDuplicados = new TTLMap();
 const pendingIngresoPacientes = new TTLMap();
 const pendingTurnoEdits       = new TTLMap();
 
@@ -106,6 +108,8 @@ module.exports = {
   pendingReinicios,
   pendingDescripcion,
   pendingAgendaConfirm,
+  pendingAgendaFecha,
+  pendingAgendaDuplicados,
   pendingIngresoPacientes,
   pendingTurnoEdits,
   docsCache,

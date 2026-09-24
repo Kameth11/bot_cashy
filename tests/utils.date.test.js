@@ -1,4 +1,4 @@
-const { normalizarFecha, esHoy, esEstaSemana, esEsteMes, ahoraArgentina, fechaArgentinaStr, horaArgentinaStr } = require('../src/utils/date');
+const { normalizarFecha, esHoy, esEstaSemana, esEsteMes, ahoraArgentina, fechaArgentinaStr, horaArgentinaStr, fechaMananaArgentinaStr, parsearFechaIngresada } = require('../src/utils/date');
 
 function ddmmyyyy(d) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -114,5 +114,44 @@ describe('ahoraArgentina/fechaArgentinaStr/horaArgentinaStr — 22:30 ART simula
   test('un movimiento cargado a esta hora cuenta como "hoy" (23/09), no como el 24', () => {
     expect(esHoy('23/09/2026')).toBe(true);
     expect(esHoy('24/09/2026')).toBe(false);
+  });
+
+  // Ítem 3.5(a): antes de este fix, agenda.service usaba "hoy" fijo sin forma
+  // de guardar para otro día. Acá se prueba que "mañana" se calcula sobre el
+  // día en Argentina (23/09 ART), no sobre el día del proceso en UTC (que a
+  // esta misma hora ya es 24/09 UTC — si se calculara mal, esta prueba daría
+  // "25/09" en vez de "24/09").
+  test('fechaMananaArgentinaStr() da "24/09/2026" (el día siguiente al 23 en ART)', () => {
+    expect(fechaMananaArgentinaStr()).toBe('24/09/2026');
+  });
+});
+
+describe('parsearFechaIngresada — fecha escrita a mano para "Otra fecha" de agenda', () => {
+  test('parsea DD/MM asumiendo el año actual (en Argentina)', () => {
+    expect(parsearFechaIngresada('25/09')).toBe('25/09/2026');
+  });
+
+  test('parsea DD/MM/AAAA', () => {
+    expect(parsearFechaIngresada('5/1/2027')).toBe('05/01/2027');
+  });
+
+  test('acepta "-" como separador', () => {
+    expect(parsearFechaIngresada('25-12-2026')).toBe('25/12/2026');
+  });
+
+  test('rechaza texto que no es una fecha', () => {
+    expect(parsearFechaIngresada('mañana')).toBeNull();
+    expect(parsearFechaIngresada('')).toBeNull();
+    expect(parsearFechaIngresada(null)).toBeNull();
+  });
+
+  test('rechaza mes fuera de rango y día inexistente para el mes', () => {
+    expect(parsearFechaIngresada('15/13/2026')).toBeNull();
+    expect(parsearFechaIngresada('31/04/2026')).toBeNull(); // abril tiene 30 días
+    expect(parsearFechaIngresada('29/02/2026')).toBeNull(); // 2026 no es bisiesto
+  });
+
+  test('acepta 29/02 en año bisiesto', () => {
+    expect(parsearFechaIngresada('29/02/2028')).toBe('29/02/2028');
   });
 });

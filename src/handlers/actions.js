@@ -8,7 +8,8 @@ const { invalidateCache } = require('../services/sheet.service');
 const { formatMonto, escapeMarkdown } = require('../utils/formatter');
 const { convertirAPesos } = require('../services/movimiento.service');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
-const { guardarTurnosAgenda, guardarTurnosFlat } = require('../services/agenda.service');
+const { guardarAgendaParaFecha, detectarDuplicados } = require('../services/agenda.service');
+const { fechaArgentinaStr, fechaMananaArgentinaStr, parsearFechaIngresada } = require('../utils/date');
 const { aplicarColorMontoEnFila } = require('../services/sheet-format.service');
 const { withUserWriteLock } = require('../lib/write-queue');
 
@@ -330,6 +331,14 @@ bot.action('cancel_edit', async (ctx) => {
   await ctx.editMessageText('❌ Edición cancelada.');
 });
 
+function fechaPickerKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('Hoy', 'agenda_fecha_hoy'), Markup.button.callback('Mañana', 'agenda_fecha_manana')],
+    [Markup.button.callback('📆 Otra fecha', 'agenda_fecha_otra')],
+    [Markup.button.callback('❌ Cancelar', 'cancel_agenda')],
+  ]);
+}
+
 bot.action('confirm_agenda', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
@@ -340,26 +349,110 @@ bot.action('confirm_agenda', async (ctx) => {
 
   const { turnos } = state.pendingAgendaConfirm.get(userId);
   state.pendingAgendaConfirm.delete(userId);
+  state.pendingAgendaFecha.set(userId, { turnos });
+
+  await ctx.editMessageText('📅 *¿Para qué día es esta agenda?*', {
+    parse_mode: 'Markdown',
+    ...fechaPickerKeyboard(),
+  });
+});
+
+bot.action('cancel_agenda', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  state.pendingAgendaConfirm.delete(userId);
+  state.pendingAgendaFecha.delete(userId);
+  state.pendingAgendaDuplicados.delete(userId);
+  await ctx.editMessageText('❌ Turnos descartados.');
+});
+
+// Punto único de guardado una vez que ya se sabe la fecha: detecta duplicados
+// (misma hora + paciente normalizado) contra lo ya cargado para esa fecha y,
+// si encuentra alguno, pregunta si reemplazar o agregar antes de escribir.
+// La usan tanto los botones Hoy/Mañana como el texto libre de "Otra fecha"
+// (ver handlers/text.js).
+async function procesarFechaAgendaElegida(ctx, userId, turnos, fecha) {
+  state.pendingAgendaFecha.delete(userId);
+
+  try {
+    const duplicados = await detectarDuplicados(userId, turnos, fecha);
+
+    if (duplicados.length === 0) {
+      await ctx.reply('⏳ Guardando turnos en Agenda...');
+      const { guardados, fechaStr } = await guardarAgendaParaFecha(userId, turnos, fecha);
+      return ctx.reply(
+        `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
+        `📅 Fecha: ${fechaStr}\n` +
+        `📊 Ver en tu Google Sheet (tabs "Agenda" y "Turnos")`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    state.pendingAgendaDuplicados.set(userId, { turnos, fecha, duplicados });
+    const nombres = duplicados
+      .map(d => escapeMarkdown(d.existente.cliente || d.existente.hora))
+      .join(', ');
+    return ctx.reply(
+      `⚠️ *Encontré ${duplicados.length} turno${duplicados.length !== 1 ? 's' : ''} que ya ${duplicados.length !== 1 ? 'existen' : 'existe'} para el ${fecha}* (misma hora y paciente): ${nombres}\n\n` +
+      `¿Reemplazo esos turnos o agrego todo como nuevo?`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔄 Reemplazar duplicados', 'agenda_dup_reemplazar')],
+          [Markup.button.callback('➕ Agregar todo', 'agenda_dup_agregar')],
+          [Markup.button.callback('❌ Cancelar', 'cancel_agenda')],
+        ]),
+      }
+    );
+  } catch (error) {
+    console.error('Error al guardar agenda:', error.message);
+    return ctx.reply('❌ Error al guardar los turnos en la agenda.');
+  }
+}
+
+bot.action('agenda_fecha_hoy', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingAgendaFecha.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  await ctx.editMessageText('⏳ Procesando...');
+  await procesarFechaAgendaElegida(ctx, userId, pending.turnos, fechaArgentinaStr());
+});
+
+bot.action('agenda_fecha_manana', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingAgendaFecha.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  await ctx.editMessageText('⏳ Procesando...');
+  await procesarFechaAgendaElegida(ctx, userId, pending.turnos, fechaMananaArgentinaStr());
+});
+
+bot.action('agenda_fecha_otra', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingAgendaFecha.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  state.pendingAgendaFecha.set(userId, { turnos: pending.turnos, esperandoTexto: true });
+  await ctx.editMessageText('📆 Escribí la fecha (DD/MM o DD/MM/AAAA), ej: 25/09 o 25/09/2026:');
+});
+
+bot.action('agenda_dup_reemplazar', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingAgendaDuplicados.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  state.pendingAgendaDuplicados.delete(userId);
 
   try {
     await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
-    const { guardados, errores, total, fechaStr, grupos = [] } = await guardarTurnosAgenda(userId, turnos);
-
-    // Guardar en tab plana Turnos (consultable por fecha, la usa el dashboard)
-    let errorTurnosFlat = null;
-    try { await guardarTurnosFlat(userId, turnos); } catch (e) {
-      console.error('guardarTurnosFlat:', e.message);
-      errorTurnosFlat = e.message;
-    }
-    const huboErrores = errores > 0;
-
+    const idsAEliminar = pending.duplicados.map(d => d.existente.idTurno).filter(Boolean);
+    const { guardados, fechaStr } = await guardarAgendaParaFecha(userId, pending.turnos, pending.fecha, { idsAEliminar });
     await ctx.editMessageText(
-      `${huboErrores ? '⚠️' : '✅'} *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
+      `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
       `📅 Fecha: ${fechaStr}\n` +
-      `${huboErrores ? `❌ No se pudieron guardar ${errores} de ${total} turno${total !== 1 ? 's' : ''}\n` : ''}` +
-      `${grupos.length > 0 ? `🗂️ Bloques: ${grupos.join(' | ')}\n` : ''}` +
-      `${errorTurnosFlat ? `⚠️ No se pudo actualizar el dashboard (tab Turnos): ${errorTurnosFlat}\n` : ''}` +
-      `📊 Ver en tu Google Sheet (tab "Agenda")`,
+      `🔄 Se reemplazaron ${idsAEliminar.length} turno${idsAEliminar.length !== 1 ? 's' : ''} duplicado${idsAEliminar.length !== 1 ? 's' : ''}\n` +
+      `📊 Ver en tu Google Sheet (tabs "Agenda" y "Turnos")`,
       { parse_mode: 'Markdown' }
     );
   } catch (error) {
@@ -368,11 +461,26 @@ bot.action('confirm_agenda', async (ctx) => {
   }
 });
 
-bot.action('cancel_agenda', async (ctx) => {
+bot.action('agenda_dup_agregar', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
-  state.pendingAgendaConfirm.delete(userId);
-  await ctx.editMessageText('❌ Turnos descartados.');
+  const pending = state.pendingAgendaDuplicados.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  state.pendingAgendaDuplicados.delete(userId);
+
+  try {
+    await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
+    const { guardados, fechaStr } = await guardarAgendaParaFecha(userId, pending.turnos, pending.fecha);
+    await ctx.editMessageText(
+      `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
+      `📅 Fecha: ${fechaStr}\n` +
+      `📊 Ver en tu Google Sheet (tabs "Agenda" y "Turnos")`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    console.error('Error al guardar agenda:', error.message);
+    await ctx.editMessageText('❌ Error al guardar los turnos en la agenda.');
+  }
 });
 
 // ── Edición de turno ──────────────────────────────────────────────────────────
@@ -447,4 +555,4 @@ bot.action('agenda_edit_cancel', async (ctx) => {
   await ctx.editMessageText('❌ Edición cancelada.');
 });
 
-module.exports = { confirmButtons, buildDeleteListKeyboard };
+module.exports = { confirmButtons, buildDeleteListKeyboard, procesarFechaAgendaElegida };
