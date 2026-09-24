@@ -246,7 +246,7 @@ app.post('/api/auth/verify',
     const cliente = obtenerClientePorUserId(Number(telegramId));
     const esAdmin = esAdminOriginal(Number(telegramId));
     logger.audit('auth_dev_token_login', { telegramId });
-    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId) } });
+    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: getSheetId(Number(telegramId)), permisos: resolverPermisos(telegramId) } });
   }
 
   let codeData = null;
@@ -305,14 +305,14 @@ app.post('/api/auth/verify',
   const cliente = obtenerClientePorUserId(Number(telegramId));
   const esAdmin = esAdminOriginal(Number(telegramId));
   logger.audit('auth_verify_success', { telegramId, esAdmin });
-  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(telegramId), modoFullIA: cliente?.modoFullIA || false } });
+  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: getSheetId(Number(telegramId)), permisos: resolverPermisos(telegramId), modoFullIA: cliente?.modoFullIA || false } });
 });
 
 // ── Auth: me ──
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   const cliente = obtenerClientePorUserId(Number(req.user.userId));
   const esAdmin = esAdminOriginal(Number(req.user.userId));
-  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: esAdmin ? config.SPREADSHEET_ID : (cliente?.sheetId || null), permisos: resolverPermisos(req.user.userId), modoFullIA: cliente?.modoFullIA || false } });
+  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: getSheetId(Number(req.user.userId)), permisos: resolverPermisos(req.user.userId), modoFullIA: cliente?.modoFullIA || false } });
 });
 
 app.post('/api/config/modo-ia', authMiddleware, ownerOnly, async (req, res) => {

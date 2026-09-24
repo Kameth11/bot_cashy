@@ -89,7 +89,11 @@ function getSheetService() {
 function getSheetId(userId) {
   const cliente = obtenerClientePorUserId(userId);
   if (cliente && cliente.sheetId) return cliente.sheetId;
-  if (esAdminOriginal(userId) && SPREADSHEET_ID) return SPREADSHEET_ID;
+  // Chequear sobre el dueño resuelto, no sobre userId: un invitado del admin
+  // (esAdminOriginal(userId) da false para él) también tiene que caer en
+  // este fallback, si no queda sin sheetId aunque su owner sea el admin.
+  const ownerId = cliente ? Number(cliente.ownerId) : Number(userId);
+  if (esAdminOriginal(ownerId) && SPREADSHEET_ID) return SPREADSHEET_ID;
   return null;
 }
 
@@ -118,7 +122,8 @@ async function ensureProfile(userId) {
   }
 
   const cliente = obtenerClientePorUserId(userId);
-  const sheetId = cliente?.sheetId || (esAdminOriginal(userId) ? SPREADSHEET_ID : null);
+  const ownerIdParaAdmin = cliente ? Number(cliente.ownerId) : Number(userId);
+  const sheetId = cliente?.sheetId || (esAdminOriginal(ownerIdParaAdmin) ? SPREADSHEET_ID : null);
 
   if (data) {
     // Perfil viejo de antes de la Fase 2 sin tenant_id - se completa al vuelo.
