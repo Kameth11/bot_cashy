@@ -31,10 +31,12 @@ describe('db.service lectura acotada (guarda de escalabilidad)', () => {
   test('fetchLegacyRowsForUser arma la query con order desc + limit acotado', async () => {
     await fetchLegacyRowsForUser({}, 123, 'tenant-1');
 
-    // La query pasa por la barrera de tenant.
+    // La query pasa por la barrera de tenant — ESE es el límite de
+    // aislamiento correcto (dueño + invitados comparten un consultorio).
     expect(forTenant).toHaveBeenCalledWith('tenant-1');
-    // Filtra por usuario.
-    expect(calls).toContainEqual(['eq', 'user_id', 123]);
+    // NO filtra además por user_id: eso hacía que cada invitado solo viera
+    // lo que él mismo había cargado, no el balance real del consultorio.
+    expect(calls.find(c => c[0] === 'eq' && c[1] === 'user_id')).toBeUndefined();
     // Trae las más recientes primero...
     expect(calls).toContainEqual(['order', 'created_at', { ascending: false }]);
     // ...y SIEMPRE acota la cantidad.

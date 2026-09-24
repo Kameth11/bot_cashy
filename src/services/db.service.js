@@ -603,10 +603,16 @@ function mapV2RowToPlainData(row) {
 }
 
 async function fetchLegacyRowsForUser(supabase, userId, tenantId) {
+  // Sin .eq('user_id', userId) a propósito: el tenant (forTenant/tenantId)
+  // YA es el límite de aislamiento correcto — dueño e invitados comparten
+  // un mismo "consultorio". Filtrar además por user_id hacía que cada
+  // invitado solo viera los movimientos que ÉL MISMO había cargado (su
+  // propio user_id), no los del resto del tenant — un invitado con
+  // ver_balance/ver_movimientos veía un balance vacío o parcial en vez del
+  // real del consultorio.
   const { data, error } = await forTenant(tenantId)
     .from('movimientos')
     .select('*')
-    .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(MAX_MOVIMIENTOS_READ);
 
