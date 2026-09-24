@@ -290,7 +290,7 @@ export default function AgendaPage() {
           {!esHoy && (
             <button className="btn-agenda" onClick={() => setFecha(hoyMedianoche())}>Hoy</button>
           )}
-          <button className="btn-agenda" onClick={() => shiftFecha(1)} disabled={esHoy} title="Día siguiente">→</button>
+          <button className="btn-agenda" onClick={() => shiftFecha(1)} title="Día siguiente">→</button>
           <DatePickerButton
             value={toInputValue(fecha)}
             onChange={v => { if (v) setFecha(fromInputValue(v)) }}
