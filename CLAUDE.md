@@ -26,25 +26,13 @@ reportes, etc.), ver `ROADMAP_CASHY_CLINICA.md`.
 
 ## Estructura
 
-```
-bot_cashy/
-├── src/           # Código principal — entry point: src/index.js
-│   ├── handlers/  # Comandos (commands/), texto, fotos, callbacks NLP
-│   ├── services/  # Lógica de negocio (db, sheet, gemini, quick_nlp, etc.)
-│   ├── lib/       # Clientes externos (telegraf, google, supabase)
-│   ├── auth/      # Autenticación / autorización de usuarios
-│   ├── state/     # TTLMaps de estados conversacionales pendientes
-│   ├── utils/     # Helpers (formatter, validation, sheet-row, movimiento-v2)
-│   └── config/    # Variables de entorno centralizadas
-├── dashboard/     # Dashboard web (React + Vite) — Inicio, Movimientos, Agenda, Config
-├── scripts/       # Scripts auxiliares
-├── sql/           # Migraciones / queries SQL (schema v1 y v2)
-├── tests/         # Tests Jest
-├── .github/workflows/ci.yml  # CI: tests + build en cada push, notifica a Discord
-├── index.js       # LEGACY — no usar
-├── jest.config.js
-└── package.json
-```
+> **Nota (2026-09-24, /doctor):** se sacó de acá el árbol de directorios
+> completo — era 100% reconstruible corriendo `ls`/`find` en el repo, así
+> que no aportaba nada que una sesión nueva no pudiera ver sola en
+> segundos; mantenerlo synced a mano era puro costo de contexto en cada
+> sesión sin beneficio. Si hace falta volver a tenerlo acá, está en el
+> historial de git de este archivo (`git log -p -- CLAUDE.md`, commit del
+> recorte hecho por /doctor) — es un revert de una línea.
 
 El dashboard se sirve desde el mismo proceso/servicio que el bot (Express
 sirve el build estático de `dashboard/dist`). Tiene su propia API (`src/api/`)
@@ -88,12 +76,11 @@ el skill `bot-cashy-arquitectura`.
 
 ---
 
-## Comandos
-
-```bash
-npm start          # Inicia el bot (usa src/index.js)
-npm test           # Corre los tests con Jest
-```
+> **Nota (2026-09-24, /doctor):** se sacó de acá la sección "Comandos"
+> (`npm start` / `npm test`) — son exactamente los scripts que ya figuran
+> en `package.json`, así que no hacía falta duplicarlos. Para recuperarla,
+> ver `git log -p -- CLAUDE.md` (mismo commit de /doctor) y revertir esa
+> parte.
 
 ---
 
