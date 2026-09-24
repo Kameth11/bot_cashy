@@ -900,7 +900,11 @@ bot.on('text', async (ctx) => {
 
   const match = text.match(regexMsg);
   if (!match) {
-    return procesarTextoConNlp(ctx, text);
+    // "return await", no "return": un `return <promise>` dentro de este
+    // try/catch NO deja que el catch de más abajo atrape un rechazo async
+    // de procesarTextoConNlp — el error queda sin mensaje de vuelta para el
+    // usuario (y sin log claro), como si el bot no hubiera contestado nada.
+    return await procesarTextoConNlp(ctx, text);
   }
 
   if (!requierePermisoBot(ctx, 'cargar_movimientos', 'texto_libre')) return;
