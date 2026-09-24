@@ -29,7 +29,13 @@ function sanitizarInput(texto, maxLength = 200) {
   if (!texto || typeof texto !== 'string') return '';
   const limpio = texto
     .slice(0, maxLength)
-    .replace(/[<>"'&`]/g, '')
+    // <>"'&` no son peligrosos acá: no hay ningún render HTML (React escapa
+    // JSX por sí solo, nadie usa dangerouslySetInnerHTML) ni parse_mode HTML
+    // en Telegram (todo es Markdown). Antes se borraban directo, así que
+    // "D'Amato" quedaba "DAmato". El riesgo real de Markdown roto (_, *,
+    // (), [], `) es responsabilidad de escapeMarkdown al armar el mensaje,
+    // no de esta función al guardar el dato — sacarle un carácter acá no
+    // arregla eso, solo corrompe el nombre real del usuario.
     .replace(/[\u0000-\u001F\u007F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
