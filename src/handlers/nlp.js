@@ -65,11 +65,24 @@ const INTENT_HANDLERS = {
     }
 
     // Fallback si Gemini falla/timeoutea: lista armada a mano, sin markdown.
-    const lista = turnos
-      .slice()
-      .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''))
-      .map(t => `${t.hora || '??:??'} — ${t.cliente || 'Sin nombre'}`)
-      .join('\n');
+    // Agrupada por profesional cuando hay más de uno, igual que se le pide
+    // a Gemini en generarRespuestaAgenda — para no perder esa distinción
+    // justo cuando el modelo no está disponible.
+    const ordenados = turnos.slice().sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+    const lineaTurno = t => `${t.hora || '??:??'} — ${t.cliente || 'Sin nombre'}`;
+    const profesionales = [...new Set(ordenados.map(t => t.profesional).filter(Boolean))];
+
+    const lista = profesionales.length > 1
+      ? profesionales
+          .map(prof => `${prof}:\n${ordenados.filter(t => t.profesional === prof).map(lineaTurno).join('\n')}`)
+          .concat(
+            ordenados.some(t => !t.profesional)
+              ? [`Sin profesional asignado:\n${ordenados.filter(t => !t.profesional).map(lineaTurno).join('\n')}`]
+              : []
+          )
+          .join('\n\n')
+      : ordenados.map(lineaTurno).join('\n');
+
     return ctx.reply(`${aviso}Turnos del ${fecha}:\n${lista}`);
   },
 

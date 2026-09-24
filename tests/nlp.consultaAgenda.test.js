@@ -90,6 +90,41 @@ describe('consulta_agenda — con turnos', () => {
     expect(mensaje).toContain('10:00 — Juan Pérez');
     expect(mensaje).toContain('15:00 — María');
   });
+
+  test('fallback: con más de un profesional, agrupa la lista por profesional', async () => {
+    obtenerTurnosPorFecha.mockResolvedValue(TURNOS); // Diego y Laura
+    geminiService.generarRespuestaAgenda.mockResolvedValue(null);
+
+    const ctx = ctxFor(2222);
+    await handleNLPIntent(ctx, { intent: 'consulta_agenda', entities: {} }, 'agenda de hoy');
+
+    const [mensaje] = ctx.reply.mock.calls[0];
+    // Cada profesional tiene su propio bloque con solo su turno.
+    const bloqueLaura = mensaje.split('Diego:')[0];
+    const bloqueDiego = mensaje.split('Diego:')[1];
+    expect(bloqueLaura).toContain('Laura:');
+    expect(bloqueLaura).toContain('10:00 — Juan Pérez');
+    expect(bloqueLaura).not.toContain('María');
+    expect(bloqueDiego).toContain('15:00 — María');
+    expect(bloqueDiego).not.toContain('Juan Pérez');
+  });
+
+  test('fallback: con un solo profesional, NO agrupa (lista plana como antes)', async () => {
+    const turnosUnProfesional = [
+      { idTurno: '1', hora: '09:00', cliente: 'Ana', profesional: 'Laura' },
+      { idTurno: '2', hora: '11:00', cliente: 'Beto', profesional: 'Laura' },
+    ];
+    obtenerTurnosPorFecha.mockResolvedValue(turnosUnProfesional);
+    geminiService.generarRespuestaAgenda.mockResolvedValue(null);
+
+    const ctx = ctxFor(2222);
+    await handleNLPIntent(ctx, { intent: 'consulta_agenda', entities: {} }, 'agenda de hoy');
+
+    const [mensaje] = ctx.reply.mock.calls[0];
+    expect(mensaje).not.toContain('Laura:');
+    expect(mensaje).toContain('09:00 — Ana');
+    expect(mensaje).toContain('11:00 — Beto');
+  });
 });
 
 describe('consulta_agenda — sin turnos', () => {

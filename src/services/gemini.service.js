@@ -462,13 +462,13 @@ async function generarRespuestaAgenda(pregunta, turnos) {
     .map(t => `${t.hora || '??:??'} — ${t.cliente || 'Sin nombre'}${t.servicio ? ` (${t.servicio})` : ''}${t.profesional ? ` [${t.profesional}]` : ''} — ${t.estado || ''}`)
     .join('\n');
 
-  const prompt = `Datos de turnos (única fuente de verdad, no inventes nada que no esté acá):\n${datos}\n\nPregunta del usuario: "${pregunta}"\n\nRespondé en 1-3 frases, en español argentino, tono directo y cordial. Si la pregunta pide un subconjunto (ej. "a la tarde") interpretalo por horario (mañana: antes de 13:00, tarde: 13:00 en adelante) usando SOLO los datos de arriba.`;
+  const prompt = `Datos de turnos (única fuente de verdad, no inventes nada que no esté acá):\n${datos}\n\nPregunta del usuario: "${pregunta}"\n\nRespondé en español argentino, tono directo y cordial. Si hay turnos de más de un profesional distinto en el resultado, agrupá la respuesta por profesional (ej. "Con Laura: ... Con Diego: ...") en vez de mezclarlos en una sola lista corrida — así se distingue claramente de quién es cada paciente. Si solo hay un profesional (o ninguno indicado), respondé en 1-3 frases como antes, sin agrupar. Si la pregunta pide un subconjunto (ej. "a la tarde") interpretalo por horario (mañana: antes de 13:00, tarde: 13:00 en adelante) usando SOLO los datos de arriba.`;
 
   let model;
   try {
     model = ai.getGenerativeModel({
       model: modelName,
-      generationConfig: { maxOutputTokens: 256, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
+      generationConfig: { maxOutputTokens: 320, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
     });
   } catch (error) {
     console.error('NLP: error creando modelo para respuesta de agenda:', error.message);
