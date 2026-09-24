@@ -1,4 +1,4 @@
-const { normalizarFecha, esHoy, esEstaSemana, esEsteMes, ahoraArgentina, fechaArgentinaStr, horaArgentinaStr, fechaMananaArgentinaStr, parsearFechaIngresada } = require('../src/utils/date');
+const { normalizarFecha, esHoy, esEstaSemana, esEsteMes, ahoraArgentina, fechaArgentinaStr, horaArgentinaStr, fechaMananaArgentinaStr, parsearFechaIngresada, resolverFechaAgenda } = require('../src/utils/date');
 
 function ddmmyyyy(d) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -153,5 +153,46 @@ describe('parsearFechaIngresada — fecha escrita a mano para "Otra fecha" de ag
 
   test('acepta 29/02 en año bisiesto', () => {
     expect(parsearFechaIngresada('29/02/2028')).toBe('29/02/2028');
+  });
+});
+
+describe('resolverFechaAgenda — "que turnos tengo hoy/mañana/etc" del intent consulta_agenda', () => {
+  const TZ_ORIGINAL = process.env.TZ;
+  // Mismo instante que el bloque de arriba: 22:30 del 23/09/2026 ART.
+  const INSTANTE_22_30_ART = new Date(Date.UTC(2026, 8, 24, 1, 30, 0));
+
+  beforeEach(() => {
+    process.env.TZ = 'UTC';
+    jest.useFakeTimers({ doNotFake: ['nextTick'] }).setSystemTime(INSTANTE_22_30_ART);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    if (TZ_ORIGINAL === undefined) delete process.env.TZ; else process.env.TZ = TZ_ORIGINAL;
+  });
+
+  test('null o "hoy" -> hoy (23/09/2026), no ambigua', () => {
+    expect(resolverFechaAgenda(null)).toEqual({ fecha: '23/09/2026', ambigua: false });
+    expect(resolverFechaAgenda('hoy')).toEqual({ fecha: '23/09/2026', ambigua: false });
+    expect(resolverFechaAgenda('Hoy')).toEqual({ fecha: '23/09/2026', ambigua: false });
+  });
+
+  test('"mañana" (con o sin tilde) -> 24/09/2026, no ambigua', () => {
+    expect(resolverFechaAgenda('mañana')).toEqual({ fecha: '24/09/2026', ambigua: false });
+    expect(resolverFechaAgenda('manana')).toEqual({ fecha: '24/09/2026', ambigua: false });
+  });
+
+  test('"pasado mañana" -> 25/09/2026, no ambigua', () => {
+    expect(resolverFechaAgenda('pasado mañana')).toEqual({ fecha: '25/09/2026', ambigua: false });
+    expect(resolverFechaAgenda('pasado manana')).toEqual({ fecha: '25/09/2026', ambigua: false });
+  });
+
+  test('fecha explícita DD/MM -> se resuelve vía parsearFechaIngresada, no ambigua', () => {
+    expect(resolverFechaAgenda('15/03')).toEqual({ fecha: '15/03/2026', ambigua: false });
+  });
+
+  test('texto no reconocido (ej. día de la semana) -> hoy, ambigua:true', () => {
+    expect(resolverFechaAgenda('el lunes')).toEqual({ fecha: '23/09/2026', ambigua: true });
+    expect(resolverFechaAgenda('bla bla')).toEqual({ fecha: '23/09/2026', ambigua: true });
   });
 });

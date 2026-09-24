@@ -38,15 +38,23 @@ function fechaArgentinaStr(date = new Date()) {
   return `${p.day}/${p.month}/${p.year}`;
 }
 
-// "Mañana" respecto de la fecha actual en Argentina, calculado con aritmética
+// N días respecto de la fecha actual en Argentina, calculado con aritmética
 // UTC pura (Date.UTC) para no depender de la zona horaria del proceso ni de
 // reglas de DST al cruzar mes/año.
-function fechaMananaArgentinaStr() {
+function fechaEnDiasArgentinaStr(dias) {
   const p = partesArgentina();
-  const manana = new Date(Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day) + 1));
-  const dia = String(manana.getUTCDate()).padStart(2, '0');
-  const mes = String(manana.getUTCMonth() + 1).padStart(2, '0');
-  return `${dia}/${mes}/${manana.getUTCFullYear()}`;
+  const destino = new Date(Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day) + dias));
+  const dia = String(destino.getUTCDate()).padStart(2, '0');
+  const mes = String(destino.getUTCMonth() + 1).padStart(2, '0');
+  return `${dia}/${mes}/${destino.getUTCFullYear()}`;
+}
+
+function fechaMananaArgentinaStr() {
+  return fechaEnDiasArgentinaStr(1);
+}
+
+function fechaPasadoMananaArgentinaStr() {
+  return fechaEnDiasArgentinaStr(2);
 }
 
 // Parsea una fecha escrita a mano por el usuario (DD/MM o DD/MM/AAAA, con "/"
@@ -68,6 +76,32 @@ function parsearFechaIngresada(texto) {
   if (dia > diasEnMes) return null;
 
   return `${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${anio}`;
+}
+
+// Resuelve una referencia libre de día ("hoy", "mañana", "pasado mañana",
+// una fecha explícita DD/MM(/AAAA), o null) a "DD/MM/AAAA". Si no reconoce
+// el texto (ej. nombre de día de la semana), devuelve hoy con `ambigua:true`
+// para que el caller pueda avisarle al usuario en vez de responder callado
+// para el día equivocado.
+function resolverFechaAgenda(fechaRef) {
+  const texto = String(fechaRef || '').trim().toLowerCase();
+
+  if (!texto || texto === 'hoy') {
+    return { fecha: fechaArgentinaStr(), ambigua: false };
+  }
+  if (/^ma(ñ|n)ana$/.test(texto)) {
+    return { fecha: fechaMananaArgentinaStr(), ambigua: false };
+  }
+  if (/^pasado\s*ma(ñ|n)ana$/.test(texto)) {
+    return { fecha: fechaPasadoMananaArgentinaStr(), ambigua: false };
+  }
+
+  const explicita = parsearFechaIngresada(fechaRef);
+  if (explicita) {
+    return { fecha: explicita, ambigua: false };
+  }
+
+  return { fecha: fechaArgentinaStr(), ambigua: true };
 }
 
 function horaArgentinaStr(date = new Date()) {
@@ -119,6 +153,9 @@ module.exports = {
   ahoraArgentina,
   fechaArgentinaStr,
   fechaMananaArgentinaStr,
+  fechaPasadoMananaArgentinaStr,
+  fechaEnDiasArgentinaStr,
   parsearFechaIngresada,
+  resolverFechaAgenda,
   horaArgentinaStr,
 };

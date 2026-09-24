@@ -27,6 +27,7 @@ const INTENT_PERMISOS = {
   pago_parcial_con_deuda: 'cargar_movimientos',
   editar_movimiento: 'editar_movimientos',
   eliminar_movimiento: 'editar_movimientos',
+  consulta_agenda: 'ver_agenda',
 };
 
 function replyWithDashboard(ctx, msg) {
@@ -44,6 +45,32 @@ const INTENT_HANDLERS = {
   ver_hoy: async (ctx, entities) => {
     const msg = await cmd.ejecutarHoy(ctx.from.id);
     return replyWithDashboard(ctx, msg);
+  },
+
+  consulta_agenda: async (ctx, entities, mensajeOriginal) => {
+    const { obtenerTurnosPorFecha } = require('../services/agenda.service');
+    const { resolverFechaAgenda } = require('../utils/date');
+
+    const { fecha, ambigua } = resolverFechaAgenda(entities.fecha_ref);
+    const turnos = await obtenerTurnosPorFecha(ctx.from.id, fecha);
+    const aviso = ambigua ? '⚠️ No entendí bien qué día pedías, te muestro hoy.\n\n' : '';
+
+    if (!turnos.length) {
+      return ctx.reply(`${aviso}No tenés turnos cargados para el ${fecha}.`);
+    }
+
+    const respuesta = await geminiService.generarRespuestaAgenda(mensajeOriginal || '', turnos);
+    if (respuesta) {
+      return ctx.reply(aviso + respuesta);
+    }
+
+    // Fallback si Gemini falla/timeoutea: lista armada a mano, sin markdown.
+    const lista = turnos
+      .slice()
+      .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''))
+      .map(t => `${t.hora || '??:??'} — ${t.cliente || 'Sin nombre'}`)
+      .join('\n');
+    return ctx.reply(`${aviso}Turnos del ${fecha}:\n${lista}`);
   },
 
   ver_semana: async (ctx, entities) => {
@@ -312,7 +339,7 @@ const INTENT_HANDLERS = {
   },
 };
 
-async function handleNLPIntent(ctx, nlpResult) {
+async function handleNLPIntent(ctx, nlpResult, mensajeOriginal) {
   const { intent, entities } = nlpResult;
 
   const handler = INTENT_HANDLERS[intent];
@@ -326,7 +353,7 @@ async function handleNLPIntent(ctx, nlpResult) {
   }
 
   try {
-    await handler(ctx, entities || {});
+    await handler(ctx, entities || {}, mensajeOriginal);
     return true;
   } catch (error) {
     console.error(`Error en handler NLP para intent "${intent}":`, error.message);

@@ -285,7 +285,7 @@ async function procesarTextoConNlp(ctx, text) {
       try {
         const nlpResult = await openrouterService.parseMessage(userId, text);
         if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
-          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, nlpResult));
+          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, nlpResult), text);
           if (handled) return;
         }
       } catch (nlpError) {
@@ -297,7 +297,7 @@ async function procesarTextoConNlp(ctx, text) {
       // si OpenRouter está caído.
       if (quickResult) {
         try {
-          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, quickResult));
+          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, quickResult), text);
           if (handled) return;
         } catch (e) {
           console.error('Error quick NLP (fallback de emergencia):', e.message);
@@ -306,7 +306,7 @@ async function procesarTextoConNlp(ctx, text) {
     } else {
       if (shouldHandleWithQuickParseFirst(quickResult)) {
         try {
-          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, quickResult));
+          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, quickResult), text);
           if (handled) return;
         } catch (e) {
           console.error('Error quick NLP:', e.message);
@@ -319,7 +319,7 @@ async function procesarTextoConNlp(ctx, text) {
         try {
           const nlpResult = await geminiService.parseMessage(userId, text);
           if (nlpResult && nlpResult.intent && nlpResult.intent !== 'desconocido') {
-            const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, nlpResult));
+            const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, nlpResult), text);
             if (handled) return;
           }
         } catch (nlpError) {
@@ -329,7 +329,7 @@ async function procesarTextoConNlp(ctx, text) {
 
       if (quickResult) {
         try {
-          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, quickResult));
+          const handled = await handleNLPIntent(ctx, await marcarAmbito(userId, text, quickResult), text);
           if (handled) return;
         } catch (e) {
           console.error('Error quick NLP:', e.message);

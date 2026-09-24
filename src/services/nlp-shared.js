@@ -5,10 +5,11 @@
 
 const SYSTEM_PROMPT = `Eres un parser de mensajes de cashflow para un CONSULTORIO ODONTOLOGICO de Argentina. Tu UNICA salida es un JSON objeto, sin texto antes o despues.
 
-Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, desconocido
+Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, consulta_agenda, desconocido
 
 registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"/"Euros"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), estado("Cobrado"/"Pendiente"), categoria(string|null), pacienteNombre(string|null), pagadorNombre(string|null), profesionalNombre(string|null), tratamientoNombre(string|null), proveedorNombre(string|null)
 cobrar/editar/eliminar_movimiento: nombre(string|null)
+consulta_agenda: fecha_ref(string|null) — si preguntan por turnos/agenda/pacientes de un día ("qué turnos tengo hoy", "tengo alguien mañana", "quién viene a la tarde"), usar este intent. fecha_ref es el texto literal que usó el usuario para referirse al día ("hoy", "mañana", "pasado mañana", una fecha explícita tipo 15/03), o null si no menciona ningún día (asumir hoy).
 Todos los demas intents: entities vacio {}
 
 CONTEXTO: El usuario es odontólogo/dentista argentino. Los mensajes describen cobros de pacientes, gastos del consultorio y sueldos de empleados. Conoce estas palabras clave:
@@ -79,7 +80,10 @@ Ejemplos:
 "sueldo asistente 200k" -> {"intent":"registrar_movimiento","entities":{"tipo":"gasto","descripcion":"Sueldo Asistente","monto":200000,"moneda":"Pesos","metodo_pago":null,"categoria":"sueldos","pacienteNombre":null,"pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":null,"proveedorNombre":null,"estado":"Cobrado"}}
 "vino carlos para revision $8000 efectivo" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Carlos","monto":8000,"moneda":"Pesos","metodo_pago":"efectivo","categoria":"consulta","pacienteNombre":"Carlos","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Consulta","proveedorNombre":null,"estado":"Cobrado"}}
 "Pedro me debe 20000 por la limpieza" -> {"intent":"registrar_movimiento","entities":{"tipo":"ingreso","descripcion":"Pedro","monto":20000,"moneda":"Pesos","metodo_pago":null,"categoria":"cobro_pendiente","pacienteNombre":"Pedro","pagadorNombre":null,"profesionalNombre":null,"tratamientoNombre":"Limpieza","proveedorNombre":null,"estado":"Pendiente"}}
-"hola" -> {"intent":"desconocido","entities":{}}`;
+"hola" -> {"intent":"desconocido","entities":{}}
+"que turnos tengo hoy" -> {"intent":"consulta_agenda","entities":{"fecha_ref":null}}
+"tengo algun paciente mañana a la tarde" -> {"intent":"consulta_agenda","entities":{"fecha_ref":"mañana"}}
+"quien viene pasado mañana" -> {"intent":"consulta_agenda","entities":{"fecha_ref":"pasado mañana"}}`;
 
 function normalizarMetodoPago(metodo) {
   if (!metodo) return null;

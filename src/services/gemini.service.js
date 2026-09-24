@@ -446,4 +446,47 @@ async function transcribirAudio(buffer, mimeType = 'audio/ogg') {
   return null;
 }
 
-module.exports = { parseMessage, initModel, canAttemptRemoteNlp, transcribirAudio };
+// Redacta una respuesta en lenguaje natural a partir de una pregunta libre
+// y una lista de turnos ya resuelta (no decide qué datos buscar, sólo los
+// narra). Llamada nueva, separada del clasificador de intents: usa su
+// propio modelo sin el systemInstruction/JSON mode de createModel(), porque
+// acá la salida es texto libre, no el contrato {intent, entities}.
+async function generarRespuestaAgenda(pregunta, turnos) {
+  const ai = getGenAI();
+  if (!ai) return null;
+
+  const modelName = activeModelName || getPreferredModelName();
+  const datos = turnos
+    .slice()
+    .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''))
+    .map(t => `${t.hora || '??:??'} — ${t.cliente || 'Sin nombre'}${t.servicio ? ` (${t.servicio})` : ''}${t.profesional ? ` [${t.profesional}]` : ''} — ${t.estado || ''}`)
+    .join('\n');
+
+  const prompt = `Datos de turnos (única fuente de verdad, no inventes nada que no esté acá):\n${datos}\n\nPregunta del usuario: "${pregunta}"\n\nRespondé en 1-3 frases, en español argentino, tono directo y cordial. Si la pregunta pide un subconjunto (ej. "a la tarde") interpretalo por horario (mañana: antes de 13:00, tarde: 13:00 en adelante) usando SOLO los datos de arriba.`;
+
+  let model;
+  try {
+    model = ai.getGenerativeModel({
+      model: modelName,
+      generationConfig: { maxOutputTokens: 256, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
+    });
+  } catch (error) {
+    console.error('NLP: error creando modelo para respuesta de agenda:', error.message);
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const result = await model.generateContent(prompt, { signal: controller.signal });
+    const text = result.response.text();
+    return text ? text.trim() : null;
+  } catch (error) {
+    console.error('NLP: error generando respuesta de agenda:', error.message);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+module.exports = { parseMessage, initModel, canAttemptRemoteNlp, transcribirAudio, generarRespuestaAgenda };
