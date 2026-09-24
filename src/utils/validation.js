@@ -8,6 +8,7 @@ const { sanitizarInput } = require('./formatter');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SHEET_ID_REGEX = /^[a-zA-Z0-9-_]{20,120}$/;
+const HORA_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function validarTextoUsuario(texto) {
   if (typeof texto !== 'string') return { ok: false, motivo: 'texto_invalido' };
@@ -53,6 +54,14 @@ function validarSheetId(sheetId) {
   return { ok: true, valor: normalizado };
 }
 
+function validarHora(valor) {
+  const normalizado = String(valor || '').trim();
+  if (!HORA_REGEX.test(normalizado)) {
+    return { ok: false, motivo: 'hora_invalida' };
+  }
+  return { ok: true, valor: normalizado };
+}
+
 module.exports = {
   validarTextoUsuario,
   normalizarDescripcion,
@@ -60,4 +69,5 @@ module.exports = {
   validarCotizacion,
   validarEmail,
   validarSheetId,
+  validarHora,
 };

@@ -486,18 +486,25 @@ export default function AgendaPage() {
               {[
                 { label: 'Paciente', key: 'cliente' },
                 { label: 'Servicio', key: 'servicio' },
-                { label: 'Hora', key: 'hora', placeholder: '09:00' },
-              ].map(({ label, key, placeholder }) => (
+              ].map(({ label, key }) => (
                 <div key={key}>
                   <label className="form-label">{label}</label>
                   <input
                     className="form-input"
                     value={editForm[key]}
-                    placeholder={placeholder || ''}
                     onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
                   />
                 </div>
               ))}
+              <div>
+                <label className="form-label">Hora</label>
+                <input
+                  type="time"
+                  className="form-input"
+                  value={editForm.hora}
+                  onChange={e => setEditForm(f => ({ ...f, hora: e.target.value }))}
+                />
+              </div>
               <div>
                 <label className="form-label">Profesional</label>
                 <select
@@ -544,9 +551,9 @@ export default function AgendaPage() {
               <div>
                 <label className="form-label">Hora</label>
                 <input
+                  type="time"
                   className="form-input"
                   value={nuevoForm.hora}
-                  placeholder="09:00"
                   onChange={e => setNuevoForm(f => ({ ...f, hora: e.target.value }))}
                 />
               </div>

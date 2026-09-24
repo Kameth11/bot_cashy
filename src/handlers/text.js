@@ -8,7 +8,7 @@ const openrouterService = require('../services/openrouter.service');
 const { handleNLPIntent } = require('../handlers/nlp');
 const { quickParse } = require('../services/quick_nlp.service');
 const registrationService = require('../services/registration.service');
-const { validarTextoUsuario, normalizarDescripcion, validarMonto, validarCotizacion } = require('../utils/validation');
+const { validarTextoUsuario, normalizarDescripcion, validarMonto, validarCotizacion, validarHora } = require('../utils/validation');
 const { actualizarCampoNlp, crearMensajeConfirmacion, discardButtons } = require('./nlp-confirm');
 const { parsearFechaIngresada } = require('../utils/date');
 const { requierePermisoBot } = require('../auth/bot-permisos');
@@ -764,8 +764,16 @@ bot.on('text', async (ctx) => {
   if (state.pendingTurnoEdits.has(ctx.from.id)) {
     const pending = state.pendingTurnoEdits.get(ctx.from.id);
     if (pending.step === 'ingresar_valor') {
-      const valor = sanitizarInput(text, 120);
+      let valor = sanitizarInput(text, 120);
       if (!valor) return ctx.reply('⚠️ El valor no puede estar vacío. Escribí de nuevo:');
+
+      if (pending.campo.key === 'hora') {
+        const resultado = validarHora(valor);
+        if (!resultado.ok) {
+          return ctx.reply('⚠️ Formato inválido. Escribí la hora como HH:MM (ej: 10:00):');
+        }
+        valor = resultado.valor;
+      }
 
       state.pendingTurnoEdits.delete(ctx.from.id);
       try {
