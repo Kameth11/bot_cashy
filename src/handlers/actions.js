@@ -400,15 +400,24 @@ bot.action(/^agenda_edit_pick_(\d+)$/, async (ctx) => {
   const turno = pending.turnos[index];
   if (!turno) return ctx.editMessageText('❌ Turno no encontrado.');
 
+  const hora = turno.hora ? turno.hora.substring(0, 5) : '??:??';
+  try {
+    await ctx.editMessageText(
+      `✏️ *${escapeMarkdown(hora)} · ${escapeMarkdown(turno.cliente || 'Sin nombre')}*\n\n¿Qué campo querés editar?`,
+      { parse_mode: 'Markdown', ...buildCamposKeyboard() }
+    );
+  } catch (error) {
+    console.error('Error en agenda_edit_pick:', error.message);
+    return ctx.editMessageText('❌ Error al mostrar el turno. Usá /editarturno de nuevo.').catch(() => {});
+  }
+
+  // El estado se setea DESPUÉS de que el envío salga bien (ver photo.js
+  // para el mismo criterio): si no, un turno con _ o * en el nombre rompía
+  // el mensaje y dejaba pendingTurnoEdits seteado sin que el usuario viera
+  // nunca el teclado de "¿Qué campo querés editar?".
   pending.turno = turno;
   pending.step = 'select_campo';
   state.pendingTurnoEdits.set(userId, pending);
-
-  const hora = turno.hora ? turno.hora.substring(0, 5) : '??:??';
-  await ctx.editMessageText(
-    `✏️ *${hora} · ${turno.cliente || 'Sin nombre'}*\n\n¿Qué campo querés editar?`,
-    { parse_mode: 'Markdown', ...buildCamposKeyboard() }
-  );
 });
 
 bot.action(/^agenda_edit_campo_(.+)$/, async (ctx) => {

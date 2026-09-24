@@ -13,8 +13,11 @@ bot.command('editar', async (ctx) => {
       return ctx.reply(result, { parse_mode: 'Markdown' });
     }
 
+    // El estado se setea DESPUÉS de que el envío salga bien: si Telegram
+    // rechaza el mensaje (descripción con _ o * sin escapar, por ej.), antes
+    // pendingEdits quedaba seteado igual y el usuario quedaba trabado.
+    await ctx.reply(result.mensaje, { parse_mode: 'Markdown' });
     state.pendingEdits.set(ctx.from.id, result.state);
-    ctx.reply(result.mensaje, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Error /editar:', error.message);
     ctx.reply('❌ Error al buscar movimiento.');

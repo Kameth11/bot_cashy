@@ -787,7 +787,7 @@ async function prepararEdicion(userId, nombre) {
     },
     mensaje:
       `📝 *Editar movimiento*\n\n` +
-      `📝 Descripción actual: *${descripcionActual}*\n\n` +
+      `📝 Descripción actual: *${escapeMarkdown(descripcionActual)}*\n\n` +
       'Escribí la nueva descripción (o escribí "- -" para mantener la actual)'
   };
 }

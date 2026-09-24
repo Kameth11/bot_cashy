@@ -1,5 +1,6 @@
 const { isAvailable } = require('../lib/supabase');
 const { forTenant } = require('../lib/tenant-db');
+const { escapeMarkdown } = require('../utils/formatter');
 
 async function registrarProfesional(tenantId, telegramUserId, nombre) {
   if (!isAvailable()) return { ok: false, error: 'supabase_no_disponible' };
@@ -34,9 +35,9 @@ async function notificarLlegadaPaciente(tenantId, nombreProfesional, paciente, h
   try {
     const { bot } = require('../lib/telegraf');
     const partes = [`✅ *Llegó tu paciente*`];
-    if (paciente) partes.push(`👤 ${paciente}`);
-    if (hora) partes.push(`🕐 ${hora}`);
-    if (servicio) partes.push(`🦷 ${servicio}`);
+    if (paciente) partes.push(`👤 ${escapeMarkdown(paciente)}`);
+    if (hora) partes.push(`🕐 ${escapeMarkdown(hora)}`);
+    if (servicio) partes.push(`🦷 ${escapeMarkdown(servicio)}`);
     await bot.telegram.sendMessage(Number(profesional.telegram_user_id), partes.join('\n'), { parse_mode: 'Markdown' });
     return { ok: true };
   } catch (err) {

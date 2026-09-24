@@ -9,6 +9,7 @@ const { MAX_PHOTO_SIZE_BYTES, MAX_TURNOS_POR_IMAGEN } = require('../config');
 const { tieneProcesoPendiente } = require('./guards');
 const { geminiMediaSemaphore } = require('../lib/semaphore');
 const { requierePermisoBot } = require('../auth/bot-permisos');
+const { escapeMarkdown } = require('../utils/formatter');
 
 bot.on('photo', async (ctx) => {
   const userId = ctx.from.id;
@@ -86,23 +87,27 @@ bot.on('photo', async (ctx) => {
     resultado.turnos.forEach((turno, i) => {
       msg += `${i + 1}. `;
       const profesionalResuelto = resolverProfesional(turno.profesional, turno.consultorio);
-      const bloque = [turno.consultorio, profesionalResuelto].filter(Boolean).join(' - ');
+      const bloque = [turno.consultorio, profesionalResuelto].filter(Boolean).map(escapeMarkdown).join(' - ');
       if (bloque) msg += `🏷️ ${bloque} | `;
-      msg += `⏰ ${turno.hora || 'Sin horario'} - `;
-      msg += `👤 ${turno.cliente || 'Sin nombre'}`;
-      if (turno.servicio) msg += ` (${turno.servicio})`;
+      msg += `⏰ ${escapeMarkdown(turno.hora || 'Sin horario')} - `;
+      msg += `👤 ${escapeMarkdown(turno.cliente || 'Sin nombre')}`;
+      if (turno.servicio) msg += ` (${escapeMarkdown(turno.servicio)})`;
       msg += '\n';
     });
 
     msg += `\n━━━━━━━━━━━━━━━\n`;
     msg += `📊 Total: ${resultado.turnos.length} turno${resultado.turnos.length !== 1 ? 's' : ''}`;
 
-    state.pendingAgendaConfirm.set(userId, { turnos: resultado.turnos });
-
+    // El estado se setea DESPUÉS de que el envío salga bien: si Telegram
+    // rechaza el mensaje (ej. Markdown roto por un nombre con _ o *), antes
+    // pendingAgendaConfirm quedaba seteado igual y el usuario quedaba
+    // trabado con "tenés un proceso pendiente" sin ver nunca los botones.
     await ctx.reply(msg, {
       parse_mode: 'Markdown',
       ...confirmButtons('confirm_agenda', 'cancel_agenda')
     });
+
+    state.pendingAgendaConfirm.set(userId, { turnos: resultado.turnos });
   } catch (error) {
     console.error('Error al procesar foto:', error.message);
     await ctx.reply('❌ Error al procesar la imagen. Intenta de nuevo.');

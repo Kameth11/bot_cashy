@@ -319,6 +319,33 @@ preguntarse:
   función al guardar el dato (ver ítem 3.4, sobre asegurar que
   `escapeMarkdown` se aplique en todos los mensajes que muestran texto
   del usuario o del modelo).
+- **Markdown sin escapar en mensajes con texto del usuario/modelo — auditado
+  y corregido.** En `photo.js`, los nombres leídos por Gemini Vision
+  (cliente, servicio, profesional, consultorio) iban sin escapar en el
+  mensaje de confirmación (`parse_mode: 'Markdown'`), y
+  `pendingAgendaConfirm` se seteaba ANTES de mandarlo — un nombre con `_` o
+  `*` hacía que Telegram rechazara el mensaje y el usuario quedaba trabado
+  con "tenés un proceso pendiente" sin ver nunca los botones. Mismo patrón
+  encontrado y corregido en:
+  - `actions.js` (`agenda_edit_pick`): nombre del turno sin escapar,
+    `pendingTurnoEdits.step` seteado antes del envío. Se le agregó try/catch
+    (no tenía) para no perder la respuesta al usuario en un fallo.
+  - `command.service.js` (`prepararEdicion`): descripción actual del
+    movimiento sin escapar. Sus dos callers (`/editar` y el intent NLP
+    `editar_movimiento`) también seteaban `pendingEdits` antes del envío;
+    de paso, `/editar` ni siquiera *esperaba* el `ctx.reply` (sin `await`),
+    así que un rechazo de Telegram ahí ni pasaba por el try/catch del
+    handler — quedaba como promesa no manejada.
+  - El intent NLP `eliminar_movimiento`: mismo reordenamiento de
+    `pendingDeletes` (su mensaje ya escapaba `desc` correctamente).
+  - `nlp.js` (`cobro_parcial_con_deuda`/`pago_parcial_con_deuda`): nombre
+    de paciente/proveedor sin escapar en el resumen (acá el movimiento ya
+    había quedado guardado antes del reply, así que no quedaba nada
+    trabado, pero el mensaje de confirmación podía fallar igual).
+  - `profesional.service.js` (`notificarLlegadaPaciente`): nombre del
+    paciente y servicio sin escapar en la notificación al profesional.
+  Criterio general: **el estado (`pending*`) se setea recién después de que
+  el envío del mensaje salga bien**, nunca antes.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -521,3 +548,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | Fecha/hora "de ahora" centralizada en `src/utils/date.js` con zona horaria Argentina explícita (`Intl`, no depende de `process.env.TZ`); `movimiento.service.js`/`agenda.service.js`/`personal.service.js`/`command.service.js` delegan ahí en vez de leer getters locales de `Date` | Revisión de seguridad: Railway corre en UTC, así que lo cargado entre las 21:00 y las 23:59 hora Argentina quedaba con fecha del día siguiente |
 | 2026-09-23 | `normalizarTexto` (`vision.service.js`) usa `\p{L}` Unicode en vez de `/\b\w/g` para capitalizar nombres leídos por OCR | Revisión de seguridad: `\w` no incluye letras con tilde, así que "fernández" quedaba "FernáNdez", "joaquín" quedaba "JoaquíN" |
 | 2026-09-23 | `sanitizarInput` ya no borra `<>"'&\`` | Revisión de seguridad: ninguno es peligroso hoy (no hay render HTML ni parse_mode HTML en Telegram, y la inyección de fórmulas la cubre el prefijo `'` aparte) — borrarlos solo corrompía nombres reales como "D'Amato". El escapado de Markdown roto queda como responsabilidad de `escapeMarkdown` al armar cada mensaje (ítem 3.4) |
+| 2026-09-23 | `escapeMarkdown` aplicado en 5 mensajes más que mostraban texto sin escapar (photo.js, actions.js, command.service.js, nlp.js, profesional.service.js); el estado `pending*` se setea recién después de un envío exitoso, nunca antes | Revisión de seguridad: un nombre con `_`/`*` sin escapar hacía que Telegram rechazara el mensaje; como el estado ya estaba seteado, el usuario quedaba trabado con "proceso pendiente" sin ver nunca la confirmación |

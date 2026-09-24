@@ -7,6 +7,7 @@ const { mostrarConfirmacion } = require('./nlp-confirm');
 const { mostrarCobrar } = require('./cobrar-confirm');
 const { DASHBOARD_URL } = require('../config');
 const { requierePermisoBot } = require('../auth/bot-permisos');
+const { escapeMarkdown } = require('../utils/formatter');
 
 // Permiso requerido por intent NLP. Mismo criterio que el mapa de comandos
 // del bot — un intent sin entrada acá se considera público/informativo
@@ -142,8 +143,11 @@ const INTENT_HANDLERS = {
       return ctx.reply(result, { parse_mode: 'Markdown' });
     }
     if (result && result.state) {
+      // Setear el estado recién después de que el envío salga bien (ver
+      // photo.js/actions.js para el mismo criterio en otros flujos).
+      await ctx.reply(result.mensaje, { parse_mode: 'Markdown' });
       state.pendingEdits.set(ctx.from.id, result.state);
-      return ctx.reply(result.mensaje, { parse_mode: 'Markdown' });
+      return;
     }
     return ctx.reply('❌ Error al buscar movimiento.');
   },
@@ -155,11 +159,12 @@ const INTENT_HANDLERS = {
       return ctx.reply(result, { parse_mode: 'Markdown' });
     }
     if (result && result.state) {
-      state.pendingDeletes.set(ctx.from.id, result.state);
-      return ctx.reply(result.mensaje, {
+      await ctx.reply(result.mensaje, {
         parse_mode: 'Markdown',
         ...confirmButtons('confirm_delete', 'cancel_delete')
       });
+      state.pendingDeletes.set(ctx.from.id, result.state);
+      return;
     }
     return ctx.reply('❌ Error al buscar movimiento.');
   },
@@ -236,7 +241,7 @@ const INTENT_HANDLERS = {
       tratamientoNombre: tratamientoNombre || null,
     });
 
-    const nombreTexto = pacienteNombre ? ` — ${pacienteNombre}` : '';
+    const nombreTexto = pacienteNombre ? ` — ${escapeMarkdown(pacienteNombre)}` : '';
     const totalTexto = montoTotal
       ? `\n📋 Total: ${formatMonto(montoTotal, monedaDeuda || 'Pesos')}`
       : '';
@@ -295,7 +300,7 @@ const INTENT_HANDLERS = {
       proveedorNombre: proveedorNombre || null,
     });
 
-    const nombreTexto = proveedorNombre ? ` — ${proveedorNombre}` : '';
+    const nombreTexto = proveedorNombre ? ` — ${escapeMarkdown(proveedorNombre)}` : '';
 
     return ctx.reply(
       `✅ *Pago parcial registrado*${nombreTexto}\n\n` +

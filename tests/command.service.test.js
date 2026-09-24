@@ -363,3 +363,24 @@ describe('ejecutarCobrar - stamping de FechaCobro', () => {
     expect(row.set).not.toHaveBeenCalledWith('FechaCobro', expect.anything());
   });
 });
+
+// Ítem 3.4: la descripción actual (texto libre del usuario) iba sin escapar
+// dentro de un *bold* en el mensaje de /editar, con parse_mode: 'Markdown'.
+describe('prepararEdicion — escapa Markdown en la descripción actual', () => {
+  function fakeRow(initial) {
+    const data = { ...initial };
+    return { get: jest.fn((field) => data[field]), set: jest.fn(), save: jest.fn(async () => {}) };
+  }
+
+  const dbService = require('../src/services/db.service');
+
+  test('una descripción con "_" no rompe el mensaje: queda escapada', async () => {
+    const row = fakeRow({ Descripcion: 'Juan_Perez', Monto: 5000, Moneda: 'Pesos', Tipo: 'Ingreso', ID_Unico: 'mov1' });
+    dbService.getRows.mockResolvedValue([row]);
+
+    const result = await commandService.prepararEdicion(1, 'Juan');
+
+    expect(result.mensaje).toContain('Juan\\_Perez');
+    expect(result.mensaje).not.toContain('*Juan_Perez*');
+  });
+});
