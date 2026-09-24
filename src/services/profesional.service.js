@@ -2,15 +2,29 @@ const { isAvailable } = require('../lib/supabase');
 const { forTenant } = require('../lib/tenant-db');
 const { escapeMarkdown } = require('../utils/formatter');
 
-async function registrarProfesional(tenantId, telegramUserId, nombre) {
+async function registrarProfesional(tenantId, telegramUserId, nombre, consultorio = null) {
   if (!isAvailable()) return { ok: false, error: 'supabase_no_disponible' };
   if (!tenantId) return { ok: false, error: 'tenant_no_resuelto' };
 
   const { error } = await forTenant(tenantId)
     .from('profesionales')
-    .upsert({ telegram_user_id: String(telegramUserId), nombre, activo: true }, { onConflict: 'telegram_user_id' });
+    .upsert({ telegram_user_id: String(telegramUserId), nombre, consultorio, activo: true }, { onConflict: 'telegram_user_id' });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+// Consultorios que algún profesional del tenant declaró al hacer /profesional
+// (columna `consultorio` de la tabla, ver sql/migrations/010_profesionales_consultorio.sql).
+// Reemplaza a CONSULTORIO_MAP (hardcodeado, un solo tenant) para resolver
+// "Consultorio N" -> nombre del profesional al leer una agenda por foto.
+async function listarConsultoriosAsignados(tenantId) {
+  if (!isAvailable() || !tenantId) return [];
+  const { data } = await forTenant(tenantId)
+    .from('profesionales')
+    .select('nombre, consultorio')
+    .eq('activo', true)
+    .not('consultorio', 'is', null);
+  return data || [];
 }
 
 async function buscarProfesionalPorNombre(tenantId, nombre) {
@@ -46,4 +60,4 @@ async function notificarLlegadaPaciente(tenantId, nombreProfesional, paciente, h
   }
 }
 
-module.exports = { registrarProfesional, buscarProfesionalPorNombre, notificarLlegadaPaciente };
+module.exports = { registrarProfesional, buscarProfesionalPorNombre, notificarLlegadaPaciente, listarConsultoriosAsignados };

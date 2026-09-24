@@ -3,7 +3,8 @@ const { bot } = require('../lib/telegraf');
 const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { procesarFotoAgenda } = require('../services/vision.service');
-const { resolverProfesional } = require('../services/agenda.service');
+const { resolverProfesional, obtenerConsultorioMap } = require('../services/agenda.service');
+const { resolveTenantId } = require('../services/tenant.service');
 const { confirmButtons } = require('./actions');
 const { MAX_PHOTO_SIZE_BYTES, MAX_TURNOS_POR_IMAGEN } = require('../config');
 const { tieneProcesoPendiente } = require('./guards');
@@ -83,10 +84,12 @@ bot.on('photo', async (ctx) => {
       return ctx.reply(`⚠️ Detecté demasiados turnos (${resultado.turnos.length}). Probá recortando la imagen antes de enviarla.`);
     }
 
+    const mapaConsultorios = await obtenerConsultorioMap(await resolveTenantId(userId));
+
     let msg = '📅 *Turnos encontrados:*\n\n';
     resultado.turnos.forEach((turno, i) => {
       msg += `${i + 1}. `;
-      const profesionalResuelto = resolverProfesional(turno.profesional, turno.consultorio);
+      const profesionalResuelto = resolverProfesional(turno.profesional, turno.consultorio, mapaConsultorios);
       const bloque = [turno.consultorio, profesionalResuelto].filter(Boolean).map(escapeMarkdown).join(' - ');
       if (bloque) msg += `🏷️ ${bloque} | `;
       msg += `⏰ ${escapeMarkdown(turno.hora || 'Sin horario')} - `;

@@ -242,6 +242,11 @@ async function handlePendingRegistration(userId, text) {
     return handleProfesionalNombreStep(userId, text);
   }
 
+  if (registro.step === 'profesional_consultorio') {
+    const { handleProfesionalConsultorioStep } = require('../handlers/commands/profesional');
+    return handleProfesionalConsultorioStep(userId, text, registro);
+  }
+
   return { message: '❌ Estado de registro inválido. Usa /cancelar y vuelve a intentar.' };
 }
 

@@ -41,6 +41,11 @@ jest.mock('../src/services/vision.service', () => ({
 
 jest.mock('../src/services/agenda.service', () => ({
   resolverProfesional: jest.fn().mockReturnValue(null),
+  obtenerConsultorioMap: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('../src/services/tenant.service', () => ({
+  resolveTenantId: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('../src/handlers/actions', () => ({
@@ -102,5 +107,22 @@ describe('handler de foto — escapa Markdown en nombres leídos por el modelo',
 
     expect(state.pendingAgendaConfirm.has(2222)).toBe(false);
     expect(ctx.reply).toHaveBeenLastCalledWith(expect.stringContaining('Error al procesar la imagen'));
+  });
+
+  // Ítem 3.6: el profesional se resuelve con el mapa consultorio->profesional
+  // del TENANT (obtenerConsultorioMap), no con CONSULTORIO_MAP global.
+  test('resuelve el profesional con el mapa del tenant, no con CONSULTORIO_MAP a secas', async () => {
+    const { resolverProfesional, obtenerConsultorioMap } = require('../src/services/agenda.service');
+    const { resolveTenantId } = require('../src/services/tenant.service');
+    resolveTenantId.mockResolvedValue('tenant-xyz');
+    const mapaDelTenant = { 'consultorio 1': 'Ana' };
+    obtenerConsultorioMap.mockResolvedValue(mapaDelTenant);
+
+    const ctx = ctxFor(2222);
+    await global.__photoHandlers.photo(ctx);
+
+    expect(resolveTenantId).toHaveBeenCalledWith(2222);
+    expect(obtenerConsultorioMap).toHaveBeenCalledWith('tenant-xyz');
+    expect(resolverProfesional).toHaveBeenCalledWith(null, 'Consultorio 1', mapaDelTenant);
   });
 });

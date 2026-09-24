@@ -2,6 +2,8 @@ const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
 const { runInBackground } = require('../lib/write-queue');
 const { fechaArgentinaStr } = require('../utils/date');
+const { resolveTenantId } = require('./tenant.service');
+const { listarConsultoriosAsignados } = require('./profesional.service');
 
 // Normaliza variantes como "Consultorio N° 1", "Consultorio Nro. 1",
 // "CONSULTORIO #1" a la forma "consultorio 1" que usa CONSULTORIO_MAP.
@@ -19,27 +21,60 @@ function normalizarConsultorioKey(value) {
   return key;
 }
 
-// El profesional siempre se determina por CONSULTORIO_MAP, nunca por el
-// nombre que Gemini haya podido leer junto a un "Dr."/"Dra." en la imagen.
-function resolverProfesional(profesional, consultorio) {
+// El profesional siempre se determina por un mapa consultorio -> nombre,
+// nunca por el nombre que Gemini haya podido leer junto a un "Dr."/"Dra."
+// en la imagen. `mapa` es el mapeo del TENANT (ver obtenerConsultorioMap);
+// si no se pasa ninguno, usa CONSULTORIO_MAP (compatibilidad hacia atrás
+// para el único caller que no lo resuelve de forma async, y para tests).
+function resolverProfesional(profesional, consultorio, mapa = CONSULTORIO_MAP) {
   if (consultorio) {
     const key = normalizarConsultorioKey(consultorio);
-    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
-      return CONSULTORIO_MAP[key];
+    if (Object.prototype.hasOwnProperty.call(mapa, key)) {
+      return mapa[key];
     }
   }
   if (profesional) {
     const key = normalizarConsultorioKey(profesional);
-    if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) {
-      return CONSULTORIO_MAP[key];
+    if (Object.prototype.hasOwnProperty.call(mapa, key)) {
+      return mapa[key];
     }
     // Si el campo ya contiene el nombre directamente (ej: "Diego"), devolverlo
     const nameLower = profesional.trim().toLowerCase();
-    for (const nombre of Object.values(CONSULTORIO_MAP)) {
+    for (const nombre of Object.values(mapa)) {
       if (nombre && nombre.toLowerCase() === nameLower) return nombre;
     }
   }
   return '';
+}
+
+// Cache en memoria de proceso, mismo patrón que tenantIdCache en
+// tenant.service.js: evita pegarle a Supabase en cada turno de cada foto.
+const CONSULTORIO_MAP_TTL_MS = 10 * 60 * 1000;
+const consultorioMapCache = new Map();
+
+// Mapa consultorio -> profesional para un tenant: lo que cada profesional
+// declaró al hacer /profesional (columna `consultorio`, ver migración
+// 010_profesionales_consultorio.sql). Si el tenant no tiene Supabase, no se
+// pudo resolver, o todavía nadie cargó su consultorio, cae a CONSULTORIO_MAP
+// (compatibilidad con el tenant existente / deploys sin Supabase).
+async function obtenerConsultorioMap(tenantId) {
+  if (!tenantId) return CONSULTORIO_MAP;
+
+  const cached = consultorioMapCache.get(tenantId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const filas = await listarConsultoriosAsignados(tenantId);
+  let mapa = CONSULTORIO_MAP;
+  if (filas.length > 0) {
+    mapa = {};
+    for (const fila of filas) {
+      const key = normalizarConsultorioKey(fila.consultorio);
+      if (key) mapa[key] = fila.nombre || '';
+    }
+  }
+
+  consultorioMapCache.set(tenantId, { value: mapa, expiresAt: Date.now() + CONSULTORIO_MAP_TTL_MS });
+  return mapa;
 }
 
 // ── Tab "Turnos" — estructura plana, consultable por fecha ──
@@ -105,6 +140,8 @@ async function guardarTurnosFlat(userId, turnos, fecha = fechaHoyStr(), idsAElim
   const sheet = await crearTabTurnosSiNoExiste(userId);
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
 
+  const mapaConsultorios = await obtenerConsultorioMap(await resolveTenantId(userId));
+
   if (idsAEliminar.length > 0) {
     const rows = await sheet.getRows();
     const aBorrar = rows.filter(r => idsAEliminar.includes(r.get('ID_Turno')));
@@ -134,7 +171,7 @@ async function guardarTurnosFlat(userId, turnos, fecha = fechaHoyStr(), idsAElim
       Hora: turno.hora || '',
       Cliente: turno.cliente || '',
       Servicio: turno.servicio || '',
-      Profesional: resolverProfesional(turno.profesional, turno.consultorio),
+      Profesional: resolverProfesional(turno.profesional, turno.consultorio, mapaConsultorios),
       Consultorio: turno.consultorio || '',
       Estado: turno.estado || 'Pendiente',
     };
@@ -237,7 +274,8 @@ async function crearTurno(userId, datos) {
   if (!sheet) throw new Error('No se pudo acceder a la tab Turnos');
   const idTurno = generarIDTurno();
   const fecha = datos.fecha || fechaHoyStr();
-  const profesionalResuelto = resolverProfesional(datos.profesional, null) || datos.profesional || '';
+  const mapaConsultorios = await obtenerConsultorioMap(await resolveTenantId(userId));
+  const profesionalResuelto = resolverProfesional(datos.profesional, null, mapaConsultorios) || datos.profesional || '';
   await sheet.addRow({
     ID_Turno: idTurno,
     Fecha: fecha,
@@ -312,9 +350,9 @@ const BLOCK_SPACING = 1;
 const BLOCK_HEADERS = ['Hora', 'Cliente', 'Servicio', 'Estado', 'Fecha'];
 
 
-function getBlockLabel(turno) {
+function getBlockLabel(turno, mapa = CONSULTORIO_MAP) {
   const consultorio = turno.consultorio ? String(turno.consultorio).trim() : '';
-  const profesional = resolverProfesional(turno.profesional, turno.consultorio);
+  const profesional = resolverProfesional(turno.profesional, turno.consultorio, mapa);
 
   if (consultorio && profesional) return `${consultorio} - ${profesional}`;
   if (consultorio) return consultorio;
@@ -322,12 +360,12 @@ function getBlockLabel(turno) {
   return 'A confirmar';
 }
 
-function agruparTurnos(turnos) {
+function agruparTurnos(turnos, mapa = CONSULTORIO_MAP) {
   const groups = [];
   const byLabel = new Map();
 
   for (const turno of turnos) {
-    const label = getBlockLabel(turno);
+    const label = getBlockLabel(turno, mapa);
 
     if (!byLabel.has(label)) {
       const group = { label, turnos: [] };
@@ -401,9 +439,11 @@ async function escribirSeccionAgenda(userId, fechaStr, turnos) {
   const agendaSheet = await crearTabAgendaSiNoExiste(userId);
   if (!agendaSheet) throw new Error('No se pudo acceder a la tab Agenda');
 
+  const mapaConsultorios = await obtenerConsultorioMap(await resolveTenantId(userId));
+
   await asegurarTamanoSheet(agendaSheet, Math.max(agendaSheet.columnCount, 60), Math.max(agendaSheet.rowCount, 500));
   await agendaSheet.loadCells();
-  renderizarSeccionFecha(agendaSheet, fechaStr, turnos);
+  renderizarSeccionFecha(agendaSheet, fechaStr, turnos, mapaConsultorios);
   await agendaSheet.saveUpdatedCells();
   invalidateCache(userId);
 }
@@ -411,8 +451,10 @@ async function escribirSeccionAgenda(userId, fechaStr, turnos) {
 // Parte pura (sin I/O) de la sincronización: sobre una grilla ya cargada,
 // limpia la sección de `fechaStr` si existe y reescribe sus bloques desde
 // `turnos`. Se exporta para poder testear el cálculo de celdas, que es donde
-// es fácil equivocarse en silencio.
-function renderizarSeccionFecha(sheet, fechaStr, turnos) {
+// es fácil equivocarse en silencio. `mapa` es el consultorio->profesional
+// del tenant (default CONSULTORIO_MAP para compatibilidad de los tests
+// existentes, que no pasan ninguno).
+function renderizarSeccionFecha(sheet, fechaStr, turnos, mapa = CONSULTORIO_MAP) {
   // 1. Localizar la sección existente para esta fecha: filas donde aparece
   //    fechaStr en la columna Fecha de algún bloque (cada bloque ocupa
   //    BLOCK_WIDTH+BLOCK_SPACING columnas; la Fecha está en el offset 4).
@@ -458,7 +500,7 @@ function renderizarSeccionFecha(sheet, fechaStr, turnos) {
   // 2. Escribir los bloques desde la columna 0 (si quedaron turnos; si se
   //    borraron todos, la sección queda limpia y no se escribe nada).
   if (turnos.length > 0) {
-    const groups = agruparTurnos(turnos);
+    const groups = agruparTurnos(turnos, mapa);
     groups.forEach((group, groupIndex) => {
       const startColumn = groupIndex * (BLOCK_WIDTH + BLOCK_SPACING);
       escribirBloque(sheet, startRow, startColumn, group, fechaStr);
@@ -502,4 +544,5 @@ module.exports = {
   sincronizarAgenda,
   fechaHoyStr,
   resolverProfesional,
+  obtenerConsultorioMap,
 };
