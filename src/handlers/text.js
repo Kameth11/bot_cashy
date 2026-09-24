@@ -631,8 +631,13 @@ bot.on('text', async (ctx) => {
 
     const cotizacion = cotizacionValidation.valor;
 
-    state.cotizacionDolar = cotizacion;
-    state.cotizacionFecha = new Date();
+    // `cotizacion` se pasa como `cotizacionUsada` más abajo, para ESTE
+    // movimiento puntual: no se toca `state.cotizacionDolar`, que es la
+    // cotización global compartida por todos los consultorios (la que llena
+    // obtenerCotizacionDolar() desde Bluelytics). Pisarla acá hacía que el
+    // valor que un usuario tipeaba a mano para su propia carga se convirtiera
+    // en la cotización de referencia para todo el mundo hasta el próximo
+    // fetch automático (cada 3h).
 
     const datos = state.pendingCotizaciones.get(ctx.from.id);
     state.pendingCotizaciones.delete(ctx.from.id);

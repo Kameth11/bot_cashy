@@ -133,6 +133,13 @@ captura del nombre antes de tragarse la cláusula de deuda. Tests en
 - Si falta moneda/método/descripción, el flujo cae en los TTLMaps
   `pendingCotizaciones` / `pendingPayments` / `pendingDescripcion` para pedir
   el dato faltante en el próximo mensaje (ver paso 1 de este documento).
+- `pendingCotizaciones`: la cotización que el usuario tipea a mano se pasa
+  como `cotizacionUsada` a `cmd.guardarMovimiento` para ESE movimiento
+  puntual — no se escribe en `state.cotizacionDolar` (la cotización global
+  de Bluelytics, compartida por todos los consultorios). Antes sí se
+  pisaba: un valor tipeado por un usuario para su propia carga se
+  convertía en la referencia de todo el mundo hasta el próximo fetch
+  automático (cada 3h).
 
 ## Dónde mirar el código fuente
 

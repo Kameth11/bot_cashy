@@ -272,6 +272,16 @@ preguntarse:
   viendo datos/documento viejo. Las tres ahora resuelven la key real
   (`ownerId` para el lock, `sheetId` para las caches) sin cambiar la
   interfaz de ninguno de sus callers.
+- **La cotización manual de un movimiento ya no pisa la cotización global.**
+  Cuando el usuario tipeaba a mano la cotización del dólar para un
+  movimiento (`state.pendingCotizaciones` en `text.js`), el valor se
+  guardaba bien como `cotizacionUsada` para ESE movimiento, pero además
+  sobrescribía `state.cotizacionDolar` — la cotización compartida por
+  TODOS los consultorios, la misma que llena `obtenerCotizacionDolar()`
+  desde Bluelytics cada 3h. Un valor tipeado por un usuario para su propia
+  carga (no solo cuando Bluelytics estaba caído — este flujo siempre pide
+  confirmar/tipear la cotización) se convertía en la referencia de
+  conversión para todo el mundo hasta el próximo fetch automático.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -470,3 +480,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | `buildProfileRow` incluye `tenant_id` (vía nuevo `tenant-provisioning.service.js`); `guardarClientes` sube solo el perfil que cambió, no todos | Revisión de seguridad: `profiles.tenant_id` es NOT NULL desde la migración 003, pero el insert de un perfil nuevo nunca lo mandaba — fallaba en silencio (supabase-js devuelve `{ error }`, no lo lanza, y no se chequeaba) y el usuario quedaba sin fila en Supabase, con riesgo real de perder el alta en el próximo deploy de Railway |
 | 2026-09-23 | `src/index.js` y el arranque standalone de la API esperan `clienteService.listo` antes de `startApi()`/`bot.launch()` | Revisión de seguridad: `cargarClientes()` corría sin esperarse, así que en los primeros segundos del proceso cualquier mensaje o request encontraba `clientes` vacío y a todo el mundo (dueños incluidos) como "no autorizado" |
 | 2026-09-23 | `withUserWriteLock`/`docsCache`/`_movCache` resuelven `ownerId`/`sheetId` en vez de usar el `userId` de quien escribe/lee, sin cambiar su interfaz | Revisión de seguridad: el dueño y sus invitados comparten el mismo sheet — con la key vieja, sus escrituras no se serializaban entre sí y sus caches no se invalidaban entre sí |
+| 2026-09-23 | La cotización manual de un movimiento (`state.pendingCotizaciones`) ya no escribe `state.cotizacionDolar` | Revisión de seguridad: un valor tipeado por un usuario para su propio movimiento en dólares se convertía en la cotización global para todos los consultorios hasta el próximo fetch de Bluelytics |
