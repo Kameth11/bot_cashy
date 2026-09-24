@@ -2,6 +2,7 @@ const state = require('../state');
 const db = require('./db.service');
 const { formatMonto, escapeMarkdown } = require('../utils/formatter');
 const { obtenerClientePorUserId } = require('../auth');
+const { fechaArgentinaStr, horaArgentinaStr } = require('../utils/date');
 
 function generarIDUnico() {
   const timestamp = Date.now();
@@ -21,8 +22,8 @@ function convertirAPesos(monto, moneda) {
 
 function crearTimestampMovimiento(now = new Date()) {
   return {
-    fechaStr: `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`,
-    horaStr: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`,
+    fechaStr: fechaArgentinaStr(now),
+    horaStr: horaArgentinaStr(now),
   };
 }
 

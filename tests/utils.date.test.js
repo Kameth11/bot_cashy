@@ -1,4 +1,4 @@
-const { normalizarFecha, esHoy, esEstaSemana, esEsteMes } = require('../src/utils/date');
+const { normalizarFecha, esHoy, esEstaSemana, esEsteMes, ahoraArgentina, fechaArgentinaStr, horaArgentinaStr } = require('../src/utils/date');
 
 function ddmmyyyy(d) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -69,5 +69,50 @@ describe('esEsteMes', () => {
     const hoy = new Date();
     const mesPasado = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 15);
     expect(esEsteMes(ddmmyyyy(mesPasado))).toBe(false);
+  });
+});
+
+// Ítem 3.1: Railway corre en UTC. 22:30 del 23/09 hora Argentina (UTC-3) es
+// 01:30 del 24/09 en UTC — si el código arma la fecha "de ahora" con
+// getters locales de Date sin fijar la zona horaria, un movimiento cargado
+// a esa hora quedaba con fecha del día SIGUIENTE. Estos tests fuerzan
+// process.env.TZ = 'UTC' (simulando Railway) para probar que
+// ahoraArgentina/fechaArgentinaStr/horaArgentinaStr siguen dando la hora de
+// Argentina sin importar en qué zona horaria corra el proceso.
+describe('ahoraArgentina/fechaArgentinaStr/horaArgentinaStr — 22:30 ART simulado con el proceso en UTC', () => {
+  const TZ_ORIGINAL = process.env.TZ;
+  // 22:30 del 23/09/2026 en Argentina (UTC-3) = 01:30 del 24/09/2026 en UTC.
+  const INSTANTE_22_30_ART = new Date(Date.UTC(2026, 8, 24, 1, 30, 0));
+
+  beforeEach(() => {
+    process.env.TZ = 'UTC';
+    jest.useFakeTimers({ doNotFake: ['nextTick'] }).setSystemTime(INSTANTE_22_30_ART);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    if (TZ_ORIGINAL === undefined) delete process.env.TZ; else process.env.TZ = TZ_ORIGINAL;
+  });
+
+  test('ahoraArgentina() da el 23, no el 24, aunque el proceso esté en UTC', () => {
+    const arg = ahoraArgentina();
+    expect(arg.getDate()).toBe(23);
+    expect(arg.getMonth()).toBe(8); // septiembre
+    expect(arg.getFullYear()).toBe(2026);
+    expect(arg.getHours()).toBe(22);
+    expect(arg.getMinutes()).toBe(30);
+  });
+
+  test('fechaArgentinaStr() da "23/09/2026"', () => {
+    expect(fechaArgentinaStr()).toBe('23/09/2026');
+  });
+
+  test('horaArgentinaStr() da "22:30"', () => {
+    expect(horaArgentinaStr()).toBe('22:30');
+  });
+
+  test('un movimiento cargado a esta hora cuenta como "hoy" (23/09), no como el 24', () => {
+    expect(esHoy('23/09/2026')).toBe(true);
+    expect(esHoy('24/09/2026')).toBe(false);
   });
 });

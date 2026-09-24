@@ -3,7 +3,7 @@ const { withUserWriteLock } = require('../lib/write-queue');
 const db = require('./db.service');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 
-const { esHoy, esEstaSemana, esEsteMes, normalizarFecha } = require('../utils/date');
+const { esHoy, esEstaSemana, esEsteMes, normalizarFecha, fechaArgentinaStr } = require('../utils/date');
 const { formatMonto, formatFecha, escapeMarkdown } = require('../utils/formatter');
 const { obtenerCotizacionDolar } = require('./cotizacion.service');
 const { sanitizarInput } = require('../utils/formatter');
@@ -532,8 +532,7 @@ async function ejecutarCobrarFila(userId, fila, montoCobrado) {
       }
     }
 
-    const hoy = new Date();
-    const hoyStr = `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}`;
+    const hoyStr = fechaArgentinaStr();
     fila.set('Estado', 'Cobrado');
     fila.set('FechaCobro', hoyStr);
     await fila.save();
@@ -637,8 +636,7 @@ async function doEjecutarCobrar(userId, nombre) {
     }
   }
 
-  const hoy = new Date();
-  const hoyStr = `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}`;
+  const hoyStr = fechaArgentinaStr();
   filaActual.set('Estado', 'Cobrado');
   filaActual.set('FechaCobro', hoyStr);
   await filaActual.save();

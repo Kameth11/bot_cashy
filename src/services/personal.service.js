@@ -16,6 +16,7 @@ const { resolveTenantId } = require('./tenant.service');
 const { emitMovimientosUpdated } = require('./events.service');
 const { convertirAPesos } = require('./movimiento.service');
 const logger = require('../lib/logger');
+const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina } = require('../utils/date');
 
 const TAB_MOVIMIENTOS = 'Personal';
 const TAB_VIAJES = 'Viajes';
@@ -161,13 +162,11 @@ function generarIdViaje() {
 }
 
 function fechaHoyStr() {
-  const now = new Date();
-  return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+  return fechaArgentinaStr();
 }
 
 function horaAhoraStr() {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  return horaArgentinaStr();
 }
 
 // Las fechas del Sheet son DD/MM/YYYY; para comparar rangos hace falta ISO.
@@ -582,7 +581,7 @@ async function guardarPresupuesto(userId, categoria, montoMensual, moneda = 'Pes
 }
 
 function mesActualIso() {
-  const now = new Date();
+  const now = ahoraArgentina();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 

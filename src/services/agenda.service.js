@@ -1,6 +1,7 @@
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { CONSULTORIO_MAP } = require('../config');
 const { runInBackground } = require('../lib/write-queue');
+const { fechaArgentinaStr } = require('../utils/date');
 
 // Normaliza variantes como "Consultorio N° 1", "Consultorio Nro. 1",
 // "CONSULTORIO #1" a la forma "consultorio 1" que usa CONSULTORIO_MAP.
@@ -50,8 +51,7 @@ function generarIDTurno() {
 }
 
 function fechaHoyStr() {
-  const now = new Date();
-  return `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+  return fechaArgentinaStr();
 }
 
 async function crearTabTurnosSiNoExiste(userId) {
@@ -342,8 +342,7 @@ async function guardarTurnosAgenda(userId, turnos) {
     throw new Error('No hay turnos para guardar');
   }
 
-  const now = new Date();
-  const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+  const fechaStr = fechaArgentinaStr();
   const groups = agruparTurnos(turnos);
 
   // Ensure generous size upfront so loadCells cubre todo el rango de escritura

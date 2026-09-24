@@ -1,4 +1,14 @@
 // Entry point - loads all modules and launches the bot
+
+// Fija la zona horaria del proceso ANTES de cualquier otro require/uso de
+// Date: Railway suele correr en UTC, así que sin esto lo cargado entre las
+// 21:00 y las 23:59 hora Argentina quedaba con fecha del día siguiente en
+// cualquier código que arme fecha/hora "de ahora" con getters locales
+// (getDate/getHours/etc). Los lugares ya migrados a src/utils/date.js
+// (ahoraArgentina/fechaArgentinaStr/horaArgentinaStr) no dependen de esto —
+// es una defensa adicional para el resto del código.
+process.env.TZ = 'America/Argentina/Buenos_Aires';
+
 const { bot } = require('./lib/telegraf');
 const { obtenerCotizacionDolar } = require('./services/cotizacion.service');
 const { initModel } = require('./services/gemini.service');

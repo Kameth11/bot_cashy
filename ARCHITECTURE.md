@@ -282,6 +282,20 @@ preguntarse:
   carga (no solo cuando Bluelytics estaba caído — este flujo siempre pide
   confirmar/tipear la cotización) se convertía en la referencia de
   conversión para todo el mundo hasta el próximo fetch automático.
+- **Zona horaria explícita para "ahora" (Argentina), no la del servidor.**
+  Railway corre en UTC; `movimiento.service.js`, `agenda.service.js`,
+  `personal.service.js` y `command.service.js` armaban la fecha/hora "de
+  ahora" con getters locales de `Date` (`getDate()`, `getHours()`, etc.) sin
+  fijar zona horaria, así que lo cargado entre las 21:00 y las 23:59 hora
+  Argentina quedaba con fecha del día siguiente. `src/utils/date.js` expone
+  `ahoraArgentina()`/`fechaArgentinaStr()`/`horaArgentinaStr()`, que
+  resuelven la zona horaria de forma explícita con `Intl.DateTimeFormat`
+  (`timeZone: 'America/Argentina/Buenos_Aires'`) — el resultado es correcto
+  sin importar la zona horaria real del proceso. Los cuatro servicios ahora
+  delegan en esas funciones en vez de duplicar la lógica de formateo.
+  `process.env.TZ` también se fija a esa zona en `src/index.js`, como
+  primera línea antes de cualquier otro require — defensa adicional para
+  el resto del código (ej. `/debug`) que no pasa por `utils/date.js`.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -481,3 +495,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | `src/index.js` y el arranque standalone de la API esperan `clienteService.listo` antes de `startApi()`/`bot.launch()` | Revisión de seguridad: `cargarClientes()` corría sin esperarse, así que en los primeros segundos del proceso cualquier mensaje o request encontraba `clientes` vacío y a todo el mundo (dueños incluidos) como "no autorizado" |
 | 2026-09-23 | `withUserWriteLock`/`docsCache`/`_movCache` resuelven `ownerId`/`sheetId` en vez de usar el `userId` de quien escribe/lee, sin cambiar su interfaz | Revisión de seguridad: el dueño y sus invitados comparten el mismo sheet — con la key vieja, sus escrituras no se serializaban entre sí y sus caches no se invalidaban entre sí |
 | 2026-09-23 | La cotización manual de un movimiento (`state.pendingCotizaciones`) ya no escribe `state.cotizacionDolar` | Revisión de seguridad: un valor tipeado por un usuario para su propio movimiento en dólares se convertía en la cotización global para todos los consultorios hasta el próximo fetch de Bluelytics |
+| 2026-09-23 | Fecha/hora "de ahora" centralizada en `src/utils/date.js` con zona horaria Argentina explícita (`Intl`, no depende de `process.env.TZ`); `movimiento.service.js`/`agenda.service.js`/`personal.service.js`/`command.service.js` delegan ahí en vez de leer getters locales de `Date` | Revisión de seguridad: Railway corre en UTC, así que lo cargado entre las 21:00 y las 23:59 hora Argentina quedaba con fecha del día siguiente |

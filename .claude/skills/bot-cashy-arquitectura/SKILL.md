@@ -16,6 +16,11 @@ description: >-
 Orden de carga (importa con efectos secundarios — cada `require` registra
 handlers en `bot` de Telegraf vía `src/lib/telegraf.js`):
 
+0. `process.env.TZ = 'America/Argentina/Buenos_Aires'` — primera línea del
+   archivo, antes de cualquier `require`/uso de `Date`. Railway corre en
+   UTC; esto es una defensa adicional para código que no pase por
+   `src/utils/date.js` (que igual resuelve la zona horaria de forma
+   explícita con `Intl`, sin depender de esto — ver esa sección más abajo).
 1. `require('./handlers/middleware')` — auth, rate limiting, logging.
 2. ~30 comandos en `src/handlers/commands/*.js` (uno por archivo, ver tabla).
 3. `require('./handlers/text')` — handler de texto libre (NLP, ver skill

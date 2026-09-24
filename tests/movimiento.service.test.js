@@ -60,4 +60,21 @@ describe('crearTimestampMovimiento', () => {
     expect(fechaStr).toBe('05/03/2026');
     expect(horaStr).toBe('09:07');
   });
+
+  // Ítem 3.1: Railway corre en UTC. 22:30 del 23/09 hora Argentina es 01:30
+  // del 24/09 en UTC. Antes del fix, crearTimestampMovimiento leía getters
+  // locales (now.getDate()/getHours()) de un Date sin fijar zona horaria, así
+  // que en un proceso en UTC un movimiento cargado a esa hora quedaba
+  // fechado el 24, no el 23. Ahora delega en fechaArgentinaStr/horaArgentinaStr
+  // (src/utils/date.js), que resuelven la zona horaria de forma explícita con
+  // Intl — el resultado es el mismo sin importar en qué TZ corra el proceso
+  // (no se puede simular "proceso en UTC" de forma confiable mutando
+  // process.env.TZ a mitad de un test de Jest, así que esto se verifica
+  // afuera, en tests/utils.date.test.js, con el caso general).
+  test('a las 22:30 hora Argentina (instante UTC 01:30 del día siguiente), la fecha es la del día anterior', () => {
+    const instante22_30ART = new Date(Date.UTC(2026, 8, 24, 1, 30, 0));
+    const { fechaStr, horaStr } = crearTimestampMovimiento(instante22_30ART);
+    expect(fechaStr).toBe('23/09/2026');
+    expect(horaStr).toBe('22:30');
+  });
 });
