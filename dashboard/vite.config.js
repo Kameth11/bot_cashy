@@ -7,6 +7,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // registro manual en main.jsx (chequea updates cada 60s y recarga solo)
+      injectRegister: false,
       // favicon.svg / icons.svg quedaron del template de Vite (un rayo y un
       // sprite de Bluesky) y no los usa nadie: no tiene sentido precachearlos.
       includeAssets: ['icon.svg', 'favicon-32.png', 'apple-touch-icon.png'],
