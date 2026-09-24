@@ -180,7 +180,15 @@ function normalizarTexto(value) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  return text ? text.replace(/\b\w/g, c => c.toUpperCase()) : null;
+  if (!text) return null;
+
+  // Capitaliza la primera letra de cada palabra separando por espacio,
+  // guion o apóstrofe. /\b\w/g (la versión anterior) rompía con acentos:
+  // \w no incluye letras con tilde, así que el motor de regex trataba la
+  // tilde como límite de palabra y capitalizaba también la letra
+  // siguiente ("fernández" → "FernáNdez"). \p{L} (con la flag /u) es
+  // Unicode-aware, así que reconoce tildes y ñ como parte de la palabra.
+  return text.replace(/(^|[\s\-'])(\p{L})/gu, (_, sep, letra) => sep + letra.toUpperCase());
 }
 
 function normalizarConsultorio(value) {
@@ -276,4 +284,4 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
   return null;
 }
 
-module.exports = { procesarFotoAgenda };
+module.exports = { procesarFotoAgenda, normalizarTexto };

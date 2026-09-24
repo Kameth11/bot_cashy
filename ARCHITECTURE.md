@@ -296,6 +296,14 @@ preguntarse:
   `process.env.TZ` también se fija a esa zona en `src/index.js`, como
   primera línea antes de cualquier otro require — defensa adicional para
   el resto del código (ej. `/debug`) que no pasa por `utils/date.js`.
+- **Capitalización de nombres compatible con Unicode.** `normalizarTexto`
+  (`vision.service.js`, usado para nombres de paciente/profesional/servicio
+  leídos por OCR de agenda) usaba `/\b\w/g` para poner en mayúscula la
+  primera letra de cada palabra. `\w` no incluye letras con tilde, así que
+  el motor de regex trataba una tilde como límite de palabra y capitalizaba
+  también la letra siguiente: `"fernández"` → `"FernáNdez"`, `"joaquín"` →
+  `"JoaquíN"`, `"peña"` → `"PeñA"`. Ahora usa `\p{L}` (con la flag `/u`,
+  Unicode-aware) separando por espacio, guion o apóstrofe.
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
@@ -496,3 +504,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | `withUserWriteLock`/`docsCache`/`_movCache` resuelven `ownerId`/`sheetId` en vez de usar el `userId` de quien escribe/lee, sin cambiar su interfaz | Revisión de seguridad: el dueño y sus invitados comparten el mismo sheet — con la key vieja, sus escrituras no se serializaban entre sí y sus caches no se invalidaban entre sí |
 | 2026-09-23 | La cotización manual de un movimiento (`state.pendingCotizaciones`) ya no escribe `state.cotizacionDolar` | Revisión de seguridad: un valor tipeado por un usuario para su propio movimiento en dólares se convertía en la cotización global para todos los consultorios hasta el próximo fetch de Bluelytics |
 | 2026-09-23 | Fecha/hora "de ahora" centralizada en `src/utils/date.js` con zona horaria Argentina explícita (`Intl`, no depende de `process.env.TZ`); `movimiento.service.js`/`agenda.service.js`/`personal.service.js`/`command.service.js` delegan ahí en vez de leer getters locales de `Date` | Revisión de seguridad: Railway corre en UTC, así que lo cargado entre las 21:00 y las 23:59 hora Argentina quedaba con fecha del día siguiente |
+| 2026-09-23 | `normalizarTexto` (`vision.service.js`) usa `\p{L}` Unicode en vez de `/\b\w/g` para capitalizar nombres leídos por OCR | Revisión de seguridad: `\w` no incluye letras con tilde, así que "fernández" quedaba "FernáNdez", "joaquín" quedaba "JoaquíN" |
