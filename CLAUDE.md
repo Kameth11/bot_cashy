@@ -14,7 +14,7 @@ reportes, etc.), ver `ROADMAP_CASHY_CLINICA.md`.
 
 ## Stack
 
-- **Runtime**: Node.js 18+
+- **Runtime**: Node.js 20+ (el build del dashboard lo requiere)
 - **Bot**: Telegraf (Telegram)
 - **Storage**: Google Sheets por usuario (service account)
 - **AI Vision**: Gemini (lectura de fotos de agenda)

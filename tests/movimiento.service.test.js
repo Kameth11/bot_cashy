@@ -56,7 +56,9 @@ describe('calcularMontoPesos', () => {
 
 describe('crearTimestampMovimiento', () => {
   test('formatea fecha DD/MM/YYYY y hora HH:MM con padding', () => {
-    const { fechaStr, horaStr } = crearTimestampMovimiento(new Date(2026, 2, 5, 9, 7));
+    // 09:07 hora Argentina (UTC-3) = 12:07 UTC. Instante fijo en UTC para que
+    // el test no dependa de la TZ de la máquina (CI corre en UTC).
+    const { fechaStr, horaStr } = crearTimestampMovimiento(new Date(Date.UTC(2026, 2, 5, 12, 7)));
     expect(fechaStr).toBe('05/03/2026');
     expect(horaStr).toBe('09:07');
   });
