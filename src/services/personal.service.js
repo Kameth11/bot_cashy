@@ -638,6 +638,16 @@ async function calcularResumenPersonal(userId, mes = mesActualIso()) {
 
   const delMes = movimientos.filter(m => (fechaStrAIso(m.fecha) || '').startsWith(mes));
 
+  // Filas cuya fecha no se pudo interpretar: existen en el Sheet pero quedan
+  // fuera de todos los meses. Se avisa en el log para poder diagnosticarlo.
+  const sinFecha = movimientos.filter(m => !fechaStrAIso(m.fecha));
+  if (sinFecha.length > 0) {
+    logger.warn('Personal', 'Movimientos con fecha ilegible: no aparecen en ningún mes', {
+      cantidad: sinFecha.length,
+      ejemplos: sinFecha.slice(0, 3).map(m => ({ idMov: m.idMov, fecha: m.fecha })),
+    });
+  }
+
   let ingresos = 0;
   let egresos = 0;
   const acumCategoria = new Map();
