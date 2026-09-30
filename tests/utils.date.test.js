@@ -1,4 +1,4 @@
-const { normalizarFecha, esHoy, esEstaSemana, esEsteMes, ahoraArgentina, fechaArgentinaStr, horaArgentinaStr, fechaMananaArgentinaStr, parsearFechaIngresada, resolverFechaAgenda } = require('../src/utils/date');
+const { normalizarFecha, esHoy, esEstaSemana, esEsteMes, ahoraArgentina, fechaArgentinaStr, fechaEnDiasArgentinaStr, horaArgentinaStr, fechaMananaArgentinaStr, parsearFechaIngresada, resolverFechaAgenda } = require('../src/utils/date');
 
 function ddmmyyyy(d) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -33,10 +33,10 @@ describe('normalizarFecha', () => {
 
 describe('esHoy', () => {
   test('true para la fecha de hoy, false para ayer', () => {
-    const hoy = new Date();
-    const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
-    expect(esHoy(ddmmyyyy(hoy))).toBe(true);
-    expect(esHoy(ddmmyyyy(ayer))).toBe(false);
+    // "Hoy" en Argentina, no en la TZ del proceso: CI corre en UTC y entre
+    // las 21 y las 24 hs de Argentina ya es el día siguiente en UTC.
+    expect(esHoy(fechaEnDiasArgentinaStr(0))).toBe(true);
+    expect(esHoy(fechaEnDiasArgentinaStr(-1))).toBe(false);
   });
   test('false para fecha inválida', () => {
     expect(esHoy('basura')).toBe(false);
@@ -50,12 +50,9 @@ describe('esEstaSemana (ventana móvil ~7 días: hoy y los anteriores)', () => {
   // claramente dentro (hace 5) y claramente afuera (hace 8) para no depender
   // de la hora a la que corra el test.
   test('true para hoy y hace 5 días, false para hace 8 días', () => {
-    const hoy = new Date();
-    const hace5 = new Date(); hace5.setDate(hoy.getDate() - 5);
-    const hace8 = new Date(); hace8.setDate(hoy.getDate() - 8);
-    expect(esEstaSemana(ddmmyyyy(hoy))).toBe(true);
-    expect(esEstaSemana(ddmmyyyy(hace5))).toBe(true);
-    expect(esEstaSemana(ddmmyyyy(hace8))).toBe(false);
+    expect(esEstaSemana(fechaEnDiasArgentinaStr(0))).toBe(true);
+    expect(esEstaSemana(fechaEnDiasArgentinaStr(-5))).toBe(true);
+    expect(esEstaSemana(fechaEnDiasArgentinaStr(-8))).toBe(false);
   });
 });
 

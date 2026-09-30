@@ -343,8 +343,8 @@ describe('ejecutarCobrar - stamping de FechaCobro', () => {
     const row = fakeRow({ Estado: 'Pendiente', Descripcion: 'Consulta Juan', Monto: 5000, Moneda: 'Pesos', ID_Unico: 'mov1' });
     dbService.getRows.mockResolvedValue([row]);
 
-    const hoy = new Date();
-    const hoyStr = `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}`;
+    // Fecha de hoy en Argentina (la que usa el código), no la de la TZ del proceso.
+    const hoyStr = require('../src/utils/date').fechaArgentinaStr();
 
     await commandService.ejecutarCobrar(1, 'ultimo');
 

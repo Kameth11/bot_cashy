@@ -80,6 +80,20 @@ const ESTADOS = {
 }
 
 
+// Resultado del aviso por Telegram al profesional cuando se marca "Llegó".
+function textoAvisoLlegada(turno, notif) {
+  if (!notif) return null
+  if (notif.ok) return { ok: true, texto: `Le avisamos a ${notif.profesional} por Telegram que llegó ${turno.cliente || 'el paciente'}.` }
+  const prof = turno.profesional || 'el profesional'
+  const motivos = {
+    sin_profesional: 'El turno no tiene profesional asignado, así que no se avisó a nadie.',
+    profesional_no_encontrado: `No se avisó: no hay ningún profesional registrado como "${prof}". Tiene que escribirle /profesional al bot con ese nombre.`,
+    envio_fallido: `No se pudo mandar el aviso a ${notif.profesional || prof}. Revisá que haya iniciado el bot en Telegram (/start) y no lo tenga bloqueado.`,
+    tenant_no_resuelto: 'No se pudo mandar el aviso (consultorio sin configurar en la base).',
+  }
+  return { ok: false, texto: motivos[notif.error] || 'No se pudo mandar el aviso al profesional.' }
+}
+
 export default function AgendaPage() {
   const [turnos, setTurnos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -99,6 +113,7 @@ export default function AgendaPage() {
   const [creando, setCreando] = useState(false)
   const [fecha, setFecha] = useState(hoyMedianoche)
   const [dropdownAbierto, setDropdownAbierto] = useState(null)
+  const [aviso, setAviso] = useState(null)
 
   function shiftFecha(deltaDias) {
     setFecha(f => { const d = new Date(f); d.setDate(d.getDate() + deltaDias); return d })
@@ -118,15 +133,23 @@ export default function AgendaPage() {
   }, [fecha])
 
   useEffect(() => { cargar() }, [cargar])
+
+  // El aviso de éxito se va solo; el de error queda hasta que lo toquen.
+  useEffect(() => {
+    if (!aviso?.ok) return
+    const t = setTimeout(() => setAviso(null), 6000)
+    return () => clearTimeout(t)
+  }, [aviso])
   useMovimientosEvents(useCallback(() => cargar(), [cargar]))
 
   async function handleLlego(turno) {
     setAccionando(turno.idTurno)
     try {
-      await api.post(`/api/agenda/${turno.idTurno}/llego`)
+      const { data } = await api.post(`/api/agenda/${turno.idTurno}/llego`)
       setTurnos(prev => prev.map(t =>
         t.idTurno === turno.idTurno ? { ...t, estado: 'Llegó' } : t
       ))
+      setAviso(textoAvisoLlegada(turno, data?.notificacion))
     } catch {
       alert('Error al registrar llegada')
     } finally {
@@ -278,6 +301,17 @@ export default function AgendaPage() {
 
   return (
     <div className="page">
+      {aviso && (
+        <div
+          role="status"
+          onClick={() => setAviso(null)}
+          style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+            background: aviso.ok ? '#E3FCEF' : '#FFFAE6', color: aviso.ok ? '#006644' : '#7A5A00',
+            border: `1px solid ${aviso.ok ? '#ABF5D1' : '#FFE380'}` }}
+        >
+          {aviso.ok ? '✅ ' : '⚠️ '}{aviso.texto}
+        </div>
+      )}
       <div className="page-header">
         <div>
           <h1 className="page-title">Agenda</h1>

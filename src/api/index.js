@@ -728,13 +728,18 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, requierePermiso('editar_a
 
     await actualizarEstadoTurno(req.user.userId, idTurno, 'Llegó');
 
-    if (turno.profesional) {
-      resolveTenantId(req.user.userId)
-        .then(tenantId => notificarLlegadaPaciente(tenantId, turno.profesional, turno.cliente, turno.hora, turno.servicio))
-        .catch(() => {});
+    // Se espera el aviso para poder decirle al dashboard si le llegó al
+    // profesional o por qué no (antes fallaba en silencio: .catch(() => {})).
+    let notificacion;
+    try {
+      const tenantId = turno.profesional ? await resolveTenantId(req.user.userId) : null;
+      notificacion = await notificarLlegadaPaciente(tenantId, turno.profesional, turno.cliente, turno.hora, turno.servicio);
+    } catch (err) {
+      logger.error('API', 'Error avisando llegada al profesional', { err: err.message });
+      notificacion = { ok: false, error: 'envio_fallido' };
     }
 
-    res.json({ ok: true });
+    res.json({ ok: true, notificacion });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
