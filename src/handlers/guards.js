@@ -12,7 +12,8 @@ function tieneProcesoPendiente(userId) {
     state.pendingLimpiezas.has(userId) ||
     state.pendingReinicios.has(userId) ||
     state.pendingDescripcion.has(userId) ||
-    state.pendingIngresoPacientes.has(userId);
+    state.pendingIngresoPacientes.has(userId) ||
+    state.pendingTransferencias.has(userId);
 }
 
 module.exports = { tieneProcesoPendiente };

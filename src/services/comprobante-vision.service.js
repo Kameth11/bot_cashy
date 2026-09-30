@@ -7,6 +7,9 @@
 // 2. extraerFactura: datos del comprobante de gasto (emisor, CUIT, número,
 //    fechas, total, ítems).
 //
+// 3. extraerTransferencia: datos de un comprobante de transferencia recibida
+//    (quién pagó, monto, fecha, número de operación).
+//
 // Las funciones de normalización son puras y se exportan para testearlas sin
 // Gemini: el modelo a veces devuelve montos como "45.300,50", fechas en ISO,
 // CUIT con o sin guiones, etc.
@@ -63,6 +66,27 @@ Reglas:
 - Servicios públicos (luz, gas, agua, internet, teléfono) -> categoria "servicios". Materiales o descartables odontológicos -> "insumos". Técnico/laboratorio dental -> "honorarios". AFIP, ingresos brutos, tasas -> "impuestos". Sistemas o suscripciones -> "software".
 - items: hasta 30 renglones; si el ticket no detalla ítems, devolvé [].
 - Si no es un comprobante de gasto: {"error":"no_es_comprobante"}`;
+
+const PROMPT_TRANSFERENCIA = `Sos un experto en leer comprobantes de transferencias bancarias y pagos de billeteras virtuales argentinas (Mercado Pago, homebanking, Ualá, Brubank, MODO, etc.). El comprobante es de un pago que RECIBE un consultorio odontológico de un paciente. Devolvé JSON puro con estas claves exactas:
+
+{
+  "pagador": nombre de quien ENVÍA el dinero (titular de la cuenta de origen / "De" / "Remitente" / "Origen"), o null,
+  "cuitPagador": CUIT/CUIL/DNI del pagador (solo dígitos) o null,
+  "destinatario": nombre de quien RECIBE el dinero (titular de la cuenta destino / "Para" / "Destino"), o null,
+  "monto": número (importe transferido, sin separadores de miles, punto decimal) o null,
+  "moneda": "Pesos" | "Dólares",
+  "fecha": "DD/MM/AAAA" o null,
+  "hora": "HH:MM" o null,
+  "banco": banco o billetera (ej "Mercado Pago", "Banco Galicia") o null,
+  "numeroOperacion": número o código de operación / referencia / comprobante, o null,
+  "concepto": concepto o motivo que escribió quien pagó, o null
+}
+
+Reglas:
+- No confundas pagador y destinatario: el pagador es quien manda la plata.
+- Si un dato no se ve, usá null. No inventes.
+- Los montos argentinos usan punto para miles y coma para decimales: "30.000,00" -> 30000.
+- Si no es un comprobante de transferencia o pago: {"error":"no_es_transferencia"}`;
 
 // ── Normalización (pura) ─────────────────────────────────────────────────────
 
@@ -158,6 +182,29 @@ function normalizarFactura(raw) {
   };
 }
 
+function normalizarHora(value) {
+  const m = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+  return `${m[1].padStart(2, '0')}:${m[2]}`;
+}
+
+function normalizarTransferencia(raw) {
+  const r = raw || {};
+  const dni = String(r.cuitPagador || '').replace(/\D/g, '');
+  return {
+    pagador: textoCorto(r.pagador, 80),
+    cuitPagador: dni.length === 11 ? normalizarCuit(dni) : (dni.length >= 7 ? dni : null),
+    destinatario: textoCorto(r.destinatario, 80),
+    monto: parsearMonto(r.monto),
+    moneda: /d[oó]lar|usd|u\$s/i.test(String(r.moneda || '')) ? 'Dólares' : 'Pesos',
+    fecha: parsearFecha(r.fecha),
+    hora: normalizarHora(r.hora),
+    banco: textoCorto(r.banco, 60),
+    numeroOperacion: textoCorto(r.numeroOperacion, 40),
+    concepto: textoCorto(r.concepto, 80),
+  };
+}
+
 function normalizarClasificacion(raw) {
   const tipo = String(raw?.tipo || '').trim().toLowerCase();
   const confianza = Number(raw?.confianza);
@@ -241,10 +288,25 @@ async function extraerFactura(buffer, mimeType = 'image/jpeg') {
   return { factura: normalizarFactura(r.data) };
 }
 
+async function extraerTransferencia(buffer, mimeType = 'image/jpeg') {
+  if (!GEMINI_API_KEY) return { error: 'vision_no_configurada' };
+  const parte = await prepararParte(buffer, mimeType, 1600);
+  const r = await llamarGemini(
+    FALLBACK_MODELS, PROMPT_TRANSFERENCIA, parte,
+    'Extraé los datos de la transferencia. Solo JSON válido.', 1024
+  );
+  if (!r) return null;
+  if (r.error) return r;
+  if (r.data?.error === 'no_es_transferencia') return { error: 'no_es_transferencia' };
+  return { transferencia: normalizarTransferencia(r.data) };
+}
+
 module.exports = {
   clasificarDocumento,
   extraerFactura,
+  extraerTransferencia,
   normalizarFactura,
+  normalizarTransferencia,
   normalizarClasificacion,
   parsearMonto,
   parsearFecha,

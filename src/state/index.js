@@ -73,6 +73,9 @@ const pendingAgendaFecha      = new TTLMap();
 const pendingAgendaDuplicados = new TTLMap();
 const pendingIngresoPacientes = new TTLMap();
 const pendingTurnoEdits       = new TTLMap();
+// Transferencia leída de una foto/PDF: espera que el usuario elija qué pendiente
+// cobrar (o cargarla como ingreso nuevo).
+const pendingTransferencias   = new TTLMap(10 * 60 * 1000);
 // Foto/PDF que la IA no pudo clasificar: espera que el usuario elija qué es.
 const pendingDocumentoTipo    = new TTLMap(5 * 60 * 1000);
 
@@ -113,6 +116,7 @@ module.exports = {
   pendingAgendaFecha,
   pendingAgendaDuplicados,
   pendingDocumentoTipo,
+  pendingTransferencias,
   pendingIngresoPacientes,
   pendingTurnoEdits,
   docsCache,

@@ -242,6 +242,50 @@ function facturaAEntities(factura, { idComprobante, duplicado = null } = {}) {
   };
 }
 
+// Transferencia recibida -> `entities` de un ingreso ya Cobrado por
+// transferencia, que pasa por la misma confirmación que un cobro escrito.
+function transferenciaAEntities(t, { idComprobante, hash = '', archivo = '', mimeType = '', duplicado = null } = {}) {
+  const pagador = t.pagador || null;
+  return {
+    tipo: 'ingreso',
+    descripcion: pagador ? `Transferencia - ${pagador}` : 'Transferencia recibida',
+    monto: t.monto,
+    moneda: t.moneda || 'Pesos',
+    metodo_pago: 'transferencia',
+    estado: 'Cobrado',
+    categoria: null,
+    pacienteNombre: pagador,
+    pagadorNombre: pagador,
+    profesionalNombre: null,
+    proveedorNombre: null,
+    tratamientoNombre: null,
+    fechaPrestacion: null,
+    fechaVencimiento: null,
+    fecha: t.fecha || null,
+    ambito: 'consultorio',
+    referenciaId: `${PREFIJO_REFERENCIA}${idComprobante}`,
+    comprobante: {
+      id: idComprobante,
+      tipo: 'transferencia',
+      tipoDocumento: 'transferencia',
+      letra: null,
+      emisor: pagador,
+      cuit: t.cuitPagador,
+      numero: t.numeroOperacion,
+      fechaEmision: t.fecha,
+      fechaVencimiento: null,
+      total: t.monto,
+      moneda: t.moneda,
+      items: [],
+      rubro: t.banco,
+      hash,
+      archivo,
+      mimeType,
+      duplicado,
+    },
+  };
+}
+
 // Texto que se le pasa al detector de ámbito (personal vs consultorio): el
 // rubro y el emisor dicen más que la descripción ("supermercado", "YPF").
 function textoParaAmbito(factura) {
@@ -261,5 +305,6 @@ module.exports = {
   registrarComprobante,
   decidirEstado,
   facturaAEntities,
+  transferenciaAEntities,
   textoParaAmbito,
 };

@@ -24,6 +24,8 @@ const {
   getRowHora,
   getRowTipo,
   getRowMetodoPago,
+  getRowPaciente,
+  getRowPagador,
 } = require('../utils/sheet-row');
 
 function normalizarParaMatch(str) {
@@ -505,6 +507,37 @@ async function buscarCandidatosCobrar(userId, nombre) {
   }
 
   return { tipo: 'picker', filas: pendientes, montoCobrado };
+}
+
+const PALABRAS_IGNORADAS_NOMBRE = new Set(['de', 'del', 'la', 'los', 'las', 'sa', 'srl', 'sas', 'y']);
+
+// Pendientes que probablemente son de este pagador (nombre tal como aparece
+// en el comprobante de transferencia, ej "JUAN CARLOS PEREZ"). Compara cada
+// palabra del nombre contra descripción/paciente/pagador del pendiente; los
+// que coinciden en más palabras van primero. Solo pendientes de la misma
+// moneda (el cobro parcial resta montos, no convierte). Siempre se confirma
+// con el usuario, así que un falso positivo no cobra nada solo.
+async function buscarPendientesDePagador(userId, nombre, { moneda = 'Pesos', limite = 5 } = {}) {
+  const tokens = normalizarParaMatch(nombre || '')
+    .split(/[^a-z0-9]+/)
+    .filter(t => t.length >= 3 && !PALABRAS_IGNORADAS_NOMBRE.has(t));
+  if (tokens.length === 0) return [];
+
+  const filas = await db.getRows(userId);
+  const candidatos = [];
+  for (const f of filas) {
+    if (getRowEstado(f) !== 'Pendiente') continue;
+    if (getRowMoneda(f, 'Pesos') !== moneda) continue;
+    if (getRowTipo(f) === 'Egreso') continue;
+    const texto = [getRowDescripcion(f, ''), getRowPaciente(f, ''), getRowPagador(f, '')].join(' ');
+    const coincidencias = tokens.filter(t => matchPalabraCompleta(texto, t)).length;
+    if (coincidencias > 0) candidatos.push({ fila: f, coincidencias });
+  }
+
+  return candidatos
+    .sort((a, b) => b.coincidencias - a.coincidencias)
+    .slice(0, limite)
+    .map(c => c.fila);
 }
 
 async function ejecutarCobrarFila(userId, fila, montoCobrado) {
@@ -1244,6 +1277,7 @@ module.exports = {
   ejecutarActualizarDolar,
   ejecutarCobrar,
   buscarCandidatosCobrar,
+  buscarPendientesDePagador,
   ejecutarCobrarFila,
   ejecutarEditar,
   ejecutarEliminar,

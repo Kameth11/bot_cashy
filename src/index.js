@@ -77,6 +77,7 @@ require('./handlers/voice');
 require('./handlers/actions');
 require('./handlers/nlp-confirm');
 require('./handlers/cobrar-confirm');
+require('./handlers/comprobante');
 
 // Guardamos el server para poder cerrarlo ordenadamente ante una senal o un
 // error fatal.

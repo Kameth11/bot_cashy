@@ -6,9 +6,15 @@
 // comprobante se registra en la pestaña Comprobantes al tocar "Guardar"
 // (ver registrarComprobanteDesdeEntities, llamado desde handleNlpSave).
 
+const { Markup } = require('telegraf');
+const { bot } = require('../lib/telegraf');
 const { geminiMediaSemaphore } = require('../lib/semaphore');
 const logger = require('../lib/logger');
+const state = require('../state');
 const comprobanteService = require('../services/comprobante.service');
+const cmd = require('../services/command.service');
+const { getRowDescripcion, getRowMonto, getRowMoneda, getRowIdUnico, getRowMetodoPago } = require('../utils/sheet-row');
+const { formatMonto, escapeMarkdown } = require('../utils/formatter');
 
 async function procesarFactura(ctx, archivo) {
   const userId = ctx.from.id;
@@ -59,10 +65,136 @@ async function procesarFactura(ctx, archivo) {
   return mostrarConfirmacion(ctx, conAmbito.entities);
 }
 
-// Fase 2 de PLAN_COMPROBANTES.md.
-async function procesarTransferencia(ctx) {
-  return ctx.reply('💸 Todavía no leo comprobantes de transferencia (llega en la próxima versión). Por ahora cargalo como texto, por ejemplo: `cobré 30000 de Juan por transferencia`.', { parse_mode: 'Markdown' });
+// ── Transferencias de pacientes (fase 2 de PLAN_COMPROBANTES.md) ─────────────
+//
+// Se lee quién pagó y cuánto. Si hay pendientes que parecen de esa persona se
+// ofrece cobrarlos (cobro parcial si la transferencia es menor al saldo); si
+// no, o si el usuario lo prefiere, se carga como ingreso nuevo por la misma
+// confirmación de siempre. Nunca se cobra nada sin que el usuario toque un botón.
+
+async function procesarTransferencia(ctx, archivo) {
+  const userId = ctx.from.id;
+  const { extraerTransferencia } = require('../services/comprobante-vision.service');
+
+  const hash = comprobanteService.hashArchivo(archivo.buffer);
+  const resultado = await geminiMediaSemaphore.run(() => extraerTransferencia(archivo.buffer, archivo.mimeType));
+
+  if (!resultado) return ctx.reply('❌ No pude leer el comprobante. Probá con una captura más clara.');
+  if (resultado.error === 'vision_no_configurada') return ctx.reply('⚠️ La lectura de imágenes no está configurada. Revisá `GEMINI_API_KEY`.');
+  if (resultado.error === 'vision_dependencia_faltante') return ctx.reply('⚠️ Falta instalar la dependencia de Vision. Revisá `@google/generative-ai`.');
+  if (resultado.error === 'no_es_transferencia') {
+    return ctx.reply('⚠️ No parece un comprobante de transferencia. Si es un cobro, escribilo, por ejemplo: `cobré 30000 de Juan por transferencia`.', { parse_mode: 'Markdown' });
+  }
+
+  const t = resultado.transferencia;
+  if (!t.monto) {
+    return ctx.reply('⚠️ Leí el comprobante pero no encontré el monto. Probá con una captura donde se vea el importe, o escribilo: `cobré 30000 de Juan por transferencia`.', { parse_mode: 'Markdown' });
+  }
+
+  const duplicado = await comprobanteService.buscarDuplicado(userId, {
+    hash, cuit: t.cuitPagador, emisor: t.pagador, numero: t.numeroOperacion, total: t.monto,
+  });
+
+  const idComprobante = comprobanteService.generarIdComprobante();
+  const entities = comprobanteService.transferenciaAEntities(t, {
+    idComprobante,
+    hash,
+    archivo: archivo.fileId ? `tg:${archivo.fileId}` : '',
+    mimeType: archivo.mimeType,
+    duplicado: duplicado ? { motivo: duplicado.motivo, fechaCarga: duplicado.comprobante.fechaCarga } : null,
+  });
+
+  let pendientes = [];
+  try {
+    pendientes = await cmd.buscarPendientesDePagador(userId, t.pagador, { moneda: t.moneda });
+  } catch (err) {
+    logger.warn('Comprobantes', 'No se pudieron buscar pendientes del pagador', { userId, err: err.message });
+  }
+
+  logger.info('Comprobantes', 'Transferencia leída', {
+    userId, idComprobante, pendientes: pendientes.length, duplicado: duplicado?.motivo || null,
+  });
+
+  const { mostrarConfirmacion } = require('./nlp-confirm');
+  if (pendientes.length === 0) return mostrarConfirmacion(ctx, entities);
+
+  const monto = formatMonto(t.monto, t.moneda);
+  const lineas = [
+    '💸 *Transferencia leída*',
+    '',
+    `👤 ${escapeMarkdown(t.pagador || 'Sin nombre')}`,
+    `💰 ${monto}`,
+  ];
+  if (t.fecha) lineas.push(`📅 ${t.fecha}`);
+  if (t.banco || t.numeroOperacion) {
+    lineas.push(`🏦 ${escapeMarkdown([t.banco, t.numeroOperacion && `op. ${t.numeroOperacion}`].filter(Boolean).join(' · '))}`);
+  }
+  if (duplicado) lineas.push('', '⚠️ *Ojo:* este comprobante parece ya cargado antes.');
+  lineas.push('', '⏳ Encontré pendientes que podrían ser de esta persona. ¿Cuál cobro?');
+
+  const botones = pendientes.map((f, i) => {
+    const desc = getRowDescripcion(f, '');
+    const label = `${desc.length > 22 ? desc.substring(0, 22) + '…' : desc} · ${formatMonto(getRowMonto(f, 0), getRowMoneda(f, 'Pesos'))}`;
+    return [Markup.button.callback(label, `transf_cobrar_${i}`)];
+  });
+  botones.push([Markup.button.callback('➕ Cargar como ingreso nuevo', 'transf_nuevo')]);
+  botones.push([Markup.button.callback('❌ Cancelar', 'transf_cancel')]);
+
+  await ctx.reply(lineas.join('\n'), { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botones) });
+  // El estado se setea recién después de que el mensaje salió bien.
+  state.pendingTransferencias.set(userId, { entities, filas: pendientes });
 }
+
+bot.action(/^transf_cobrar_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingTransferencias.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ Sesión expirada. Mandá la foto de nuevo.');
+
+  const fila = pending.filas[Number(ctx.match[1])];
+  if (!fila) return ctx.editMessageText('❌ Elemento no encontrado.');
+  state.pendingTransferencias.delete(userId);
+
+  try {
+    const { entities } = pending;
+    const saldo = Math.abs(getRowMonto(fila, 0));
+    const parcial = entities.monto < saldo;
+    const sobrante = entities.monto > saldo ? Math.round((entities.monto - saldo) * 100) / 100 : 0;
+
+    // Cobro total: queda como cobrado por transferencia. En el parcial el
+    // pendiente sigue abierto, así que no se le pone método de pago.
+    if (!parcial && !getRowMetodoPago(fila, '')) fila.set('MetodoPago', 'transferencia');
+
+    let mensaje = await cmd.ejecutarCobrarFila(userId, fila, parcial ? entities.monto : null);
+    if (sobrante > 0) {
+      mensaje += `\n\nℹ️ La transferencia fue ${formatMonto(sobrante, entities.moneda)} mayor al pendiente. Si el resto es otro cobro, cargalo aparte.`;
+    }
+
+    await registrarComprobanteDesdeEntities(userId, entities, { idMovimiento: getRowIdUnico(fila, '') || null });
+    return ctx.editMessageText(mensaje, { parse_mode: 'Markdown' });
+  } catch (err) {
+    logger.error('Comprobantes', 'Error al cobrar con transferencia', { userId, err: err.message });
+    return ctx.editMessageText('❌ Error al cobrar. Intentá de nuevo.');
+  }
+});
+
+bot.action('transf_nuevo', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const pending = state.pendingTransferencias.get(userId);
+  if (!pending) return ctx.editMessageText('⚠️ Sesión expirada. Mandá la foto de nuevo.');
+  state.pendingTransferencias.delete(userId);
+
+  await ctx.editMessageText('➕ La cargo como ingreso nuevo.').catch(() => {});
+  const { mostrarConfirmacion } = require('./nlp-confirm');
+  return mostrarConfirmacion(ctx, pending.entities);
+});
+
+bot.action('transf_cancel', async (ctx) => {
+  await ctx.answerCbQuery();
+  state.pendingTransferencias.delete(ctx.from.id);
+  return ctx.editMessageText('❌ Cancelado.');
+});
 
 // Se llama al guardar el movimiento (nlp-confirm.js). Un error acá no puede
 // deshacer ni frenar el movimiento ya guardado: se loguea y sigue.

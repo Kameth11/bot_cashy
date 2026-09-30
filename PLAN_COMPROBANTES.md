@@ -128,8 +128,8 @@ igual (nunca se pierde la carga por el archivo).
 
 | Fase | Contenido | Estimado |
 |---|---|---|
-| 1 | Clasificación + factura/ticket por foto y PDF en Telegram, confirmación, pendiente/vencimiento, ámbito personal, permisos, pestaña Comprobantes, duplicados, tests | 2–2,5 días |
-| 2 | Transferencias de pacientes + match con pendientes | 1 día |
+| 1 ✅ | Clasificación + factura/ticket por foto y PDF en Telegram, confirmación, pendiente/vencimiento, ámbito personal, permisos, pestaña Comprobantes, duplicados, tests | 2–2,5 días |
+| 2 ✅ | Transferencias de pacientes + match con pendientes (2026-09-30: `extraerTransferencia`, `buscarPendientesDePagador`, botones cobrar/ingreso nuevo/cancelar, cobro parcial; duplicados por hash o CUIT/nombre + n° de operación + monto) | 1 día |
 | 3 | Archivo (Supabase Storage / file_id de Telegram) + migración 011 + ver 📎 en el dashboard | 1,5 días |
 | 4 | Subir comprobante desde el dashboard | 1,5 días |
 | 5 | Ítems: guardado en `comprobante_items` y vista de detalle | 1 día |
