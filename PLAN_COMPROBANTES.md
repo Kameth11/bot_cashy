@@ -156,3 +156,11 @@ las fotos de agenda suman solo la clasificación. Todo bajo
 - Permisos: los mismos que cargar/ver movimientos; personal solo dueño.
 - Extras v1: detección de duplicados, ver comprobante en el dashboard,
   subir desde el dashboard, ítems por factura.
+
+## Ideas para más adelante
+
+- **Transferencias entre cuentas propias** (2026-09-30): mover plata entre tus
+  propias cuentas no es ingreso ni gasto. Hoy una foto así se carga como un
+  ingreso (o un gasto, si se cambia el tipo a mano). Se decidió no resolverlo
+  ahora porque no debería ser un caso común; si empieza a serlo, agregar una
+  sección/tipo "Transferencia propia" que no sume a ingresos ni a egresos.
