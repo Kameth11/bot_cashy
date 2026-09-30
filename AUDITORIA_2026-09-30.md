@@ -115,6 +115,10 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
 
 ---
 
+## Pendientes a cargo del dueño (preguntarle en cada sesión hasta que los confirme)
+- [ ] Supabase → Settings → API → **Max rows**: ¿está en 1000? (ítem 2)
+- [ ] Railway: ¿agrega exactamente 1 salto de proxy? Si no, setear `TRUST_PROXY_HOPS` (ítem 1)
+
 ## Orden sugerido
 1. **Ya:** ítem 1 (`trust proxy`), verificar `max-rows` (2), ítem 5, `npm audit fix` (10).
 2. **Antes del 2.º cliente:** consultas por id/rango (2), retry + reconciliación
