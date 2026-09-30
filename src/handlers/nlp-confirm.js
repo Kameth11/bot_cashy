@@ -270,7 +270,12 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
     }
 
     const extra = { parse_mode: 'Markdown' };
-    if (DASHBOARD_URL) extra.reply_markup = { inline_keyboard: [[{ text: '📊 Ver Dashboard', url: DASHBOARD_URL }]] };
+    // Lo personal vive en su propia sección (/personal, el botón 🏠 Personal de la
+    // barra): el link tiene que llevar ahí, no a la pantalla del consultorio,
+    // donde estos movimientos nunca aparecen.
+    if (DASHBOARD_URL) {
+      extra.reply_markup = { inline_keyboard: [[{ text: '🏠 Ver en Personal', url: `${DASHBOARD_URL.replace(/\/+$/, '')}/personal` }]] };
+    }
 
     // El resumen personal (bot y dashboard) muestra un mes por vez: si la fecha
     // del movimiento (p. ej. la de un comprobante viejo) cae en otro mes, no

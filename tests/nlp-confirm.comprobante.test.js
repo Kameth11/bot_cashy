@@ -10,7 +10,7 @@ jest.mock('telegraf', () => ({
   },
 }));
 jest.mock('../src/lib/logger', () => ({ audit: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
-jest.mock('../src/config', () => ({ AUTHORIZED_USER_ID: 1111, ALLOWED_EMAILS: [], CODIGO_EXPIRACION_HORAS: 24, DASHBOARD_URL: null }));
+jest.mock('../src/config', () => ({ AUTHORIZED_USER_ID: 1111, ALLOWED_EMAILS: [], CODIGO_EXPIRACION_HORAS: 24, DASHBOARD_URL: 'https://cashy.example.com/' }));
 
 jest.mock('../src/services/command.service', () => ({ registrarMovimientoDesdeNLP: jest.fn() }));
 jest.mock('../src/services/personal.service', () => ({
@@ -126,4 +126,16 @@ describe('guardar personal: aviso cuando la fecha cae en otro mes', () => {
     expect(await guardarConFecha('15/09/2026', 'Ingreso')).toContain('Ingreso personal registrado');
     expect(await guardarConFecha('15/09/2026', 'Egreso')).toContain('Gasto personal registrado');
   });
+});
+
+test('el botón del mensaje de guardado personal lleva a la sección Personal, no al consultorio', async () => {
+  personalService.registrarMovimientoPersonal.mockResolvedValue({
+    movimiento: { idMov: 'p1', descripcion: 'Nafta', monto: 5000, moneda: 'Pesos', categoria: 'transporte', tipo: 'Egreso', fecha: '15/09/2026' },
+    viaje: null,
+  });
+  state.pendingNlpMovimientos.set(2222, { entities: entitiesFactura({ ambito: 'personal', categoria: 'transporte' }) });
+  const ctx = ctxFor(2222);
+  await handleNlpSave(ctx);
+  const boton = ctx.editMessageText.mock.calls[0][1].reply_markup.inline_keyboard[0][0];
+  expect(boton.url).toBe('https://cashy.example.com/personal');
 });
