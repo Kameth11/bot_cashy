@@ -1,5 +1,5 @@
 const { USE_SUPABASE } = require('../config');
-const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
+const { crearDocumento } = require('../lib/google');
 const { SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const state = require('../state');
@@ -39,8 +39,34 @@ function normalizarHeader(header) {
     .replace(/[^a-z0-9]/g, '');
 }
 
+// Verificar/completar los encabezados cuesta una llamada a la API, y se hacía
+// en CADA escritura. Una vez verificada, una pestaña se da por buena unos
+// minutos (las columnas que falten se agregarían en la próxima verificación).
+const ESTRUCTURA_TTL_MS = 10 * 60 * 1000;
+const estructuraVerificada = new Map(); // "spreadsheetId:sheetId" -> ts
+
+function claveEstructura(sheet) {
+  const spreadsheetId = sheet._spreadsheet?.spreadsheetId;
+  return spreadsheetId && sheet.sheetId != null ? `${spreadsheetId}:${sheet.sheetId}` : null;
+}
+
 async function ensureSheetStructure(sheet) {
   if (!sheet) return { created: [], existing: [] };
+
+  const clave = claveEstructura(sheet);
+  const ts = clave && estructuraVerificada.get(clave);
+  if (ts && Date.now() - ts < ESTRUCTURA_TTL_MS) {
+    let cached = null;
+    try { cached = sheet.headerValues; } catch (_) { /* no cargados: se verifica normal */ }
+    if (cached) return { created: [], existing: cached };
+  }
+
+  const resultado = await verificarEstructura(sheet);
+  if (clave) estructuraVerificada.set(clave, Date.now());
+  return resultado;
+}
+
+async function verificarEstructura(sheet) {
 
   const requiredHeaders = REQUIRED_SHEET_HEADERS;
 
@@ -131,7 +157,7 @@ async function getDocCliente(userId, fresh = false) {
   if (!sheetId) return null;
 
   if (fresh || !state.docsCache.has(sheetId)) {
-    const docCliente = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
+    const docCliente = crearDocumento(sheetId);
     await docCliente.loadInfo();
     state.docsCache.set(sheetId, docCliente);
   }

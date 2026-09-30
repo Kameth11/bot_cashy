@@ -1,4 +1,4 @@
-const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
+const { crearDocumento } = require('../lib/google');
 const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, DASHBOARD_URL, ALLOWED_EMAILS, AUTHORIZED_USER_ID } = require('../config');
 const state = require('../state');
 const {
@@ -175,7 +175,7 @@ async function handleSheetIdStep(userId, text, registro) {
   const sheetId = sheetValidation.valor;
 
   try {
-    const docTest = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
+    const docTest = crearDocumento(sheetId);
     await docTest.loadInfo();
     const firstSheet = docTest.sheetsByIndex[0];
     if (!firstSheet) {

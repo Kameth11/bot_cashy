@@ -7,7 +7,7 @@
 
 let mockLoadInfoCalls = 0;
 jest.mock('../src/lib/google', () => ({
-  GoogleSpreadsheet: jest.fn().mockImplementation((sheetId) => ({
+  crearDocumento: jest.fn().mockImplementation((sheetId) => ({
     sheetId,
     loadInfo: jest.fn(async () => { mockLoadInfoCalls++; }),
     sheetsByIndex: [{ id: 'sheet0' }],

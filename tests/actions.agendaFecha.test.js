@@ -14,7 +14,7 @@ jest.mock('telegraf', () => ({
   },
 }));
 
-jest.mock('../src/lib/google', () => ({ GoogleSpreadsheet: jest.fn(), serviceAccountAuth: {} }));
+jest.mock('../src/lib/google', () => ({ GoogleSpreadsheet: jest.fn(), crearDocumento: jest.fn(), serviceAccountAuth: {} }));
 jest.mock('../src/auth', () => ({ esAdminOriginal: jest.fn(() => false), obtenerClientePorUserId: jest.fn(() => null) }));
 jest.mock('../src/services/cliente.service', () => ({ clientes: {} }));
 jest.mock('../src/services/sheet.service', () => ({ invalidateCache: jest.fn() }));

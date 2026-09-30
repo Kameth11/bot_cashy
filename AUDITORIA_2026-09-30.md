@@ -56,7 +56,7 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   Si el `max-rows` del proyecto fuera < 1000 el paginado corta antes: mantener
   `MOVIMIENTOS_PAGE_SIZE` <= `max-rows`.
 
-- [ ] **3. Google Sheets como cuello de botella** **[V]/[?]**
+- [~] **3. Google Sheets como cuello de botella** **[V]/[?]**
   Cuota de Google ≈ 60 req/min por usuario y por proyecto, y todos los tenants
   usan la misma service account **[?]**. Cada escritura cuesta 2–3 llamadas
   (`ensureSheetStructure` hace `loadHeaderRow` en cada `addRow`, más el `addRow`
@@ -67,6 +67,18 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   `USE_SUPABASE=false` Sheets es la ruta primaria y el techo baja mucho.
   *Arreglo:* backoff con reintentos, cola/reconciliación del respaldo, no
   llamar `ensureSheetStructure` en cada escritura, cachear/acotar lecturas.
+  **Parcial (2026-09-30):**
+  (a) `src/lib/google.js` → `crearDocumento()` instala reintentos con backoff +
+  jitter y `Retry-After` sobre la Sheets API (429/503 en cualquier método; otros
+  5xx y errores de red solo en GET, para no duplicar filas). Único punto de
+  creación de `GoogleSpreadsheet`. Test: `lib.google-retry`.
+  (b) Llamadas por escritura: de ~6 a 2 (color en un solo `batchUpdate` en vez
+  de uno por columna; no se releen encabezados; `ensureSheetStructure` cachea 10
+  min por pestaña). Test: `sheet.service.ensureStructure`.
+  **Falta:** cola persistente/reconciliación del respaldo (si tras 4 reintentos
+  falla, sigue siendo solo `console.error`); cache/acotado de `getRows()` en
+  agenda, personal y comprobantes; confirmar la cuota real en la consola de
+  Google Cloud **[?]**.
 
 - [ ] **4. Ciclo de vida del proceso e instancia única** **[V]**
   - Sin apagado ordenado: en SIGTERM solo `bot.stop`. No se cierra el servidor

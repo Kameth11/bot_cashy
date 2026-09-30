@@ -41,7 +41,7 @@ jest.mock('../src/handlers/nlp-confirm', () => ({
 jest.mock('../src/handlers/commands/salir', () => ({ procesarConfirmacionSalir: jest.fn() }));
 jest.mock('../src/services/registration.service', () => ({ handlePendingRegistration: jest.fn() }));
 
-jest.mock('../src/lib/google', () => ({ GoogleSpreadsheet: jest.fn(), serviceAccountAuth: {} }));
+jest.mock('../src/lib/google', () => ({ GoogleSpreadsheet: jest.fn(), crearDocumento: jest.fn(), serviceAccountAuth: {} }));
 jest.mock('../src/services/sheet.service', () => ({ invalidateCache: jest.fn() }));
 jest.mock('../src/services/movimiento.service', () => ({ convertirAPesos: jest.fn() }));
 jest.mock('../src/services/cotizacion.service', () => ({ obtenerCotizacionDolar: jest.fn() }));

@@ -1,6 +1,6 @@
 const { bot } = require('../lib/telegraf');
 const { Markup } = require('telegraf');
-const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
+const { crearDocumento } = require('../lib/google');
 const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const clienteService = require('../services/cliente.service');
@@ -236,7 +236,7 @@ bot.action('confirm_reset', async (ctx) => {
 
   if (cliente && cliente.sheetId) {
     try {
-      const docToClear = new GoogleSpreadsheet(cliente.sheetId, serviceAccountAuth);
+      const docToClear = crearDocumento(cliente.sheetId);
       await docToClear.loadInfo();
       const sheetToClear = docToClear.sheetsByIndex[0];
       const rows = await sheetToClear.getRows();

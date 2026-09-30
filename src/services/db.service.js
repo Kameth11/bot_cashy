@@ -4,7 +4,6 @@ const { resolveTenantId, invalidateTenantCache } = require('./tenant.service');
 const { resolveOrCreateTenantId } = require('./tenant-provisioning.service');
 const { USE_SUPABASE, SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
-const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 const { emitMovimientosUpdated, onMovimientosUpdated } = require('./events.service');
 const { withUserWriteLock, runInBackground } = require('../lib/write-queue');

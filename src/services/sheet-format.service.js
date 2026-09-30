@@ -48,9 +48,17 @@ async function aplicarColorMontoEnFila(fila, monto, estado) {
   }
 
   const sheet = fila._worksheet;
-  await sheet.loadHeaderRow();
+  // Los encabezados ya los deja cargados ensureSheetStructure/addRow (que
+  // refrescan cada tanto): releerlos acá era una llamada extra a la API por
+  // escritura. Solo se cargan si todavía no están.
+  let headers;
+  try { headers = sheet.headerValues; } catch (_) { headers = null; }
+  if (!headers) {
+    await sheet.loadHeaderRow();
+    headers = sheet.headerValues;
+  }
 
-  const columnIndexes = sheet.headerValues.reduce((acc, header, index) => {
+  const columnIndexes = headers.reduce((acc, header, index) => {
     const normalized = normalizarHeader(header);
     if (['monto', 'montopesos', 'montoenpesos', 'estado'].includes(normalized)) {
       acc.push(index);
@@ -65,8 +73,10 @@ async function aplicarColorMontoEnFila(fila, monto, estado) {
   const montoNumerico = parseFloat(monto);
   const { foregroundColor, backgroundColor } = getMontoStyle(Number.isFinite(montoNumerico) ? montoNumerico : 0, estado);
 
-  for (const columnIndex of columnIndexes) {
-    await sheet._makeSingleUpdateRequest('repeatCell', {
+  // Un solo batchUpdate para todas las columnas (antes: una llamada por
+  // columna, hasta 3 por escritura).
+  const requests = columnIndexes.map(columnIndex => ({
+    repeatCell: {
       range: {
         sheetId: sheet.sheetId,
         startRowIndex: fila.rowNumber - 1,
@@ -89,8 +99,10 @@ async function aplicarColorMontoEnFila(fila, monto, estado) {
         },
       },
       fields: 'userEnteredFormat.backgroundColor,userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.foregroundColorStyle',
-    });
-  }
+    },
+  }));
+
+  await sheet._spreadsheet._makeBatchUpdateRequest(requests);
 }
 
 module.exports = {
