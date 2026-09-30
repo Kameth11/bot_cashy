@@ -34,6 +34,25 @@ function obtenerClientePorUserId(userId) {
     return { userId: ownerId, ownerId, isOwner: false, ...clientes[ownerId] };
   }
 
+  // Perfil "sombra" de invitado: ensureProfile crea una fila en `profiles` para
+  // cualquiera que cargue un movimiento, invitados incluidos, con el sheet_id
+  // del dueño. Al recargar clientes desde Supabase esa fila vuelve como un
+  // registro propio SIN ownerId, y el bucle de abajo (que recorre las claves en
+  // orden numérico) hacía que un invitado con ID menor al del dueño resolviera
+  // como DUEÑO de ese sheet, con todos los permisos. Si otro dueño lo lista en
+  // usuarios[] y comparten sheet (o el perfil no tiene sheet propio), es
+  // invitado de ese dueño.
+  if (propio) {
+    for (const [ownerId, cliente] of Object.entries(clientes)) {
+      if (ownerId === strId) continue;
+      const lista = cliente.usuarios || [];
+      if (!(lista.includes(strId) || lista.includes(numId))) continue;
+      if (propio.sheetId == null || propio.sheetId === cliente.sheetId) {
+        return { userId: ownerId, ownerId, isOwner: false, ...cliente };
+      }
+    }
+  }
+
   for (const [ownerId, cliente] of Object.entries(clientes)) {
     if (parseInt(ownerId) === numId) return { userId: ownerId, ownerId: ownerId, isOwner: true, ...cliente };
     if (cliente.usuarios && (cliente.usuarios.includes(strId) || cliente.usuarios.includes(numId))) {

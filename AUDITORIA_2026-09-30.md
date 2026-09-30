@@ -115,12 +115,24 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   anti-fórmula, que el POST sí aplica); `monto` acepta `NaN`; **no se recalcula
   `MontoPesos`** al cambiar monto o moneda → balances inconsistentes tras editar.
 
-- [ ] **6. Registro de sheet sin verificar dueño** **[V, por lectura]**
+- [x] **6. Registro de sheet sin verificar dueño** **[V, por lectura]**
   `handleSheetIdStep` (`registration.service.js`) no chequea que el `sheetId` no
   pertenezca ya a otro dueño, y `resolveOrCreateTenantId` agrupa por `sheet_id`:
   registrar el ID de otro consultorio deja al usuario dentro de ese tenant. Lo
   mitiga la aprobación manual y la dificultad de adivinar el ID. Cerrar antes de
   self-service. No se explotó, solo se leyó el flujo.
+  **Resuelto (2026-09-30):** `clienteService.sheetIdEnUsoPorOtro` + chequeo en
+  `handleSheetIdStep` (también rechaza el sheet del admin), antes de tocar Google.
+  Tests: `cliente.service.sheetIdEnUso`, `registration.sheetIdEnUso`.
+  **Hallazgo relacionado (nuevo, grave, resuelto):** `ensureProfile` crea una fila
+  en `profiles` para el invitado con el `sheet_id` del dueño; al recargar desde
+  Supabase volvía como registro propio sin `ownerId`, y un invitado con ID
+  numérico **menor** al del dueño resolvía como **dueño con todos los permisos**
+  (reproducido con la función real). `obtenerClientePorUserId` ahora lo trata
+  como invitado si otro dueño lo lista en `usuarios[]` y comparten sheet (o no
+  tiene sheet propio). Test: `auth.guestShadowProfile`. Pendiente: que
+  `ensureProfile` no cree esas filas sombra y revisar si hay invitados afectados
+  en producción (perfiles con `sheet_id` igual al de su dueño).
 
 - [ ] **7. Puntos ciegos del guard de aislamiento** **[V]**
   `scripts/check-tenant-isolation.js` busca `getSupabase().from(...)`; las

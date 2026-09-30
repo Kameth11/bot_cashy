@@ -215,6 +215,20 @@ async function setModoFullIA(ownerId, enabled) {
   return true;
 }
 
+// ¿Este sheet ya pertenece a otro consultorio? Se usa al registrar un sheet
+// para impedir que alguien "adopte" el sheet (y, vía sheet_id, el tenant) de
+// otro. Se ignoran las cuentas del propio usuario y sus invitados (que
+// comparten su sheet).
+function sheetIdEnUsoPorOtro(sheetId, userId) {
+  const propioId = String(userId);
+  const propios = new Set((clientes[propioId]?.usuarios || []).map(String));
+  for (const [id, c] of Object.entries(clientes)) {
+    if (id === propioId || propios.has(id)) continue;
+    if (c && c.sheetId === sheetId) return true;
+  }
+  return false;
+}
+
 async function getCliente(userId) {
   if (USE_SUPABASE && isAvailable()) {
     const supabase = getSupabase();
@@ -327,6 +341,7 @@ module.exports = {
   cargarClientes,
   guardarClientes,
   getCliente,
+  sheetIdEnUsoPorOtro,
   eliminarCliente,
   setModoFullIA,
   getPermisos,

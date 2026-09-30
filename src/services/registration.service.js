@@ -1,5 +1,5 @@
 const { crearDocumento } = require('../lib/google');
-const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, DASHBOARD_URL, ALLOWED_EMAILS, AUTHORIZED_USER_ID } = require('../config');
+const { GOOGLE_SERVICE_ACCOUNT_EMAIL, MAX_INTENTOS_EMAIL, DASHBOARD_URL, ALLOWED_EMAILS, AUTHORIZED_USER_ID, SPREADSHEET_ID } = require('../config');
 const state = require('../state');
 const {
   esAdminOriginal,
@@ -173,6 +173,15 @@ async function handleSheetIdStep(userId, text, registro) {
     return { message: '⚠️ El ID del spreadsheet parece muy corto. Intenta de nuevo:' };
   }
   const sheetId = sheetValidation.valor;
+
+  // Un sheet pertenece a un solo consultorio: si ya lo tiene otra cuenta (o es
+  // el del admin), registrarlo dejaría a este usuario dentro de ese tenant
+  // (los tenants se agrupan por sheet_id).
+  const esSheetDelAdmin = SPREADSHEET_ID && sheetId === SPREADSHEET_ID && !esAdminOriginal(userId);
+  if (esSheetDelAdmin || clienteService.sheetIdEnUsoPorOtro(sheetId, userId)) {
+    console.warn(`Registro rechazado: sheetId ya en uso (userId=${userId})`);
+    return { message: '❌ Ese Google Sheet ya está en uso por otra cuenta. Creá uno propio (o pedile al administrador si creés que es un error) e ingresá su ID:' };
+  }
 
   try {
     const docTest = crearDocumento(sheetId);
