@@ -6,7 +6,7 @@ const { USE_SUPABASE, SPREADSHEET_ID } = require('../config');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { GoogleSpreadsheet, serviceAccountAuth } = require('../lib/google');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
-const { emitMovimientosUpdated } = require('./events.service');
+const { emitMovimientosUpdated, onMovimientosUpdated } = require('./events.service');
 const { withUserWriteLock, runInBackground } = require('../lib/write-queue');
 const { getRowIdUnico, formatDateValue } = require('../utils/sheet-row');
 const {
@@ -101,9 +101,7 @@ function getSheetId(userId) {
 }
 
 function invalidateCache(userId) {
-  if (USE_SUPABASE) {
-    // no cache needed with Supabase
-  }
+  datosCache.delete(datosCacheKey(userId));
   getSheetService().invalidateCache(userId);
 }
 
@@ -922,7 +920,39 @@ function buildV2SupabaseRowWrapper(userId, row) {
   };
 }
 
-async function obtenerDatosSheet(userId) {
+// Cache corto + single-flight de la lectura completa de movimientos (path
+// Supabase). Comandos del bot (/balance, /hoy, /semana...), el dashboard y
+// /api/profesionales leen TODO el historial en cada llamada; sin esto N
+// lecturas simultáneas (o un refresh repetido) son N x (historial/1000)
+// requests a la DB. Keyeado por dueño (dueño e invitados comparten datos) y
+// invalidado en cada escritura vía emitMovimientosUpdated.
+const DATOS_CACHE_TTL_MS = 15 * 1000;
+const datosCache = new Map(); // ownerId -> { ts, promise }
+
+function datosCacheKey(userId) {
+  const cliente = obtenerClientePorUserId(userId);
+  return String(cliente ? cliente.ownerId : userId);
+}
+
+onMovimientosUpdated(userId => { datosCache.delete(datosCacheKey(userId)); });
+
+function obtenerDatosSheet(userId) {
+  if (!USE_SUPABASE) return getSheetService().obtenerDatosSheet(userId);
+
+  const key = datosCacheKey(userId);
+  const hit = datosCache.get(key);
+  if (hit && Date.now() - hit.ts < DATOS_CACHE_TTL_MS) return hit.promise;
+
+  const entry = { ts: Date.now(), promise: null };
+  entry.promise = leerDatos(userId).catch(err => {
+    if (datosCache.get(key) === entry) datosCache.delete(key);
+    throw err;
+  });
+  datosCache.set(key, entry);
+  return entry.promise;
+}
+
+async function leerDatos(userId) {
   if (!USE_SUPABASE) {
     return getSheetService().obtenerDatosSheet(userId);
   }

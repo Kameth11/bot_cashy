@@ -42,9 +42,17 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   en silencio con `max-rows`=1000; (b) editar/borrar busca por `id_unico` en la
   DB (`buscarFilaSupabasePorIdUnico`) en vez de cargar todo. Tests:
   `db.service.boundedRead`, `db.service.findById`.
-  **Falta:** balances/`/hoy`/`/semana` siguen calculándose en memoria sobre el
-  historial completo (ahora en N requests de 1000); `/api/movimientos` sigue sin
-  paginar hacia el dashboard; `findRowByCompositeKey` sigue escaneando todo.
+  (c) `obtenerDatosSheet` (path Supabase) tiene cache de 15 s con single-flight,
+  keyeado por dueño e invalidado en cada escritura: comandos del bot, dashboard
+  y `/api/profesionales` (antes sin cache) dejan de releer todo el historial en
+  cada llamada. Test: `db.service.datosCache`.
+  **Falta:** el cálculo de balances/`/hoy`/`/semana` sigue siendo en memoria
+  sobre el historial completo (una lectura cada 15 s como mucho); los filtros
+  `desde/hasta/estado` de `/api/movimientos` se aplican en memoria, no en SQL;
+  no hay paginación hacia el dashboard; `findRowByCompositeKey` sigue
+  escaneando todo. Empujar esos filtros a SQL requiere cuidar el mapeo de
+  estado/fecha legacy↔DB y las filas v2: hacerlo cuando un tenant se acerque a
+  ~5.000 movimientos, no antes.
   Si el `max-rows` del proyecto fuera < 1000 el paginado corta antes: mantener
   `MOVIMIENTOS_PAGE_SIZE` <= `max-rows`.
 

@@ -662,7 +662,7 @@ app.post('/api/admin/tenant-requests/:id/reject', authMiddleware, adminOnly, asy
 // ── Profesionales ──
 app.get('/api/profesionales', authMiddleware, requierePermiso('ver_agenda'), async (req, res) => {
   try {
-    const datos = await obtenerDatosSheet(req.user.userId);
+    const datos = await getDatosConCache(req.user.userId);
     const set = new Set();
     datos.forEach(d => { if (d.profesional) set.add(d.profesional); });
     res.json({ profesionales: Array.from(set) });
