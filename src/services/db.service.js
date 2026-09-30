@@ -104,6 +104,11 @@ function invalidateCache(userId) {
   getSheetService().invalidateCache(userId);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function soloUuid(valor) {
+  return typeof valor === 'string' && UUID_RE.test(valor.trim()) ? valor.trim() : null;
+}
+
 async function ensureProfile(userId) {
   if (!USE_SUPABASE) return;
 
@@ -1101,7 +1106,10 @@ async function doAddRow(userId, rowData, options = {}) {
     id_unico: rowData.ID_Unico || '',
     monto_pesos: parseFloat(rowData.MontoPesos) || parseFloat(rowData.Monto) || 0,
     id_origen: rowData.ID_Origen || '',
-    referencia_id: options.movimientoV2Data?.referenciaId || rowData.ReferenciaId || null,
+    // La columna es UUID (FK a prestaciones): un vínculo que no sea uuid, como
+    // el "comp:<id>" de los comprobantes, rompía TODO el insert. Ese vínculo
+    // queda igual en el Sheet (columna ReferenciaId) y en la pestaña Comprobantes.
+    referencia_id: soloUuid(options.movimientoV2Data?.referenciaId || rowData.ReferenciaId),
     paciente: rowData.Paciente || null,
     profesional: rowData.Profesional || null,
     tratamiento: rowData.Tratamiento || null,
