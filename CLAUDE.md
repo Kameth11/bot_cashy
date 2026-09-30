@@ -132,6 +132,14 @@ servicio Endodoncia U$50 transferencia
 gasto Insumos $-500
 ```
 
+### Comprobantes por foto / PDF
+
+Una foto o PDF la clasifica la IA (agenda / factura-ticket / transferencia).
+Las facturas y tickets se leen con Gemini Vision y pasan por la misma
+confirmación que el texto (`nlp-confirm.js`); el comprobante queda en la
+pestaña `Comprobantes` vinculado al movimiento (`ReferenciaId = comp:<id>`).
+Plan completo, fases y decisiones en `PLAN_COMPROBANTES.md`.
+
 ---
 
 ## Comandos del bot

@@ -92,10 +92,16 @@ handlers en `bot` de Telegraf vía `src/lib/telegraf.js`):
   (`state.userRateLimits`, `RATE_LIMIT_WINDOW_MS`/`RATE_LIMIT_MAX_EVENTS`).
 - `handlers/text.js` — todo mensaje de texto que no es comando (`/...`).
   Ver skill `bot-cashy-nlp` para el detalle del parsing.
-- `handlers/photo.js` — fotos de agenda → Gemini Vision
-  (`GEMINI_VISION_MODEL`) → extrae turnos → confirmación
-  (`pendingAgendaConfirm`). La llamada a Gemini va dentro de
-  `geminiMediaSemaphore.run(...)`.
+- `handlers/photo.js` — fotos y archivos (`bot.on('photo')` y
+  `bot.on('document')` para PDF/imágenes sin comprimir). Exige
+  `editar_agenda` o `cargar_movimientos`; si tiene `cargar_movimientos`,
+  clasifica con `comprobante-vision.service.clasificarDocumento` (o por el
+  caption) y deriva: agenda → Gemini Vision → turnos → confirmación
+  (`pendingAgendaConfirm`, exige `editar_agenda`); factura/ticket →
+  `handlers/comprobante.js` → misma confirmación que el NLP de texto; si la
+  IA duda, botones `doc_tipo_*` (`pendingDocumentoTipo`). Si la
+  clasificación falla, cae a agenda. Todas las llamadas a Gemini van dentro
+  de `geminiMediaSemaphore.run(...)`. Ver `PLAN_COMPROBANTES.md`.
 - `handlers/voice.js` — notas de voz → transcripción con Gemini (también bajo
   el semáforo) → se re-procesa el texto con `procesarTextoConNlp`.
 - `handlers/actions.js` — callbacks genéricos de botones inline
@@ -127,6 +133,8 @@ TTL default 30 min salvo donde se indica:
 - `pendingAgendaDuplicados` — se detectaron turnos ya cargados para esa fecha
   (misma hora + paciente normalizado); esperando reemplazar o agregar.
 - `pendingIngresoPacientes` — wizard de `/ingreso_paciente`.
+- `pendingDocumentoTipo` (TTL 5 min) — foto/PDF que la IA no pudo
+  clasificar, esperando que el usuario elija agenda / gasto / cobro.
 - `docsCache` (TTL 2h) — cache de documentos de Google Sheets, keyeada por
   `sheetId` (no por userId) desde 2026-09-23 — ver sección de escalabilidad.
 - `userRateLimits` (Map simple) — rate limiting general.

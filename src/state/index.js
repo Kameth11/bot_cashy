@@ -73,6 +73,8 @@ const pendingAgendaFecha      = new TTLMap();
 const pendingAgendaDuplicados = new TTLMap();
 const pendingIngresoPacientes = new TTLMap();
 const pendingTurnoEdits       = new TTLMap();
+// Foto/PDF que la IA no pudo clasificar: espera que el usuario elija qué es.
+const pendingDocumentoTipo    = new TTLMap(5 * 60 * 1000);
 
 // Cache de documentos — TTL más largo (2 horas)
 const docsCache = new TTLMap(2 * 60 * 60 * 1000);
@@ -110,6 +112,7 @@ module.exports = {
   pendingAgendaConfirm,
   pendingAgendaFecha,
   pendingAgendaDuplicados,
+  pendingDocumentoTipo,
   pendingIngresoPacientes,
   pendingTurnoEdits,
   docsCache,

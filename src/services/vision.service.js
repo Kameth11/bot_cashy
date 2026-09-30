@@ -233,11 +233,13 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
   if (!ai) {
     return { error: 'vision_dependencia_faltante' };
   }
-  const processedBuffer = await preprocessPhoto(photoBuffer);
+  // Un PDF va directo a Gemini (lo lee nativo); sharp solo sirve para fotos.
+  const esPdf = mimeType === 'application/pdf';
+  const processedBuffer = esPdf ? photoBuffer : await preprocessPhoto(photoBuffer);
   const imagePart = {
     inlineData: {
       data: processedBuffer.toString('base64'),
-      mimeType: 'image/png',
+      mimeType: esPdf ? 'application/pdf' : 'image/png',
     }
   };
 
@@ -284,4 +286,4 @@ async function procesarFotoAgenda(photoBuffer, mimeType = 'image/jpeg') {
   return null;
 }
 
-module.exports = { procesarFotoAgenda, normalizarTexto };
+module.exports = { procesarFotoAgenda, normalizarTexto, getGenAI, getSharp, extractJSON, FALLBACK_MODELS };

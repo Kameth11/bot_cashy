@@ -17,6 +17,28 @@ function esAmbitoPersonal(entities) {
   return String((entities || {}).ambito || '').toLowerCase() === 'personal';
 }
 
+// Líneas extra cuando el movimiento viene de una foto/PDF de comprobante:
+// qué comprobante se leyó, vencimiento y aviso de duplicado.
+function lineasComprobante(es) {
+  const c = es.comprobante;
+  if (!c) return '';
+  const tipoDoc = [c.tipoDocumento && c.tipoDocumento !== 'otro' ? c.tipoDocumento.replace(/_/g, ' ') : 'comprobante', c.letra]
+    .filter(Boolean).join(' ');
+  const partes = [`🧾 ${escapeMarkdown(tipoDoc)}${c.numero ? ` ${escapeMarkdown(c.numero)}` : ''}`];
+  if (c.cuit) partes.push(`CUIT ${escapeMarkdown(c.cuit)}`);
+  let texto = `• Comprobante: ${partes.join(' · ')}\n`;
+  if (c.fechaEmision) texto += `• Fecha: ${escapeMarkdown(c.fechaEmision)}\n`;
+  if (es.fechaVencimiento) texto += `• Vence: ${escapeMarkdown(es.fechaVencimiento)}\n`;
+  if (Array.isArray(c.items) && c.items.length) texto += `• Ítems: ${c.items.length}\n`;
+  if (c.duplicado) {
+    const cuando = c.duplicado.fechaCarga ? ` (cargado el ${escapeMarkdown(c.duplicado.fechaCarga)})` : '';
+    texto += c.duplicado.motivo === 'mismo_archivo'
+      ? `\n⚠️ _Esta misma imagen ya se cargó${cuando}. Si la guardás, queda duplicado._\n`
+      : `\n⚠️ _Ya hay un comprobante con el mismo emisor, número y total${cuando}. Revisá que no sea el mismo._\n`;
+  }
+  return texto;
+}
+
 function crearMensajeConfirmacion(entities) {
   const es = entities || {};
   const tipoRaw = String(es.tipo || '').toLowerCase();
@@ -50,6 +72,7 @@ function crearMensajeConfirmacion(entities) {
       `• Detalle: ${v(es.descripcion)}\n` +
       `• Método: ${v(metodo)}\n` +
       viajeLinea +
+      lineasComprobante(es) +
       `\n_¿Es correcto?_`
     );
   }
@@ -71,7 +94,8 @@ function crearMensajeConfirmacion(entities) {
     `• ${nombreLabel}: ${v(nombreValor)}\n` +
     `• Método: ${v(metodo)}\n` +
     `• Estado: ${estadoTexto}\n` +
-    `• Tratamiento: ${v(es.tratamientoNombre)}\n` +
+    (es.comprobante ? '' : `• Tratamiento: ${v(es.tratamientoNombre)}\n`) +
+    lineasComprobante(es) +
     avisoAmbiguo +
     `\n_¿Es correcto?_`
   );
@@ -218,7 +242,13 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
       // Pasar la clave explícitamente hace que el servicio NO recalcule la
       // atribución: así "No es del viaje" efectivamente guarda sin viaje.
       viajeId: entities.viajeId || null,
+      // Vínculo con el comprobante (foto/PDF), si vino de uno.
+      notas: entities.comprobante ? entities.referenciaId : null,
     });
+
+    if (entities.comprobante) {
+      await require('./comprobante').registrarComprobanteDesdeEntities(userId, entities, { idMovimiento: movimiento.idMov });
+    }
 
     const categoriaTexto = escapeMarkdown(String(movimiento.categoria || '').replace(/_/g, ' '));
     const viajeTexto = viaje ? `\n✈️ Viaje: ${escapeMarkdown(viaje.nombre)}` : '';
@@ -351,6 +381,12 @@ async function handleNlpSave(ctx) {
 
   try {
     const resultado = await cmd.registrarMovimientoDesdeNLP(userId, pending.entities);
+    // Si vino de una foto/PDF, el comprobante queda registrado aunque el
+    // movimiento todavía necesite un dato (método de pago, cotización): el
+    // vínculo viaja en ReferenciaId y se completa cuando se guarde.
+    if (pending.entities.comprobante && (resultado.success || resultado.necesitaInfo)) {
+      await require('./comprobante').registrarComprobanteDesdeEntities(userId, pending.entities, { idMovimiento: resultado.idUnico || null });
+    }
     if (resultado.necesitaInfo) {
       await ctx.editMessageText('⏳ Completando datos...');
       return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });

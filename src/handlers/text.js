@@ -1035,4 +1035,4 @@ bot.on('text', async (ctx) => {
   }
 });
 
-module.exports = { procesarTextoConNlp };
+module.exports = { procesarTextoConNlp, marcarAmbito };

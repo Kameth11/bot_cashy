@@ -852,8 +852,8 @@ function buildHelpMessage() {
     '`/ingreso_paciente` - Carga guiada con paciente, profesional y categoría\n\n' +
     '💬 *Primero intenta interpretar palabras clave sin IA.*\n' +
     'Si no alcanza, recurre al parser remoto para lenguaje natural.\n\n' +
-    '📸 *Agenda por foto:*\n' +
-    'Envía una foto de tu agenda o turnero para extraer y guardar turnos\n' +
+    '📸 *Fotos y PDFs:*\n' +
+    'Mandá una foto de tu agenda o turnero para cargar turnos, o una foto/PDF de una factura o ticket para cargar el gasto (detecto solo qué es)\n' +
     '`/editarturno` - Corregir datos de un turno de hoy\n\n' +
     '💵 *Monedas:*\n' +
     '$ - Pesos | U$ / USD - Dólares\n\n' +
