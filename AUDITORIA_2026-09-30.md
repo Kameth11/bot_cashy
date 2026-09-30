@@ -27,7 +27,7 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   `tests/api.trust-proxy.test.js` (falla sin el fix). Pendiente **[?]**: confirmar
   que Railway agrega exactamente 1 salto; si no, setear `TRUST_PROXY_HOPS`.
 
-- [ ] **2. Lecturas de historial completo; el tope de 20.000 puede ser 1.000** **[V]/[?]**
+- [~] **2. Lecturas de historial completo; el tope de 20.000 puede ser 1.000** **[V]/[?]**
   `fetchLegacyRowsForUser` usa `.limit(20000)`, pero el `max-rows` por defecto de
   PostgREST en Supabase es 1000 y gana sobre `.limit()`. Si no se subió,
   balances y dashboard se truncan en silencio **[?]** (Supabase → Settings → API
@@ -37,6 +37,16 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   balances y `/hoy`/`/semana` se calculan en memoria sobre todo el historial.
   *Arreglo:* consultas `.eq('id_unico', …)`, filtros por rango de fechas y
   agregados en SQL, paginación.
+  **Parcial (2026-09-30):** (a) `fetchLegacyRowsForUser` ahora pagina con
+  `.range()` de a 1000 (hasta `MAX_MOVIMIENTOS_READ`), así que ya no se trunca
+  en silencio con `max-rows`=1000; (b) editar/borrar busca por `id_unico` en la
+  DB (`buscarFilaSupabasePorIdUnico`) en vez de cargar todo. Tests:
+  `db.service.boundedRead`, `db.service.findById`.
+  **Falta:** balances/`/hoy`/`/semana` siguen calculándose en memoria sobre el
+  historial completo (ahora en N requests de 1000); `/api/movimientos` sigue sin
+  paginar hacia el dashboard; `findRowByCompositeKey` sigue escaneando todo.
+  Si el `max-rows` del proyecto fuera < 1000 el paginado corta antes: mantener
+  `MOVIMIENTOS_PAGE_SIZE` <= `max-rows`.
 
 - [ ] **3. Google Sheets como cuello de botella** **[V]/[?]**
   Cuota de Google ≈ 60 req/min por usuario y por proyecto, y todos los tenants
@@ -116,7 +126,7 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
 ---
 
 ## Pendientes a cargo del dueño (preguntarle en cada sesión hasta que los confirme)
-- [ ] Supabase → Settings → API → **Max rows**: ¿está en 1000? (ítem 2)
+- [ ] Supabase → Settings → API → **Max rows**: confirmar que sea >= 1000 (ítem 2; con el paginado ya no trunca si es 1000)
 - [ ] Railway: ¿agrega exactamente 1 salto de proxy? Si no, setear `TRUST_PROXY_HOPS` (ítem 1)
 
 ## Orden sugerido

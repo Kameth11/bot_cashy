@@ -4,11 +4,18 @@
 // este test lo detecta.
 
 const calls = [];
+// Simula un servidor con max-rows=1000: cada página devuelve como mucho 1000
+// filas de una tabla de `tablaSize` filas.
+let tablaSize = 0;
 const builder = {
   select: (...a) => { calls.push(['select', ...a]); return builder; },
   eq: (...a) => { calls.push(['eq', ...a]); return builder; },
   order: (...a) => { calls.push(['order', ...a]); return builder; },
-  limit: (...a) => { calls.push(['limit', ...a]); return Promise.resolve({ data: [], error: null }); },
+  range: (from, to) => {
+    calls.push(['range', from, to]);
+    const n = Math.max(0, Math.min(to, tablaSize - 1) - from + 1);
+    return Promise.resolve({ data: Array.from({ length: n }, (_, i) => ({ id: from + i })), error: null });
+  },
 };
 
 jest.mock('../src/lib/tenant-db', () => ({
@@ -28,7 +35,8 @@ describe('db.service lectura acotada (guarda de escalabilidad)', () => {
     expect(Number.isFinite(MAX_MOVIMIENTOS_READ)).toBe(true);
   });
 
-  test('fetchLegacyRowsForUser arma la query con order desc + limit acotado', async () => {
+  test('fetchLegacyRowsForUser arma la query con order desc estable + páginas acotadas', async () => {
+    tablaSize = 10;
     await fetchLegacyRowsForUser({}, 123, 'tenant-1');
 
     // La query pasa por la barrera de tenant — ESE es el límite de
@@ -37,16 +45,28 @@ describe('db.service lectura acotada (guarda de escalabilidad)', () => {
     // NO filtra además por user_id: eso hacía que cada invitado solo viera
     // lo que él mismo había cargado, no el balance real del consultorio.
     expect(calls.find(c => c[0] === 'eq' && c[1] === 'user_id')).toBeUndefined();
-    // Trae las más recientes primero...
     expect(calls).toContainEqual(['order', 'created_at', { ascending: false }]);
-    // ...y SIEMPRE acota la cantidad.
-    expect(calls).toContainEqual(['limit', MAX_MOVIMIENTOS_READ]);
+    expect(calls).toContainEqual(['order', 'id', { ascending: false }]);
+    expect(calls).toContainEqual(['range', 0, 999]);
   });
 
-  test('el limit es el último eslabón de la cadena (no se puede omitir)', async () => {
-    await fetchLegacyRowsForUser({}, 1, 'tenant-1');
-    const limitCall = calls.find(c => c[0] === 'limit');
-    expect(limitCall).toBeDefined();
-    expect(limitCall[1]).toBe(MAX_MOVIMIENTOS_READ);
+  test('trae TODAS las filas aunque el servidor corte cada respuesta en 1000', async () => {
+    tablaSize = 2500;
+    const rows = await fetchLegacyRowsForUser({}, 1, 'tenant-1');
+    expect(rows).toHaveLength(2500);
+    expect(calls.filter(c => c[0] === 'range')).toEqual([['range', 0, 999], ['range', 1000, 1999], ['range', 2000, 2999]]);
+  });
+
+  test('no pide páginas de más cuando la última viene incompleta', async () => {
+    tablaSize = 1000; // página exacta: hay que pedir una más para confirmar el fin
+    const rows = await fetchLegacyRowsForUser({}, 1, 'tenant-1');
+    expect(rows).toHaveLength(1000);
+    expect(calls.filter(c => c[0] === 'range')).toHaveLength(2);
+  });
+
+  test('nunca supera MAX_MOVIMIENTOS_READ aunque la tabla sea mayor', async () => {
+    tablaSize = MAX_MOVIMIENTOS_READ + 5000;
+    const rows = await fetchLegacyRowsForUser({}, 1, 'tenant-1');
+    expect(rows).toHaveLength(MAX_MOVIMIENTOS_READ);
   });
 });

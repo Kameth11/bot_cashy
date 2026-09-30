@@ -25,6 +25,9 @@ const {
 // aguas abajo. Es un guard contra lecturas desbocadas, no paginación real
 // (cuando un tenant se acerque a este número, toca paginar de verdad).
 const MAX_MOVIMIENTOS_READ = 20000;
+// Tamaño de página al leer movimientos. Tiene que ser <= al max-rows del API
+// de Supabase (1000 por defecto) para que el paginado no se corte antes.
+const MOVIMIENTOS_PAGE_SIZE = 1000;
 
 const v2CapabilityCache = {
   checked: false,
@@ -610,17 +613,30 @@ async function fetchLegacyRowsForUser(supabase, userId, tenantId) {
   // propio user_id), no los del resto del tenant — un invitado con
   // ver_balance/ver_movimientos veía un balance vacío o parcial en vez del
   // real del consultorio.
-  const { data, error } = await forTenant(tenantId)
-    .from('movimientos')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(MAX_MOVIMIENTOS_READ);
+  // Paginado con .range(): PostgREST corta cada respuesta en `max-rows`
+  // (1000 por defecto en Supabase) sin avisar, y ese tope gana sobre
+  // .limit() — con un solo .limit(20000) un tenant con más de 1000 filas
+  // recibía en silencio solo las 1000 más recientes y los balances salían
+  // mal. `id` desempata para que el paginado sea estable entre páginas.
+  const rows = [];
+  for (let from = 0; from < MAX_MOVIMIENTOS_READ; from += MOVIMIENTOS_PAGE_SIZE) {
+    const to = Math.min(from + MOVIMIENTOS_PAGE_SIZE, MAX_MOVIMIENTOS_READ) - 1;
+    const { data, error } = await forTenant(tenantId)
+      .from('movimientos')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to);
 
-  if (error) {
-    throw error;
+    if (error) {
+      throw error;
+    }
+
+    rows.push(...(data || []));
+    if (!data || data.length < to - from + 1) break;
   }
 
-  return data || [];
+  return rows;
 }
 
 async function fetchV2RowsForUser(supabase, userId) {
@@ -1229,10 +1245,41 @@ async function upsertProfile(userId, profileData) {
   return true;
 }
 
+// Devuelve el wrapper de la fila legacy o null. También devuelve null (y el
+// caller cae al escaneo completo) si Supabase no está activo, no hay tenant, hay
+// error, o no se encontró y existen filas solo-v2 que este camino no ve.
+async function buscarFilaSupabasePorIdUnico(userId, idUnico) {
+  if (!USE_SUPABASE) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  try {
+    const tenantId = await resolveTenantId(userId);
+    if (!tenantId) return null;
+
+    const { data, error } = await forTenant(tenantId)
+      .from('movimientos')
+      .select('*')
+      .eq('id_unico', idUnico)
+      .limit(1);
+    if (error) throw error;
+    if (data && data.length > 0) return buildLegacySupabaseRowWrapper(userId, tenantId, data[0]);
+  } catch (err) {
+    console.error('Supabase buscarFilaPorIdUnico error:', err.message);
+  }
+  return null;
+}
+
 // Encuentra una fila por ID único entre los wrappers ya cargados o haciendo una carga fresca.
 // Usa getRowIdUnico para manejar todas las variantes de nombre de columna.
 async function findRowByIdUnico(userId, idUnico) {
   if (!idUnico) return null;
+
+  // Con Supabase se busca directo por id_unico en vez de traer todo el
+  // historial del tenant a memoria para cada edición/borrado.
+  const directa = await buscarFilaSupabasePorIdUnico(userId, idUnico);
+  if (directa) return directa;
+
   const rows = await getRows(userId);
   return rows.find(row => {
     // Wrappers de Supabase y filas de Sheets — ambos implementan .get()
