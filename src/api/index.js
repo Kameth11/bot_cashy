@@ -139,8 +139,12 @@ function authMiddleware(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     const ahora = Date.now() / 1000;
 
-    // Tokens emitidos antes de este cambio no traen authAt: se usa su iat.
-    const authAt = Number(decoded.authAt) || Number(decoded.iat) || 0;
+    // Tokens emitidos antes de este cambio no traen authAt. En vez de deducirlo
+    // de su iat (que es la última renovación, no el login: sacaba de la sesión
+    // a gente que la estaba usando), se les da el tope completo desde ahora y
+    // se les renueva el token enseguida con authAt propio (migración una vez).
+    const legado = !Number(decoded.authAt);
+    const authAt = legado ? Math.floor(ahora) : Number(decoded.authAt);
     if (ahora - authAt > SESSION_MAX_SEC) {
       logger.audit('sesion_vencida_por_antiguedad', { userId: decoded.userId });
       return res.status(401).json({ error: 'Sesión vencida. Volvé a iniciar sesión.' });
@@ -155,7 +159,7 @@ function authMiddleware(req, res, next) {
 
     // Sesion deslizante: si al usuario le queda poco tiempo de token, le mandamos
     // uno nuevo en la respuesta (conserva authAt: no alarga el login original).
-    if (decoded.exp && decoded.exp - ahora < SESSION_REFRESH_THRESHOLD_SEC) {
+    if (legado || (decoded.exp && decoded.exp - ahora < SESSION_REFRESH_THRESHOLD_SEC)) {
       res.setHeader('X-Refreshed-Token', firmarSesion(decoded.userId, authAt));
     }
 

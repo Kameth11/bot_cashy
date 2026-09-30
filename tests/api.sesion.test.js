@@ -53,9 +53,12 @@ test('pasado el tope absoluto (90 días) hay que volver a loguearse, aunque se u
   expect((await res.json()).error).toMatch(/Sesión vencida/);
 });
 
-test('tokens viejos sin authAt usan su iat', async () => {
-  const sinAuthAt = jwt.sign({ userId: '2222', type: 'dashboard' }, JWT_SECRET, { expiresIn: '180d' });
-  expect((await me(sinAuthAt)).status).toBe(200); // iat = ahora
-  const iatViejo = jwt.sign({ userId: '2222', type: 'dashboard', iat: ahora() - SESSION_MAX_SEC - 60 }, JWT_SECRET, { expiresIn: '180d' });
-  expect((await me(iatViejo)).status).toBe(401);
+test('token viejo (sin authAt): sigue valiendo y se migra con un token nuevo, sin sacar a nadie de la sesión', async () => {
+  // Un token de hace 120 días: por su iat pasaría el tope de 90, pero no debe cortarse.
+  const viejo = jwt.sign({ userId: '2222', type: 'dashboard', iat: ahora() - 120 * 24 * 3600 }, JWT_SECRET, { expiresIn: '180d' });
+  const res = await me(viejo);
+  expect(res.status).toBe(200);
+  const nuevo = jwt.decode(res.headers.get('x-refreshed-token'));
+  expect(nuevo.authAt).toBeGreaterThan(ahora() - 60);
+  expect(nuevo.exp - nuevo.iat).toBe(14 * 24 * 3600);
 });
