@@ -71,6 +71,7 @@ function crearMensajeConfirmacion(entities) {
       `• Categoría: ${categoriaTexto}\n` +
       `• Detalle: ${v(es.descripcion)}\n` +
       `• Método: ${v(metodo)}\n` +
+      (es.fecha ? `• Fecha: ${escapeMarkdown(String(es.fecha))}\n` : '') +
       viajeLinea +
       lineasComprobante(es) +
       `\n_¿Es correcto?_`
@@ -271,10 +272,12 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
     const extra = { parse_mode: 'Markdown' };
     if (DASHBOARD_URL) extra.reply_markup = { inline_keyboard: [[{ text: '📊 Ver Dashboard', url: DASHBOARD_URL }]] };
 
+    const esIngreso = String(movimiento.tipo).toLowerCase() === 'ingreso';
     return ctx.editMessageText(
-      `✅ *Gasto personal registrado*\n\n` +
+      `✅ *${esIngreso ? 'Ingreso' : 'Gasto'} personal registrado*\n\n` +
       `🏠 ${escapeMarkdown(movimiento.descripcion)}\n` +
       `💰 ${formatMonto(movimiento.monto, movimiento.moneda)}\n` +
+      `📅 ${escapeMarkdown(String(movimiento.fecha))}\n` +
       `🏷️ ${categoriaTexto}${viajeTexto}${alerta}`,
       extra
     );

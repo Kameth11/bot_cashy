@@ -148,3 +148,15 @@ describe('parsearFecha (/viaje)', () => {
     expect(parsearFecha('')).toBeNull();
   });
 });
+
+describe('crearMensajeConfirmacion — fecha visible en personal', () => {
+  const base = { ambito: 'personal', tipo: 'gasto', descripcion: 'Nafta', monto: 20000, moneda: 'Pesos', categoria: 'transporte' };
+
+  test('muestra la fecha cuando viene de un comprobante (si no, se guardaba con una fecha que el usuario no veía)', () => {
+    expect(crearMensajeConfirmacion({ ...base, fecha: '15/08/2026' })).toContain('Fecha: 15/08/2026');
+  });
+
+  test('sin fecha no agrega la línea', () => {
+    expect(crearMensajeConfirmacion(base)).not.toContain('Fecha:');
+  });
+});
