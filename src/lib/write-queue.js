@@ -44,4 +44,25 @@ function runInBackground(userId, fn, label = 'background') {
   });
 }
 
-module.exports = { withUserWriteLock, runInBackground };
+// Cantidad de sheets con escrituras en cola o en curso.
+function pendientes() {
+  return tails.size;
+}
+
+// Espera (con tope) a que se vacíen las escrituras en curso — incluido el
+// dual-write a Sheets en background —, para no perderlas en un apagado.
+// Devuelve true si se vació, false si venció el timeout.
+async function esperarPendientes(timeoutMs = 10000) {
+  const limite = Date.now() + timeoutMs;
+  while (tails.size > 0) {
+    const restante = limite - Date.now();
+    if (restante <= 0) return false;
+    let timer;
+    const timeout = new Promise(resolve => { timer = setTimeout(resolve, restante); });
+    await Promise.race([Promise.all([...tails.values()]), timeout]);
+    clearTimeout(timer);
+  }
+  return true;
+}
+
+module.exports = { withUserWriteLock, runInBackground, pendientes, esperarPendientes };

@@ -18,6 +18,7 @@ const clienteService = require('./services/cliente.service');
 const { ALLOWED_EMAILS } = require('./config');
 const state = require('./state');
 const logger = require('./lib/logger');
+const { esperarPendientes, pendientes } = require('./lib/write-queue');
 
 // Load middleware (must be first, before commands)
 require('./handlers/middleware');
@@ -109,8 +110,34 @@ async function iniciar() {
 
 if (require.main === module) iniciar();
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// Apagado ordenado (Railway manda SIGTERM en cada deploy y da unos segundos de
+// gracia antes de SIGKILL): dejamos de recibir mensajes de Telegram y de
+// aceptar requests, esperamos a que terminen las escrituras en curso (incluido
+// el dual-write a Sheets en background, que si no se perdía) y recién ahí
+// salimos. Tope de espera para no quedar colgados.
+const SHUTDOWN_DRAIN_MS = 10000;
+let apagando = false;
+async function apagar(signal) {
+  if (apagando) return;
+  apagando = true;
+  logger.info('PROCESS', `${signal} recibido: apagado ordenado`, { escrituras_pendientes: pendientes() });
+
+  try { bot.stop(signal); } catch (_) {}
+  if (apiServer) {
+    // Deja de aceptar conexiones nuevas y corta las inactivas/SSE (viven
+    // "para siempre" y bloquearían el close()).
+    apiServer.close();
+    if (apiServer.closeIdleConnections) apiServer.closeIdleConnections();
+  }
+
+  const vacio = await esperarPendientes(SHUTDOWN_DRAIN_MS);
+  if (!vacio) logger.warn('PROCESS', 'Apagado con escrituras sin terminar', { escrituras_pendientes: pendientes() });
+  if (apiServer && apiServer.closeAllConnections) apiServer.closeAllConnections();
+  process.exit(0);
+}
+
+process.once('SIGINT', () => apagar('SIGINT'));
+process.once('SIGTERM', () => apagar('SIGTERM'));
 
 process.on('unhandledRejection', (reason) => {
   logger.error('PROCESS', 'Unhandled Rejection', { reason: reason instanceof Error ? reason.message : reason });

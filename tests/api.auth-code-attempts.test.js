@@ -36,7 +36,7 @@ jest.mock('../src/services/cliente.service', () => ({
 }));
 
 const { bot } = require('../src/lib/telegraf');
-const { app } = require('../src/api/index.js');
+const { app, authCodes } = require('../src/api/index.js');
 
 let server, baseUrl;
 
@@ -82,7 +82,7 @@ describe('Validez del código de acceso: 10 minutos, no 24 horas', () => {
 
   test('el código guardado expira en ~10 minutos, no en 24 horas', async () => {
     await requestCode(1111);
-    const codeData = global._authCodes.get('1111');
+    const codeData = authCodes.get('1111');
     const minutosParaExpirar = (codeData.expiresAt.getTime() - Date.now()) / 60000;
 
     expect(minutosParaExpirar).toBeGreaterThan(9);
@@ -93,7 +93,7 @@ describe('Validez del código de acceso: 10 minutos, no 24 horas', () => {
 describe('El código se invalida a los 5 intentos fallidos', () => {
   test('4 intentos incorrectos devuelven "Codigo incorrecto" sin invalidar el código', async () => {
     await requestCode(2222);
-    const codeReal = global._authCodes.get('2222').code;
+    const codeReal = authCodes.get('2222').code;
     const codeIncorrecto = codeReal === '000000' ? '111111' : '000000';
 
     for (let i = 0; i < 4; i++) {
@@ -112,7 +112,7 @@ describe('El código se invalida a los 5 intentos fallidos', () => {
     // userId distinto del test anterior: el rate limiter de /api/auth/verify
     // es por telegramId (máx 10 cada 10 min) y ya gastamos 5 ahí.
     await requestCode(1111);
-    const codeReal = global._authCodes.get('1111').code;
+    const codeReal = authCodes.get('1111').code;
     const codeIncorrecto = codeReal === '000000' ? '111111' : '000000';
 
     let ultimaRes;

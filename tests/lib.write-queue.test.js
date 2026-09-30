@@ -184,3 +184,32 @@ describe('lib/write-queue', () => {
     });
   });
 });
+
+describe('lib/write-queue - drenado para apagado ordenado', () => {
+  const { pendientes, esperarPendientes } = require('../src/lib/write-queue');
+
+  test('esperarPendientes espera a que terminen las escrituras en curso', async () => {
+    const d = deferred();
+    let terminada = false;
+    withUserWriteLock('drain1', async () => { await d.promise; terminada = true; });
+    expect(pendientes()).toBeGreaterThan(0);
+
+    const espera = esperarPendientes(2000);
+    d.resolve();
+    expect(await espera).toBe(true);
+    expect(terminada).toBe(true);
+    expect(pendientes()).toBe(0);
+  });
+
+  test('esperarPendientes respeta el timeout si algo no termina', async () => {
+    const d = deferred();
+    withUserWriteLock('drain2', () => d.promise);
+    expect(await esperarPendientes(50)).toBe(false);
+    d.resolve();
+    await esperarPendientes(1000);
+  });
+
+  test('sin escrituras pendientes devuelve true al instante', async () => {
+    expect(await esperarPendientes(50)).toBe(true);
+  });
+});

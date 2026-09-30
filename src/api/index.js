@@ -76,6 +76,12 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Healthcheck para Railway (railway.json). Va fuera de /api: sin auth ni rate
+// limit, y no toca Sheets/Supabase (solo dice que el proceso atiende requests).
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+});
+
 // Rate limit global de las rutas de datos: protege la cuota de Google Sheets
 // y la DB de un dashboard con refresh agresivo o de abuso. Se aplica por IP
 // (robusto contra rotación de tokens). Quedan afuera: /api/auth/* (tiene su
@@ -192,6 +198,38 @@ function validarFechaOpcional(valor) {
   return { ok: true, valor: texto };
 }
 
+// Códigos de acceso del dashboard. Supabase (auth_codes) es la fuente de verdad
+// cuando está disponible, así el código pedido en una instancia verifica en
+// cualquier otra y sobrevive a un redeploy; el Map en memoria es el respaldo si
+// Supabase no está o falla. Si ambos tienen el código, vale el que vence después
+// (el más reciente), por si la persistencia en Supabase falló al pedirlo.
+const authCodes = new Map();
+
+function purgarCodigosVencidos() {
+  const ahora = Date.now();
+  for (const [id, c] of authCodes) {
+    if (c.expiresAt.getTime() < ahora) authCodes.delete(id);
+  }
+}
+
+async function leerCodigoAuth(telegramId) {
+  const enMemoria = authCodes.get(telegramId) || null;
+  if (!(isAvailable() && getSupabase())) return enMemoria;
+
+  let enDb = null;
+  try {
+    const { data, error } = await getSupabase().from('auth_codes').select('*').eq('telegram_user_id', telegramId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) enDb = { code: data.code, expiresAt: new Date(data.expires_at), used: data.used, intentos: data.intentos || 0 };
+  } catch (err) {
+    logger.warn('AUTH', 'No se pudo leer auth_code de Supabase, uso memoria', { telegramId, err: err.message });
+    return enMemoria;
+  }
+
+  if (enDb && enMemoria) return enMemoria.expiresAt > enDb.expiresAt ? enMemoria : enDb;
+  return enDb || enMemoria;
+}
+
 // ── Auth: request code ──
 app.post('/api/auth/request-code',
   rateLimit(requestCodeByIp, req => req.ip),
@@ -218,8 +256,8 @@ app.post('/api/auth/request-code',
       logger.warn('AUTH', 'No se pudo persistir auth_code en Supabase', { telegramId, err: err.message });
     }
   }
-  if (!global._authCodes) global._authCodes = new Map();
-  global._authCodes.set(telegramId, { code, expiresAt, used: false, intentos: 0 });
+  purgarCodigosVencidos();
+  authCodes.set(telegramId, { code, expiresAt, used: false, intentos: 0 });
 
   try {
     const { bot } = require('../lib/telegraf');
@@ -254,13 +292,7 @@ app.post('/api/auth/verify',
     return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: getSheetId(Number(telegramId)), permisos: resolverPermisos(telegramId) } });
   }
 
-  let codeData = null;
-  if (global._authCodes?.has(telegramId)) {
-    codeData = global._authCodes.get(telegramId);
-  } else if (isAvailable() && getSupabase()) {
-    const { data } = await getSupabase().from('auth_codes').select('*').eq('telegram_user_id', telegramId).maybeSingle();
-    if (data) codeData = { code: data.code, expiresAt: new Date(data.expires_at), used: data.used, intentos: data.intentos || 0 };
-  }
+  const codeData = await leerCodigoAuth(telegramId);
 
   if (!codeData) {
     logger.audit('auth_verify_failed', { telegramId, reason: 'no_code_requested' });
@@ -280,7 +312,7 @@ app.post('/api/auth/verify',
   }
   if (codeData.code !== code) {
     codeData.intentos = (codeData.intentos || 0) + 1;
-    if (global._authCodes?.has(telegramId)) global._authCodes.set(telegramId, codeData);
+    authCodes.set(telegramId, codeData);
     if (isAvailable() && getSupabase()) {
       try {
         await getSupabase().from('auth_codes').update({ intentos: codeData.intentos }).eq('telegram_user_id', telegramId);
@@ -297,7 +329,7 @@ app.post('/api/auth/verify',
   }
 
   codeData.used = true;
-  if (global._authCodes?.has(telegramId)) global._authCodes.set(telegramId, codeData);
+  authCodes.set(telegramId, codeData);
   if (isAvailable() && getSupabase()) {
     try {
       await getSupabase().from('auth_codes').update({ used: true }).eq('telegram_user_id', telegramId);
@@ -1121,7 +1153,7 @@ function startApi() {
   });
 }
 
-module.exports = { app, startApi, authMiddleware, JWT_SECRET, warnIfDevTokenMisconfigured };
+module.exports = { app, startApi, authMiddleware, JWT_SECRET, warnIfDevTokenMisconfigured, authCodes };
 
 // Arranque standalone (`node src/api/index.js`, sin el bot) — también espera
 // a que termine de cargar clientes.json/Supabase antes de atender requests.

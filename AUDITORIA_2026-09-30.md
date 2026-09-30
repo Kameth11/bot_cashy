@@ -80,7 +80,7 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   agenda, personal y comprobantes; confirmar la cuota real en la consola de
   Google Cloud **[?]**.
 
-- [ ] **4. Ciclo de vida del proceso e instancia única** **[V]**
+- [~] **4. Ciclo de vida del proceso e instancia única** **[V]**
   - Sin apagado ordenado: en SIGTERM solo `bot.stop`. No se cierra el servidor
     HTTP ni se vacía la cola de `runInBackground` → un deploy puede perder
     escrituras de respaldo a Sheets en vuelo.
@@ -90,6 +90,23 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   - No hay `/health` ni healthcheck en `railway.json`.
   - Con `USE_SUPABASE=false`, `clientes.json` se pierde en cada deploy.
   - (Ya documentado en `ARCHITECTURE.md` §6: write-lock en memoria, Redis.)
+  **Parcial (2026-09-30):**
+  (a) Apagado ordenado en SIGTERM/SIGINT (`src/index.js`): para el bot, cierra el
+  server, espera hasta 10 s a que se vacíen las escrituras (`esperarPendientes`
+  en `write-queue.js`, incluye el dual-write a Sheets) y sale. Probado con un
+  SIGTERM real.
+  (b) `GET /health` (sin auth ni rate limit) + `healthcheckPath` en
+  `railway.json` (timeout 300 s por el build en `start:prod`).
+  (c) Códigos de login: Supabase (`auth_codes`) es la fuente de verdad; el Map en
+  memoria queda de respaldo y se purga al pedir códigos. Verifican entre
+  instancias y tras un redeploy. Tests: `api.health`, `api.auth-codes-supabase`,
+  `lib.write-queue`.
+  **Falta / a confirmar:** (1) `start:prod` corre `npm run build && node ...`: si
+  npm no reenvía SIGTERM a node el apagado ordenado no corre en Railway
+  **[?]** — mirar el log del deploy buscando "apagado ordenado"; conviene sacar
+  el build del arranque. (2) El `409` de Telegram por polling doble en deploys
+  con solapamiento sigue posible. (3) `clientes.json` se pierde en cada deploy
+  con `USE_SUPABASE=false`. (4) Escalar a >1 réplica sigue requiriendo Redis.
 
 ## Medio
 
@@ -147,6 +164,7 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
 
 ## Pendientes a cargo del dueño (preguntarle en cada sesión hasta que los confirme)
 - [ ] Supabase → Settings → API → **Max rows**: confirmar que sea >= 1000 (ítem 2; con el paginado ya no trunca si es 1000)
+- [ ] Railway: tras el próximo deploy, ¿el log muestra "SIGTERM recibido: apagado ordenado"? (ítem 4)
 - [ ] Railway: ¿agrega exactamente 1 salto de proxy? Si no, setear `TRUST_PROXY_HOPS` (ítem 1)
 
 ## Orden sugerido
