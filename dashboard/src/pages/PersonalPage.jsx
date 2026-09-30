@@ -3,6 +3,7 @@ import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import { MontoCell } from '../components/Money'
 import PresupuestosModal from '../components/PresupuestosModal'
+import ComprobanteModal from '../components/ComprobanteModal'
 import DatePickerButton from '../components/DatePickerButton'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
@@ -67,6 +68,8 @@ export default function PersonalPage() {
   const [resumen, setResumen] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
+  const [comprobantes, setComprobantes] = useState([])
+  const [viendoComp, setViendoComp] = useState(null)
   const [reload,  setReload]  = useState(0)
 
   const [categorias,     setCategorias]     = useState(null)
@@ -122,6 +125,11 @@ export default function PersonalPage() {
       })
       .finally(() => { if (active) setLoading(false) })
 
+    // Tickets leídos de fotos/PDFs (📎). Si falla, la vista se ve igual.
+    api.get('/api/comprobantes')
+      .then(({ data }) => { if (active) setComprobantes((data?.comprobantes || []).filter(c => c.ambito === 'personal')) })
+      .catch(() => {})
+
     return () => { active = false }
   }, [mes, reload, reloadSignal])
 
@@ -133,6 +141,7 @@ export default function PersonalPage() {
 
   return (
     <div className="page">
+      {viendoComp && <ComprobanteModal comprobante={viendoComp} onCerrar={() => setViendoComp(null)} />}
       {showPresu && (
         <PresupuestosModal
           categorias={categorias}
@@ -303,7 +312,12 @@ export default function PersonalPage() {
                         {m.viajeId && ' · ✈️'}
                       </span>
                     </div>
-                    <MontoCell mov={m} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {comprobantes.some(c => c.idMovimiento === m.idMov) && (
+                        <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantes.find(c => c.idMovimiento === m.idMov))}>📎</button>
+                      )}
+                      <MontoCell mov={m} />
+                    </div>
                   </div>
                 ))}
               </div>

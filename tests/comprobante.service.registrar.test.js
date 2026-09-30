@@ -41,3 +41,16 @@ test('buscarDuplicado lee la pestaña; si falla la lectura no frena la carga', a
   mockSheet.getRows.mockRejectedValueOnce(new Error('quota'));
   expect(await buscarDuplicado(2222, { hash: 'abc' })).toBeNull();
 });
+
+test('vincularMovimiento completa ID_Movimiento solo si estaba vacío', async () => {
+  const { vincularMovimiento } = require('../src/services/comprobante.service');
+  const fila = { vals: { ID_Comprobante: 'comp_1', ID_Movimiento: '' }, get(k) { return this.vals[k]; }, set(k, v) { this.vals[k] = v; }, save: jest.fn(async () => {}) };
+  mockSheet.getRows.mockResolvedValueOnce([fila]);
+  expect(await vincularMovimiento(2222, 'comp_1', 'mov_9')).toBe(true);
+  expect(fila.vals.ID_Movimiento).toBe('mov_9');
+  expect(fila.save).toHaveBeenCalled();
+
+  mockSheet.getRows.mockResolvedValueOnce([fila]);
+  expect(await vincularMovimiento(2222, 'comp_1', 'mov_otro')).toBe(false);
+  expect(fila.vals.ID_Movimiento).toBe('mov_9');
+});

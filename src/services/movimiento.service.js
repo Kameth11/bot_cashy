@@ -117,6 +117,14 @@ function crearMensajeMovimientoRegistrado({ tipo, descripcion, monto, moneda, me
   );
 }
 
+function vincularComprobante(userId, idComprobante, idMovimiento) {
+  const comprobanteService = require('./comprobante.service');
+  const archivoService = require('./comprobante-archivo.service');
+  comprobanteService.vincularMovimiento(userId, idComprobante, idMovimiento)
+    .then(() => archivoService.vincularMovimientoEnSupabase(userId, idComprobante, idMovimiento))
+    .catch(err => console.error('Comprobantes: no se pudo vincular el movimiento:', err.message));
+}
+
 async function guardarMovimiento(userId, {
   descripcion,
   monto,
@@ -190,6 +198,13 @@ async function guardarMovimiento(userId, {
   });
   if (!savedRow) {
     throw new Error('sheet_no_configurado');
+  }
+
+  // Movimiento que vino de una foto/PDF: se completa el vínculo en el
+  // comprobante. Sin await: no puede demorar ni romper el guardado, y toma su
+  // propio lock (que se libera cuando termina este guardado).
+  if (typeof referenciaId === 'string' && referenciaId.startsWith('comp:')) {
+    vincularComprobante(userId, referenciaId.slice(5), idUnico);
   }
 
   return {

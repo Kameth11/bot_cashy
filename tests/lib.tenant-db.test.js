@@ -62,6 +62,7 @@ describe('lib/tenant-db forTenant', () => {
 
   test('SCOPED_TABLES contiene solo las tablas reales de negocio', () => {
     expect([...SCOPED_TABLES].sort()).toEqual([
+      'comprobantes',
       'movimientos',
       'movimientos_personales',
       'presupuestos_personales',

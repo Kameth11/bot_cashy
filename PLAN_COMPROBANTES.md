@@ -130,9 +130,9 @@ igual (nunca se pierde la carga por el archivo).
 |---|---|---|
 | 1 ✅ | Clasificación + factura/ticket por foto y PDF en Telegram, confirmación, pendiente/vencimiento, ámbito personal, permisos, pestaña Comprobantes, duplicados, tests | 2–2,5 días |
 | 2 ✅ | Transferencias de pacientes + match con pendientes (2026-09-30: `extraerTransferencia`, `buscarPendientesDePagador`, botones cobrar/ingreso nuevo/cancelar, cobro parcial; duplicados por hash o CUIT/nombre + n° de operación + monto) | 1 día |
-| 3 | Archivo (Supabase Storage / file_id de Telegram) + migración 011 + ver 📎 en el dashboard | 1,5 días |
+| 3 ✅ | Archivo (Supabase Storage / file_id de Telegram) + migración 011 + ver 📎 en el dashboard (2026-09-30: `comprobante-archivo.service`, sube al guardar, `GET /api/comprobantes` y `/:id/archivo` por proxy con permisos, 📎 en Movimientos y Personal, vínculo diferido cuando el movimiento pide método de pago; **la migración 011 hay que correrla a mano en Supabase**) | 1,5 días |
 | 4 | Subir comprobante desde el dashboard | 1,5 días |
-| 5 | Ítems: guardado en `comprobante_items` y vista de detalle | 1 día |
+| 5 ✅ | Ítems: se guardan desde la fase 1 (pestaña, columna `Items`) y en Supabase como `items jsonb` en `comprobantes` (no tabla aparte: siempre se leen junto al comprobante); vista de detalle en el modal del 📎 | — |
 
 Total ≈ 7–8 días de trabajo. Cada fase se sube a `main` por separado con
 CI en verde.
@@ -150,7 +150,13 @@ las fotos de agenda suman solo la clasificación. Todo bajo
   tickets personales, PDFs además de fotos.
 - Detección: automática con IA; si duda, pregunta con botones.
 - Archivo: Supabase Storage (con fallback a `file_id` de Telegram porque no
-  está confirmado que prod tenga `USE_SUPABASE=true`).
+  está confirmado que prod tenga `USE_SUPABASE=true`). Actualización
+  2026-09-30: prod SÍ usa Supabase (lo reveló el bug de `referencia_id`
+  uuid, ver abajo).
+- `referencia_id` es UUID en `movimientos` y `movimientos_v2`: el vínculo
+  `comp:<id>` NO se manda ahí (hacía fallar el insert entero). Queda en la
+  columna `ReferenciaId` del Sheet, en `notas` de v2 y en `ID_Movimiento`
+  de la pestaña/tabla de comprobantes.
 - Facturas impagas: egreso `Pendiente` + `FechaVencimiento`.
 - Transferencias: buscar pendiente del paciente y ofrecer cobrarlo.
 - Permisos: los mismos que cargar/ver movimientos; personal solo dueño.

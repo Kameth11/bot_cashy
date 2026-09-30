@@ -8,6 +8,7 @@ import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import DatePickerButton from '../components/DatePickerButton'
 import { ordenarPorFechaDesc } from '../utils/movimientos'
+import ComprobanteModal from '../components/ComprobanteModal'
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ export default function MovimientosPage() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [borrando,      setBorrando]      = useState(false)
   const [modalError,    setModalError]    = useState(null)
+  const [comprobantes,  setComprobantes]  = useState([])
+  const [viendoComp,    setViendoComp]    = useState(null)
 
   useEffect(() => {
     let active = true
@@ -61,6 +64,10 @@ export default function MovimientosPage() {
       try {
         const { data } = await api.get('/api/movimientos')
         if (active) setMovimientos(Array.isArray(data?.movimientos) ? data.movimientos : [])
+        // Los comprobantes son un extra: si fallan, la lista se ve igual.
+        api.get('/api/comprobantes')
+          .then(({ data: d }) => { if (active) setComprobantes(Array.isArray(d?.comprobantes) ? d.comprobantes : []) })
+          .catch(() => {})
       } catch {
         if (active) setError('No se pudieron cargar los movimientos')
       } finally {
@@ -130,6 +137,20 @@ export default function MovimientosPage() {
     } finally { setBorrando(false) }
   }, [])
 
+  // Comprobante (foto/PDF) de cada movimiento: por el ID del movimiento o, si
+  // el vínculo todavía no se completó, por ReferenciaId "comp:<id>".
+  const comprobantePorMov = useMemo(() => {
+    const porMov = new Map()
+    const porId = new Map()
+    for (const c of comprobantes) {
+      porId.set(c.id, c)
+      if (c.idMovimiento) porMov.set(c.idMovimiento, c)
+    }
+    return (mov) => porMov.get(mov.idUnico)
+      || (String(mov.referenciaId || '').startsWith('comp:') ? porId.get(mov.referenciaId.slice(5)) : null)
+      || null
+  }, [comprobantes])
+
   const hasFilters = tipo !== 'todos' || estado !== 'todos' || moneda !== 'todas' || q.trim() || fecha
 
   return (
@@ -141,6 +162,7 @@ export default function MovimientosPage() {
           onCerrar={() => { setEditando(null); setModalError(null) }}
         />
       )}
+      {viendoComp && <ComprobanteModal comprobante={viendoComp} onCerrar={() => setViendoComp(null)} />}
       {confirmDelete && (
         <ConfirmDeleteModal
           mov={confirmDelete} borrando={borrando} error={modalError}
@@ -220,7 +242,7 @@ export default function MovimientosPage() {
                   <th>Moneda</th>
                   <th className="right">Monto</th>
                   <th>Estado</th>
-                  <th style={{ width: 64 }} />
+                  <th style={{ width: 90 }} />
                 </tr>
               </thead>
               <tbody>
@@ -246,6 +268,9 @@ export default function MovimientosPage() {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                          {comprobantePorMov(mov) && (
+                            <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantePorMov(mov))}>📎</button>
+                          )}
                           <button className="action-btn" title="Editar" onClick={() => { setModalError(null); setEditando(mov) }}>✏️</button>
                           <button className="action-btn" title="Eliminar" onClick={() => { setModalError(null); setConfirmDelete(mov) }}>🗑️</button>
                         </div>
@@ -275,6 +300,9 @@ export default function MovimientosPage() {
                   <div className="mov-card-bottom">
                     <MontoCell mov={mov} />
                     <div style={{ display: 'flex', gap: 2 }}>
+                      {comprobantePorMov(mov) && (
+                        <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantePorMov(mov))}>📎</button>
+                      )}
                       <button className="action-btn" onClick={() => { setModalError(null); setEditando(mov) }}>✏️</button>
                       <button className="action-btn" onClick={() => { setModalError(null); setConfirmDelete(mov) }}>🗑️</button>
                     </div>

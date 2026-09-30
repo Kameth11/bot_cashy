@@ -18,6 +18,9 @@ const SCOPED_TABLES = new Set([
   'movimientos_personales',
   'viajes_personales',
   'presupuestos_personales',
+  // Comprobantes leídos de fotos/PDFs (sql/migrations/011). El código sondea
+  // si la tabla existe antes de usarla (comprobante-archivo.service.js).
+  'comprobantes',
 ]);
 
 function wrapBuilder(builder, tenantId) {

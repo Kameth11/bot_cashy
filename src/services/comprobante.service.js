@@ -32,11 +32,14 @@ function hashArchivo(buffer) {
 
 // ── Pestaña ──────────────────────────────────────────────────────────────────
 
-async function getTabComprobantes(userId, fresh = false) {
+// `crear: false` para lecturas: mirar la lista de comprobantes no debería
+// crearle la pestaña a quien nunca mandó uno.
+async function getTabComprobantes(userId, { fresh = false, crear = true } = {}) {
   const doc = await getDocCliente(userId, fresh);
   if (!doc) return null;
 
   let sheet = doc.sheetsByTitle[TAB_COMPROBANTES];
+  if (!sheet && !crear) return null;
   if (sheet) {
     let headerValues = null;
     try {
@@ -93,7 +96,7 @@ function parsearItems(value) {
 }
 
 async function listarComprobantes(userId) {
-  const sheet = await getTabComprobantes(userId);
+  const sheet = await getTabComprobantes(userId, { crear: false });
   if (!sheet) return [];
   const rows = await sheet.getRows();
   return rows.map(rowToComprobante);
@@ -183,6 +186,29 @@ async function registrarComprobante(userId, c) {
     logger.audit('comprobante_registrado', { userId, id, tipo: c.tipo, ambito: c.ambito });
     return id;
   });
+}
+
+// Completa ID_Movimiento de un comprobante ya registrado. Caso: el movimiento
+// se guardó en un paso posterior a la confirmación (pidió método de pago o
+// cotización), así que al registrar el comprobante todavía no había ID.
+async function vincularMovimiento(userId, idComprobante, idMovimiento) {
+  if (!idComprobante || !idMovimiento) return false;
+  return withUserWriteLock(userId, async () => {
+    const sheet = await getTabComprobantes(userId, { crear: false });
+    if (!sheet) return false;
+    const rows = await sheet.getRows();
+    const row = rows.find(r => r.get('ID_Comprobante') === idComprobante);
+    if (!row || row.get('ID_Movimiento')) return false;
+    row.set('ID_Movimiento', idMovimiento);
+    await row.save();
+    invalidateCache(userId);
+    return true;
+  });
+}
+
+async function obtenerComprobante(userId, idComprobante) {
+  const todos = await listarComprobantes(userId);
+  return todos.find(c => c.id === idComprobante) || null;
 }
 
 // ── Factura -> movimiento (puro) ─────────────────────────────────────────────
@@ -303,6 +329,8 @@ module.exports = {
   buscarDuplicado,
   buscarDuplicadoEn,
   registrarComprobante,
+  vincularMovimiento,
+  obtenerComprobante,
   decidirEstado,
   facturaAEntities,
   transferenciaAEntities,

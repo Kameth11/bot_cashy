@@ -12,6 +12,7 @@ const { geminiMediaSemaphore } = require('../lib/semaphore');
 const logger = require('../lib/logger');
 const state = require('../state');
 const comprobanteService = require('../services/comprobante.service');
+const archivoService = require('../services/comprobante-archivo.service');
 const cmd = require('../services/command.service');
 const { getRowDescripcion, getRowMonto, getRowMoneda, getRowIdUnico, getRowMetodoPago } = require('../utils/sheet-row');
 const { formatMonto, escapeMarkdown } = require('../utils/formatter');
@@ -47,6 +48,7 @@ async function procesarFactura(ctx, archivo) {
   entities.comprobante.hash = hash;
   entities.comprobante.archivo = archivo.fileId ? `tg:${archivo.fileId}` : '';
   entities.comprobante.mimeType = archivo.mimeType;
+  archivoService.recordarArchivo(idComprobante, archivo);
 
   // Mismo detector de ámbito que el texto libre (y misma regla: un invitado
   // nunca carga en Personal). El rubro/emisor ("supermercado", "YPF") es la
@@ -103,6 +105,7 @@ async function procesarTransferencia(ctx, archivo) {
     mimeType: archivo.mimeType,
     duplicado: duplicado ? { motivo: duplicado.motivo, fechaCarga: duplicado.comprobante.fechaCarga } : null,
   });
+  archivoService.recordarArchivo(idComprobante, archivo);
 
   let pendientes = [];
   try {
@@ -196,21 +199,34 @@ bot.action('transf_cancel', async (ctx) => {
   return ctx.editMessageText('❌ Cancelado.');
 });
 
-// Se llama al guardar el movimiento (nlp-confirm.js). Un error acá no puede
+// Se llama al guardar el movimiento (nlp-confirm.js / cobro con
+// transferencia). Sube el archivo a Storage si hay (si no, queda el file_id de
+// Telegram), registra en la pestaña y copia a Supabase. Un error acá no puede
 // deshacer ni frenar el movimiento ya guardado: se loguea y sigue.
 async function registrarComprobanteDesdeEntities(userId, entities, { idMovimiento = null } = {}) {
   const c = entities && entities.comprobante;
   if (!c || !c.id) return null;
   try {
-    return await comprobanteService.registrarComprobante(userId, {
+    let archivo = c.archivo || '';
+    const pendiente = archivoService.tomarArchivo(c.id);
+    if (pendiente) {
+      const subido = await archivoService.subirArchivo(userId, c.id, pendiente);
+      if (subido) archivo = subido;
+    }
+
+    const datos = {
       ...c,
+      archivo,
       ambito: entities.ambito === 'personal' ? 'personal' : 'consultorio',
       // Lo que el usuario corrigió en la confirmación manda sobre lo leído.
       total: entities.monto != null ? Math.abs(Number(entities.monto)) : c.total,
       moneda: entities.moneda || c.moneda,
       idMovimiento,
       cargadoPor: userId,
-    });
+    };
+    const id = await comprobanteService.registrarComprobante(userId, datos);
+    await archivoService.guardarEnSupabase(userId, { ...datos, id });
+    return id;
   } catch (err) {
     logger.error('Comprobantes', 'No se pudo registrar el comprobante', { userId, id: c.id, err: err.message });
     return null;

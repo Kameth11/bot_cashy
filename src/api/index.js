@@ -970,6 +970,73 @@ const MES_REGEX = /^\d{4}-\d{2}$/;
 
 // Las categorías salen del servicio, no de una lista repetida en el front: si
 // se agrega una, aparece sola en la UI y sigue validando igual en el POST.
+// ── Comprobantes (fotos/PDFs de facturas y transferencias) ──
+// Salen de la pestaña Comprobantes del sheet del consultorio. Los del ámbito
+// personal son solo del dueño/admin, igual que el resto de /api/personal.
+function esDuenoOAdmin(userId) {
+  const cliente = obtenerClientePorUserId(Number(userId));
+  return Boolean(cliente?.isOwner || esAdminOriginal(userId));
+}
+
+function comprobantePublico(c) {
+  return {
+    id: c.id,
+    tipo: c.tipo,
+    ambito: c.ambito,
+    emisor: c.emisor,
+    cuit: c.cuit,
+    tipoComprobante: c.tipoComprobante,
+    numero: c.numero,
+    fechaEmision: c.fechaEmision,
+    fechaVencimiento: c.fechaVencimiento,
+    fechaCarga: c.fechaCarga,
+    total: c.total,
+    moneda: c.moneda,
+    idMovimiento: c.idMovimiento,
+    items: c.items,
+    tieneArchivo: Boolean(c.archivo),
+    mimeType: c.mimeType,
+  };
+}
+
+async function comprobantesVisibles(userId) {
+  const comprobanteService = require('../services/comprobante.service');
+  const todos = await comprobanteService.listarComprobantes(userId);
+  const dueno = esDuenoOAdmin(userId);
+  return todos.filter(c => dueno || c.ambito !== 'personal');
+}
+
+app.get('/api/comprobantes', authMiddleware, requierePermiso('ver_movimientos'), async (req, res) => {
+  try {
+    const lista = await comprobantesVisibles(req.user.userId);
+    res.json({ comprobantes: lista.map(comprobantePublico) });
+  } catch (err) {
+    logger.error('API', 'Error GET /api/comprobantes', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener comprobantes' });
+  }
+});
+
+app.get('/api/comprobantes/:id/archivo', authMiddleware, requierePermiso('ver_movimientos'), async (req, res) => {
+  try {
+    const c = (await comprobantesVisibles(req.user.userId)).find(x => x.id === req.params.id);
+    if (!c) return res.status(404).json({ error: 'Comprobante no encontrado' });
+    if (!c.archivo) return res.status(404).json({ error: 'Este comprobante no tiene archivo guardado' });
+
+    const { descargarArchivo } = require('../services/comprobante-archivo.service');
+    const buffer = await descargarArchivo(req.user.userId, c.archivo);
+    if (!buffer) return res.status(404).json({ error: 'No se pudo recuperar el archivo' });
+
+    logger.audit('comprobante_archivo_visto', { userId: req.user.userId, id: c.id });
+    res.setHeader('Content-Type', c.mimeType || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Content-Disposition', 'inline');
+    res.send(buffer);
+  } catch (err) {
+    logger.error('API', 'Error GET /api/comprobantes/:id/archivo', { err: err.message });
+    res.status(500).json({ error: 'Error al obtener el archivo' });
+  }
+});
+
 app.get('/api/personal/categorias', authMiddleware, ownerOnly, (req, res) => {
   res.json({
     egreso: CATEGORIAS_EGRESO_PERSONAL,
