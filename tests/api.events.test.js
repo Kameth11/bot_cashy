@@ -1,3 +1,12 @@
+// Los usuarios de estos tests tienen que estar registrados: authMiddleware corta
+// la sesión de quien ya no existe en el sistema.
+jest.mock('../src/services/cliente.service', () => ({
+  get clientes() {
+    return { '1001': { email: 'a@test.com', sheetId: 's1', usuarios: [] }, '1002': { email: 'b@test.com', sheetId: 's2', usuarios: [] } };
+  },
+  cargarClientes: jest.fn(), guardarClientes: jest.fn(), getCliente: jest.fn(), eliminarCliente: jest.fn(), getPermisos: jest.fn(), setPermisos: jest.fn(),
+}));
+
 const jwt = require('jsonwebtoken');
 const { app, JWT_SECRET } = require('../src/api/index.js');
 const eventsService = require('../src/services/events.service');
@@ -73,8 +82,8 @@ describe('GET /api/events - seguridad', () => {
   });
 
   test('aislamiento multi-tenant: un usuario no recibe eventos de otro', async () => {
-    const tokenA = signToken('aaa-111');
-    const tokenB = signToken('bbb-222');
+    const tokenA = signToken('1001');
+    const tokenB = signToken('1002');
 
     const resA = await fetch(`${baseUrl}/api/events`, { headers: { Authorization: `Bearer ${tokenA}` } });
     const resB = await fetch(`${baseUrl}/api/events`, { headers: { Authorization: `Bearer ${tokenB}` } });
@@ -87,7 +96,7 @@ describe('GET /api/events - seguridad', () => {
     await readSseChunk(readerB);
 
     // Disparamos un cambio de movimientos solo para el usuario A
-    eventsService.emitMovimientosUpdated('aaa-111');
+    eventsService.emitMovimientosUpdated('1001');
 
     const chunkA = await readSseChunk(readerA);
     const chunkB = await readSseChunk(readerB);

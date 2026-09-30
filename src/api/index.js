@@ -102,8 +102,34 @@ app.use('/api', (req, res, next) => {
 const PORT = process.env.DASHBOARD_API_PORT || process.env.PORT || 3001;
 const JWT_SECRET = config.JWT_SECRET;
 
-const SESSION_DURATION = '180d';
-const SESSION_REFRESH_THRESHOLD_SEC = 30 * 24 * 60 * 60; // renovar si quedan menos de 30 dias
+// Sesión del dashboard. Antes: 180 días con renovación deslizante, o sea que un
+// token filtrado servía para siempre mientras alguien lo usara, y no se
+// invalidaba al sacar al usuario. Ahora:
+//  - el token dura pocos días y se renueva solo mientras se usa (X-Refreshed-Token);
+//  - la renovación NO extiende el "login original" (`authAt`): pasado
+//    SESSION_MAX_DAYS hay que pedir un código nuevo, se use o no;
+//  - en cada request se verifica que el usuario siga registrado, así quitar a
+//    alguien (/salir, /accesos, DELETE /api/users) le corta la sesión al toque.
+// Para invalidar TODAS las sesiones de golpe: rotar JWT_SECRET.
+const diasEnv = (nombre, porDefecto) => {
+  const n = Number(process.env[nombre]);
+  return Number.isFinite(n) && n > 0 ? n : porDefecto;
+};
+const SESSION_DAYS = diasEnv('SESSION_DURATION_DAYS', 14);
+const SESSION_MAX_DAYS = diasEnv('SESSION_MAX_DAYS', 90);
+const SESSION_DURATION = `${SESSION_DAYS}d`;
+const SESSION_REFRESH_THRESHOLD_SEC = (SESSION_DAYS / 2) * 24 * 60 * 60; // renovar cuando queda la mitad
+const SESSION_MAX_SEC = SESSION_MAX_DAYS * 24 * 60 * 60;
+
+function firmarSesion(userId, authAt = Math.floor(Date.now() / 1000)) {
+  return jwt.sign({ userId: String(userId), type: 'dashboard', authAt }, JWT_SECRET, { expiresIn: SESSION_DURATION });
+}
+
+// ¿El usuario sigue existiendo en el sistema? (admin, dueño o invitado)
+function usuarioRegistrado(userId) {
+  const id = Number(userId);
+  return Boolean(esAdminOriginal(id) || obtenerClientePorUserId(id));
+}
 
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
@@ -111,14 +137,26 @@ function authMiddleware(req, res, next) {
   const token = header.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    const ahora = Date.now() / 1000;
+
+    // Tokens emitidos antes de este cambio no traen authAt: se usa su iat.
+    const authAt = Number(decoded.authAt) || Number(decoded.iat) || 0;
+    if (ahora - authAt > SESSION_MAX_SEC) {
+      logger.audit('sesion_vencida_por_antiguedad', { userId: decoded.userId });
+      return res.status(401).json({ error: 'Sesión vencida. Volvé a iniciar sesión.' });
+    }
+
+    if (!usuarioRegistrado(decoded.userId) && process.env.NODE_ENV !== 'development') {
+      logger.audit('sesion_usuario_no_registrado', { userId: decoded.userId });
+      return res.status(401).json({ error: 'Sesión inválida' });
+    }
+
     req.user = decoded;
 
     // Sesion deslizante: si al usuario le queda poco tiempo de token, le mandamos
-    // uno nuevo en la respuesta para que el dashboard nunca le pida re-login
-    // mientras siga usandolo dentro de la ventana de SESSION_DURATION.
-    if (decoded.exp && decoded.exp - Date.now() / 1000 < SESSION_REFRESH_THRESHOLD_SEC) {
-      const refreshed = jwt.sign({ userId: decoded.userId, type: decoded.type }, JWT_SECRET, { expiresIn: SESSION_DURATION });
-      res.setHeader('X-Refreshed-Token', refreshed);
+    // uno nuevo en la respuesta (conserva authAt: no alarga el login original).
+    if (decoded.exp && decoded.exp - ahora < SESSION_REFRESH_THRESHOLD_SEC) {
+      res.setHeader('X-Refreshed-Token', firmarSesion(decoded.userId, authAt));
     }
 
     next();
@@ -285,7 +323,7 @@ app.post('/api/auth/verify',
 
   const DEV_TOKEN = process.env.DASHBOARD_DEV_TOKEN;
   if (DEV_TOKEN && process.env.NODE_ENV === 'development' && timingSafeEqualStr(code, DEV_TOKEN)) {
-    const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: SESSION_DURATION });
+    const token = firmarSesion(telegramId);
     const cliente = obtenerClientePorUserId(Number(telegramId));
     const esAdmin = esAdminOriginal(Number(telegramId));
     logger.audit('auth_dev_token_login', { telegramId });
@@ -338,7 +376,7 @@ app.post('/api/auth/verify',
     }
   }
 
-  const token = jwt.sign({ userId: telegramId, type: 'dashboard' }, JWT_SECRET, { expiresIn: SESSION_DURATION });
+  const token = firmarSesion(telegramId);
   const cliente = obtenerClientePorUserId(Number(telegramId));
   const esAdmin = esAdminOriginal(Number(telegramId));
   logger.audit('auth_verify_success', { telegramId, esAdmin });
@@ -1153,7 +1191,7 @@ function startApi() {
   });
 }
 
-module.exports = { app, startApi, authMiddleware, JWT_SECRET, warnIfDevTokenMisconfigured, authCodes };
+module.exports = { app, startApi, authMiddleware, firmarSesion, SESSION_MAX_SEC, JWT_SECRET, warnIfDevTokenMisconfigured, authCodes };
 
 // Arranque standalone (`node src/api/index.js`, sin el bot) — también espera
 // a que termine de cargar clientes.json/Supabase antes de atender requests.

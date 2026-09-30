@@ -97,9 +97,9 @@ describe('POST /api/config/modo-ia', () => {
     expect(clienteService.setModoFullIA).not.toHaveBeenCalled();
   });
 
-  test('usuario no registrado (9999) → 403 (ownerOnly corre antes que la validación de cliente)', async () => {
+  test('usuario no registrado (9999) → 401: la sesión de alguien que ya no existe se corta antes de llegar a ownerOnly', async () => {
     const res = await postModoIA(true, 9999);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
     expect(clienteService.setModoFullIA).not.toHaveBeenCalled();
   });
 });
@@ -112,10 +112,8 @@ describe('GET /api/auth/me incluye modoFullIA', () => {
     expect(body.user).toHaveProperty('modoFullIA', false);
   });
 
-  test('usuario no registrado (9999) recibe modoFullIA false por default', async () => {
+  test('usuario no registrado (9999): la sesión ya no vale (401)', async () => {
     const res = await fetch(`${baseUrl}/api/auth/me`, { headers: authHeader(9999) });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.user).toHaveProperty('modoFullIA', false);
+    expect(res.status).toBe(401);
   });
 });

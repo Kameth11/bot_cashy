@@ -349,7 +349,14 @@ preguntarse:
 
 ### Pendiente — formalmente anotado, no implementado todavía
 
-1. **Acortar la duración de sesión del JWT (hoy 180 días) + refresh token en
+1. **Sesión del dashboard.** *Parcial (2026-09-30):* el JWT dura 14 días
+   (`SESSION_DURATION_DAYS`), se renueva solo mientras se usa pero con un tope
+   absoluto de 90 días desde el login (`SESSION_MAX_DAYS`, claim `authAt`), y
+   `authMiddleware` corta la sesión si el usuario ya no está registrado.
+   Kill-switch global: rotar `JWT_SECRET`. **Falta:** mover el token a una
+   cookie httpOnly+Secure en vez de `localStorage`, y revocación por sesión
+   individual (hoy solo por usuario/secreto). Texto original de la decisión:
+   **Acortar la duración de sesión del JWT (hoy 180 días) + refresh token en
    cookie httpOnly.** Decisión tomada: esto queda como mejora pendiente, no
    como "decisión de mantenerlo así". El sliding-refresh que ya existe
    (`SESSION_REFRESH_THRESHOLD_SEC`) cubre la UX de no pedir re-login
@@ -560,3 +567,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-24 | Al leer una agenda por foto, tras confirmar los turnos se pregunta la fecha (Hoy/Mañana/texto libre) en vez de guardar siempre en "hoy"; se detectan turnos ya cargados para esa fecha (misma hora + paciente normalizado) y se pregunta reemplazar o agregar | Revisión de seguridad: la fecha fija rompía cargar la agenda del día siguiente con anticipación, y reenviar la misma foto (o una agenda ya cargada) duplicaba todos los turnos sin avisar |
 | 2026-09-24 | `CONSULTORIO_MAP` (hardcodeado en `config/index.js`, un solo tenant) pasa a ser solo el fallback; el mapeo real se arma por tenant desde `profesionales.consultorio`, que cada profesional declara al hacer `/profesional` | Revisión de seguridad: un mapeo hardcodeado en código no escala a SaaS — un tenant nuevo necesitaría un deploy de código para configurar sus propios consultorios. Decisión de producto confirmada con el usuario: autoregistro por profesional (no un comando nuevo para el dueño), con CONSULTORIO_MAP como fallback si el tenant no tiene Supabase o todavía no cargó nada (compatibilidad con el tenant existente) |
 | 2026-09-30 | Auditoría de escalabilidad/arquitectura/seguridad documentada en `AUDITORIA_2026-09-30.md`, sin cambios de código | Revisión pedida por el dueño: quedan pendientes `trust proxy` (rate limit global compartido), lecturas de historial completo, cuota de Sheets sin retry, apagado ordenado, validación del `PUT` de movimientos y unicidad de `sheetId` |
+| 2026-09-30 | Sesión del dashboard: JWT 14 días + tope absoluto de 90 días (`authAt` se conserva al renovar) + se verifica que el usuario siga registrado en cada request | Auditoría 2026-09-30, ítem 8: con 180 días deslizantes un token filtrado servía indefinidamente y sobrevivía a sacar al usuario. La cookie httpOnly queda pendiente |

@@ -151,9 +151,18 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   `scripts.tenantIsolation`. Pendiente: `movimientos_v2` sigue filtrando por
   `user_id` y no por `tenant_id`, hacerlo al activar v2.
 
-- [ ] **8. JWT de 180 días con renovación deslizante** **[V]**
+- [~] **8. JWT de 180 días con renovación deslizante** **[V]**
   Sin revocación, en `localStorage`; en la práctica no vence mientras se use.
   Ya figura como pendiente en `ARCHITECTURE.md` §4.
+  **Parcial (2026-09-30):** token de 14 días (`SESSION_DURATION_DAYS`), renovación
+  deslizante que **conserva `authAt`** y tope absoluto de 90 días
+  (`SESSION_MAX_DAYS`) tras el cual hay que pedir código nuevo; `authMiddleware`
+  verifica en cada request que el usuario siga registrado (quitarlo corta la
+  sesión al toque). Tokens viejos sin `authAt` usan su `iat`. Tests: `api.sesion`.
+  **Falta:** cookie httpOnly+Secure en vez de `localStorage` (protege contra robo
+  por XSS), revocación por sesión individual, y el dashboard debería avisar
+  amablemente al vencer la sesión. **Efecto visible:** quienes hoy tienen un
+  token de más de 90 días van a tener que volver a loguearse una vez.
 
 - [~] **9. Sin cuota de IA por tenant** **[V]**
   Solo hay 12 mensajes/10 s por usuario. Nada diario ni atribución de costo por
