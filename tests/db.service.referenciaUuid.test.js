@@ -38,3 +38,20 @@ test('sin vínculo: null', async () => {
   await db.addRow(1, base);
   expect(mockInserts[0].referencia_id).toBeNull();
 });
+
+describe('movimientos_v2: mismo problema, la columna también es uuid', () => {
+  const { buildMovimientoV2Payload } = require('../src/utils/movimiento-v2');
+
+  test('"comp:<id>" no va a referencia_id; queda en notas', () => {
+    const p = buildMovimientoV2Payload({ userId: 1, rowData: base, metadata: { referenciaId: 'comp:comp_1', notas: 'pagó Juan' } });
+    expect(p.referencia_id).toBeNull();
+    expect(p.notas).toBe('pagó Juan | comp:comp_1');
+  });
+
+  test('un uuid real sí va a referencia_id y no ensucia notas', () => {
+    const uuid = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const p = buildMovimientoV2Payload({ userId: 1, rowData: base, metadata: { referenciaId: uuid } });
+    expect(p.referencia_id).toBe(uuid);
+    expect(p.notas).toBeNull();
+  });
+});

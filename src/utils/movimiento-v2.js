@@ -120,6 +120,17 @@ function inferirCategoriaMovimiento({ tipoMovimiento, categoria, descripcion = '
   return 'tratamiento';
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function esUuid(valor) {
+  return typeof valor === 'string' && UUID_RE.test(valor.trim());
+}
+
+function unirNotas(notas, vinculo) {
+  const partes = [notas, vinculo].map(v => (v == null ? '' : String(v).trim())).filter(Boolean);
+  return partes.length ? partes.join(' | ') : null;
+}
+
 function buildMovimientoV2Payload({ userId, rowData, legacyId = null, metadata = {} }) {
   const tipoMovimiento = getTipoMovimientoFromLegacy(rowData.Tipo);
   const saldoPendiente = getSaldoPendienteFromLegacy({
@@ -168,8 +179,11 @@ function buildMovimientoV2Payload({ userId, rowData, legacyId = null, metadata =
     fecha_vencimiento: metadata.fechaVencimiento || null,
     fecha_carga: fechaCarga,
     origen_carga: metadata.origenCarga || 'bot',
-    referencia_id: metadata.referenciaId || null,
-    notas: metadata.notas || null,
+    // referencia_id es UUID (FK a movimientos_v2): un vínculo que no sea uuid,
+    // como el "comp:<id>" de los comprobantes, hace fallar el insert entero.
+    // Ese vínculo se conserva en notas para no perder la trazabilidad.
+    referencia_id: esUuid(metadata.referenciaId) ? metadata.referenciaId.trim() : null,
+    notas: unirNotas(metadata.notas, esUuid(metadata.referenciaId) ? null : metadata.referenciaId),
     legacy_row_id: legacyId ? String(legacyId) : null,
   };
 }
