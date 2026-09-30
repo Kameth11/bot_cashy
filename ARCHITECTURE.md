@@ -369,6 +369,14 @@ preguntarse:
    (términos de servicio, dónde se alojan los datos, qué pasa si un tenant
    se da de baja, etc.).
 
+### Auditoría de escalabilidad y seguridad (2026-09-30)
+
+Hallazgos pendientes, con estado y orden sugerido, en
+[`AUDITORIA_2026-09-30.md`](AUDITORIA_2026-09-30.md). Los ítems 1–4 (rate limit
+compartido por falta de `trust proxy`, lecturas de historial completo,
+cuota/retry de Google Sheets, ciclo de vida del proceso) hay que cerrarlos
+antes del segundo cliente.
+
 ### Checklist antes de cualquier cambio que toque auth o datos sensibles
 
 - ¿Se sigue usando `service_role` en algún punto donde debería respetarse
@@ -551,3 +559,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-23 | `escapeMarkdown` aplicado en 5 mensajes más que mostraban texto sin escapar (photo.js, actions.js, command.service.js, nlp.js, profesional.service.js); el estado `pending*` se setea recién después de un envío exitoso, nunca antes | Revisión de seguridad: un nombre con `_`/`*` sin escapar hacía que Telegram rechazara el mensaje; como el estado ya estaba seteado, el usuario quedaba trabado con "proceso pendiente" sin ver nunca la confirmación |
 | 2026-09-24 | Al leer una agenda por foto, tras confirmar los turnos se pregunta la fecha (Hoy/Mañana/texto libre) en vez de guardar siempre en "hoy"; se detectan turnos ya cargados para esa fecha (misma hora + paciente normalizado) y se pregunta reemplazar o agregar | Revisión de seguridad: la fecha fija rompía cargar la agenda del día siguiente con anticipación, y reenviar la misma foto (o una agenda ya cargada) duplicaba todos los turnos sin avisar |
 | 2026-09-24 | `CONSULTORIO_MAP` (hardcodeado en `config/index.js`, un solo tenant) pasa a ser solo el fallback; el mapeo real se arma por tenant desde `profesionales.consultorio`, que cada profesional declara al hacer `/profesional` | Revisión de seguridad: un mapeo hardcodeado en código no escala a SaaS — un tenant nuevo necesitaría un deploy de código para configurar sus propios consultorios. Decisión de producto confirmada con el usuario: autoregistro por profesional (no un comando nuevo para el dueño), con CONSULTORIO_MAP como fallback si el tenant no tiene Supabase o todavía no cargó nada (compatibilidad con el tenant existente) |
+| 2026-09-30 | Auditoría de escalabilidad/arquitectura/seguridad documentada en `AUDITORIA_2026-09-30.md`, sin cambios de código | Revisión pedida por el dueño: quedan pendientes `trust proxy` (rate limit global compartido), lecturas de historial completo, cuota de Sheets sin retry, apagado ordenado, validación del `PUT` de movimientos y unicidad de `sheetId` |

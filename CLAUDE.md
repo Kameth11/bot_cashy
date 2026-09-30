@@ -245,6 +245,9 @@ Decisiones de stack puntuales (no requieren más contexto):
 - **Bluelytics** para dólar blue argentino (no el oficial)
 - **No usar PRs/branch protection por ahora**: push directo a `main`, válido mientras sea un solo desarrollador (criterio de cuándo cambiar esto en `ARCHITECTURE.md` sección 6)
 
+Hallazgos pendientes de la última auditoría de escalabilidad/seguridad:
+`AUDITORIA_2026-09-30.md` (revisarlo antes de tocar API, rate limiting o Sheets).
+
 Decisiones de fondo (multi-tenancy, seguridad, infraestructura, modelo de
 datos v2, registro de decisiones) viven en `ARCHITECTURE.md` — no se
 duplican acá para que no queden desincronizadas.
