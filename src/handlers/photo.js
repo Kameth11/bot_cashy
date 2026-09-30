@@ -10,6 +10,7 @@ const { confirmButtons } = require('./actions');
 const { MAX_PHOTO_SIZE_BYTES, MAX_TURNOS_POR_IMAGEN } = require('../config');
 const { tieneProcesoPendiente } = require('./guards');
 const { geminiMediaSemaphore } = require('../lib/semaphore');
+const aiQuota = require('../lib/ai-quota');
 const { requierePermisoBot, tienePermisoBot } = require('../auth/bot-permisos');
 const { escapeMarkdown } = require('../utils/formatter');
 
@@ -41,6 +42,16 @@ async function descargarArchivo(ctx, fileId, maxBytes) {
   return Buffer.from(response.data, 'binary');
 }
 
+// Cuota diaria de lectura de imágenes/audios (1 unidad por archivo recibido).
+function consumirCuotaMedia(ctx, userId) {
+  const cuota = aiQuota.consumir(userId, 'media');
+  if (cuota.ok) return true;
+  if (cuota.avisar) {
+    ctx.reply(`⚠️ Se alcanzó el límite diario de lectura de fotos y audios de tu consultorio (${cuota.limite}). Mañana se renueva. Mientras tanto podés cargar los movimientos por texto.`).catch(() => {});
+  }
+  return false;
+}
+
 async function procesarArchivoRecibido(ctx, { fileId, fileSize, mimeType, caption }) {
   const userId = ctx.from.id;
 
@@ -60,6 +71,8 @@ async function procesarArchivoRecibido(ctx, { fileId, fileSize, mimeType, captio
   if (tieneProcesoPendiente(userId)) {
     return ctx.reply('⚠️ Tenés un proceso pendiente. Usá /cancelar primero.');
   }
+
+  if (!consumirCuotaMedia(ctx, userId)) return;
 
   try {
     await ctx.reply(puedeComprobante ? '📸 Procesando imagen...' : '📸 Procesando agenda...');

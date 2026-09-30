@@ -155,9 +155,19 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   Sin revocación, en `localStorage`; en la práctica no vence mientras se use.
   Ya figura como pendiente en `ARCHITECTURE.md` §4.
 
-- [ ] **9. Sin cuota de IA por tenant** **[V]**
+- [~] **9. Sin cuota de IA por tenant** **[V]**
   Solo hay 12 mensajes/10 s por usuario. Nada diario ni atribución de costo por
   tenant; cualquier invitado puede consumir Gemini/OpenRouter.
+  **Parcial (2026-09-30):** `src/lib/ai-quota.js`: cuota diaria por consultorio
+  (dueño + invitados comparten), día calendario argentino. Dos cupos: texto con IA
+  (`AI_LIMIT_TEXTO_DIA`, default 300) y fotos/audios (`AI_LIMIT_MEDIA_DIA`,
+  default 60; 0 = sin tope). Al agotarse el texto sigue funcionando el parser
+  local sin costo y se avisa una vez por día; foto/audio se rechazan con aviso.
+  Tests: `lib.ai-quota`, `handlers.ai-quota`. **Falta:** el contador es en
+  memoria (se reinicia con cada deploy y no sirve con varias réplicas);
+  persistirlo en Supabase si pasa a ser una restricción comercial; no hay
+  atribución/reporte de costo por consultorio ni cuotas por plan; los defaults
+  son estimaciones, ajustar con el uso real.
 
 - [~] **10. Dependencias vulnerables** **[V, `npm audit` del 2026-09-30]**
   Raíz: 10 vulns (4 altas): `sharp`/libvips (procesa imágenes de usuarios),

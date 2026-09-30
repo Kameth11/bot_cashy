@@ -8,6 +8,7 @@ const { validarTextoUsuario } = require('../utils/validation');
 const { escapeMarkdown } = require('../utils/formatter');
 const { procesarTextoConNlp } = require('./text');
 const { geminiMediaSemaphore } = require('../lib/semaphore');
+const aiQuota = require('../lib/ai-quota');
 const { requierePermisoBot } = require('../auth/bot-permisos');
 
 bot.on('voice', async (ctx) => {
@@ -35,6 +36,14 @@ bot.on('voice', async (ctx) => {
 
     if (voice.file_size && voice.file_size > MAX_VOICE_SIZE_BYTES) {
       return ctx.reply(`⚠️ El audio es demasiado pesado. Máximo: ${Math.round(MAX_VOICE_SIZE_BYTES / (1024 * 1024))} MB.`);
+    }
+
+    const cuota = aiQuota.consumir(userId, 'media');
+    if (!cuota.ok) {
+      if (cuota.avisar) {
+        await ctx.reply(`⚠️ Se alcanzó el límite diario de lectura de fotos y audios de tu consultorio (${cuota.limite}). Mañana se renueva. Mientras tanto podés cargar los movimientos por texto.`);
+      }
+      return;
     }
 
     await ctx.reply('🎤 Transcribiendo audio...');

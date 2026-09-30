@@ -5,6 +5,7 @@ const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { formatMonto, sanitizarInput, escapeMarkdown } = require('../utils/formatter');
 const geminiService = require('../services/gemini.service');
 const openrouterService = require('../services/openrouter.service');
+const aiQuota = require('../lib/ai-quota');
 const { handleNLPIntent } = require('../handlers/nlp');
 const { quickParse } = require('../services/quick_nlp.service');
 const registrationService = require('../services/registration.service');
@@ -275,9 +276,24 @@ async function procesarTextoConNlp(ctx, text) {
   state.processingNlp.add(userId);
   try {
     const cliente = obtenerClientePorUserId(userId);
-    const fullIA = Boolean(cliente?.modoFullIA) && openrouterService.canAttemptFullIA();
+    let fullIA = Boolean(cliente?.modoFullIA) && openrouterService.canAttemptFullIA();
 
     const quickResult = quickParse(text);
+
+    // Cuota diaria de IA del consultorio: al agotarse se sigue con el parser
+    // local (quick_nlp, sin costo) y se avisa una sola vez por día.
+    let iaPermitida = true;
+    const quickBastaria = shouldHandleWithQuickParseFirst(quickResult);
+    if (fullIA || (!quickBastaria && geminiService.canAttemptRemoteNlp())) {
+      const cuota = aiQuota.consumir(userId, 'texto');
+      if (!cuota.ok) {
+        iaPermitida = false;
+        fullIA = false;
+        if (cuota.avisar) {
+          await ctx.reply(`⚠️ Se alcanzó el límite diario de uso de IA de tu consultorio (${cuota.limite} mensajes). Seguís pudiendo cargar con formato claro, por ejemplo: consulta Juan $15000 efectivo. Mañana se renueva.`).catch(() => {});
+        }
+      }
+    }
 
     if (fullIA) {
       await ctx.reply('🧠 Procesando (Full IA)...').catch(() => {});
@@ -313,7 +329,7 @@ async function procesarTextoConNlp(ctx, text) {
         }
       }
 
-      if (geminiService.canAttemptRemoteNlp()) {
+      if (iaPermitida && geminiService.canAttemptRemoteNlp()) {
         await ctx.reply('🧠 Procesando...').catch(() => {});
 
         try {
