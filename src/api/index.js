@@ -56,6 +56,11 @@ const app = express();
 // rompería. El resto de los headers no afecta al SPA.
 app.use(helmet({ contentSecurityPolicy: false }));
 
+// Railway (y cualquier PaaS) pone un proxy delante: sin esto req.ip es la IP
+// del proxy para TODOS los clientes y los rate limiters por IP terminan
+// siendo un único bucket global. 1 = confiar solo en el salto más cercano.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+
 const ALLOWED_ORIGINS = [
   ...(process.env.DASHBOARD_ORIGINS || 'http://localhost:5173').split(',').map(o => o.trim()),
   ...(process.env.RAILWAY_PUBLIC_DOMAIN ? [`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`] : []),
@@ -469,13 +474,25 @@ app.put('/api/movimientos/:idUnico', authMiddleware, requierePermiso('editar_mov
     const { idUnico } = req.params;
     const body = req.body || {};
     const updates = {};
-    if (body.descripcion !== undefined) updates.descripcion = String(body.descripcion).trim();
-    if (body.monto       !== undefined) updates.monto       = parseFloat(body.monto);
+    if (body.descripcion !== undefined) {
+      const desc = normalizarDescripcion(body.descripcion);
+      if (!desc.ok) return res.status(400).json({ error: 'La descripción es inválida' });
+      updates.descripcion = desc.valor;
+    }
+    if (body.monto !== undefined) {
+      const monto = validarMonto(body.monto);
+      if (!monto.ok) return res.status(400).json({ error: 'El monto es inválido' });
+      updates.monto = monto.valor;
+    }
     if (body.estado      !== undefined) updates.estado      = ['Cobrado', 'Pendiente'].includes(body.estado) ? body.estado : undefined;
-    if (body.metodoPago  !== undefined) updates.metodoPago  = body.metodoPago || '';
+    if (body.metodoPago  !== undefined) updates.metodoPago  = ['efectivo', 'transferencia', 'tarjeta'].includes(body.metodoPago) ? body.metodoPago : '';
     if (body.moneda      !== undefined) updates.moneda      = ['Pesos', 'Dólares', 'Euros'].includes(body.moneda) ? body.moneda : undefined;
     Object.keys(updates).forEach(k => updates[k] === undefined && delete updates[k]);
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No hay campos validos para actualizar' });
+
+    if ((updates.moneda === 'Dólares' && !state.cotizacionDolar) || (updates.moneda === 'Euros' && !state.cotizacionEuro)) {
+      await obtenerCotizacionDolar();
+    }
 
     await updateMovimiento(req.user.userId, idUnico, updates);
     invalidarCacheMovimientos(req.user.userId);

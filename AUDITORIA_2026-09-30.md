@@ -16,15 +16,16 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
 
 ## Crítico / alto
 
-- [ ] **1. Rate limiters compartidos entre todos los usuarios** **[V]**
+- [x] **1. Rate limiters compartidos entre todos los usuarios** **[V]**
   `src/api/index.js` limita por `req.ip` y nunca hace `app.set('trust proxy', …)`.
   Probado localmente: con `X-Forwarded-For: 203.0.113.9`, `req.ip` sigue siendo
   `127.0.0.1`. Detrás de Railway todos comparten la IP del proxy, así que el
   límite de 120 req/min es global, y los de `/api/auth/request-code` (20/10 min)
   y `/api/auth/verify` (30/10 min) también. Además `requestCodeByUser` (5/10 min
   por Telegram ID, sin autenticar) permite bloquear el login de otra persona.
-  *Arreglo:* `app.set('trust proxy', 1)` + test. Confirmar la cantidad de saltos
-  de proxy en Railway **[?]**.
+  **Resuelto (2026-09-30):** `app.set('trust proxy', TRUST_PROXY_HOPS ?? 1)` +
+  `tests/api.trust-proxy.test.js` (falla sin el fix). Pendiente **[?]**: confirmar
+  que Railway agrega exactamente 1 salto; si no, setear `TRUST_PROXY_HOPS`.
 
 - [ ] **2. Lecturas de historial completo; el tope de 20.000 puede ser 1.000** **[V]/[?]**
   `fetchLegacyRowsForUser` usa `.limit(20000)`, pero el `max-rows` por defecto de
@@ -62,7 +63,7 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
 
 ## Medio
 
-- [ ] **5. `PUT /api/movimientos/:id` sin validar** **[V]**
+- [x] **5. `PUT /api/movimientos/:id` sin validar** **[V]**
   `descripcion` no pasa por `sanitizarInput` (sin tope de largo ni prefijo `'`
   anti-fórmula, que el POST sí aplica); `monto` acepta `NaN`; **no se recalcula
   `MontoPesos`** al cambiar monto o moneda → balances inconsistentes tras editar.
@@ -88,10 +89,13 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   Solo hay 12 mensajes/10 s por usuario. Nada diario ni atribución de costo por
   tenant; cualquier invitado puede consumir Gemini/OpenRouter.
 
-- [ ] **10. Dependencias vulnerables** **[V, `npm audit` del 2026-09-30]**
+- [~] **10. Dependencias vulnerables** **[V, `npm audit` del 2026-09-30]**
   Raíz: 10 vulns (4 altas): `sharp`/libvips (procesa imágenes de usuarios),
   `ws`, `uuid`/`gaxios`. `npm audit fix` cubre la mayoría; `sharp` pide salto
   mayor (0.35.x). Dashboard: 4 (3 altas), todas en `react-router`.
+  **Parcial (2026-09-30):** `npm audit fix` sin cambios mayores → raíz 10→5.
+  Quedan `sharp` (salto mayor, probar con fotos reales), `@supabase/supabase-js`
+  (fijado en 2.49.1) y `uuid`/`gaxios` (vía google-spreadsheet): requieren `--force`.
 
 - [ ] **11. CI no bloquea el deploy** **[V]**
   Decisión documentada para un solo desarrollador; su disparador es "primer

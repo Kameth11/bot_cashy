@@ -1258,6 +1258,27 @@ async function findRowByCompositeKey(userId, { descripcion, monto, fecha }) {
   }) || null;
 }
 
+// MontoPesos nuevo tras editar monto y/o moneda. Si la moneda no cambia y la
+// fila ya tenía MontoPesos, se conserva la cotización con la que se cargó
+// (proporción MontoPesos/Monto); si cambia, se usa la cotización actual.
+// Mantiene el signo del monto. Devuelve null si no se puede calcular.
+function recalcularMontoPesos(row, updates) {
+  const montoActual = parseFloat(row.get('Monto'));
+  const pesosActual = parseFloat(row.get('MontoPesos'));
+  const monedaActual = row.get('Moneda') || 'Pesos';
+  const nuevoMonto = updates.monto !== undefined ? Number(updates.monto) : montoActual;
+  const nuevaMoneda = updates.moneda !== undefined ? updates.moneda : monedaActual;
+  if (!Number.isFinite(nuevoMonto)) return null;
+
+  if (nuevaMoneda === monedaActual && Number.isFinite(montoActual) && montoActual !== 0
+    && Number.isFinite(pesosActual) && pesosActual !== 0) {
+    return Math.round(nuevoMonto * (pesosActual / montoActual) * 100) / 100;
+  }
+  const { calcularMontoPesos } = require('./movimiento.service');
+  const abs = calcularMontoPesos(Math.abs(nuevoMonto), nuevaMoneda);
+  return nuevoMonto < 0 ? -abs : abs;
+}
+
 // Actualiza un movimiento por ID único.
 async function updateMovimiento(userId, idUnico, updates) {
   await withUserWriteLock(userId, async () => {
@@ -1287,6 +1308,14 @@ async function updateMovimiento(userId, idUnico, updates) {
       } else if (updates.estado === 'Pendiente' && estadoPrevio === 'Cobrado') {
         updates = { ...updates, fechaCobro: '' };
       }
+    }
+
+    // Si cambia el monto o la moneda, MontoPesos tiene que acompañarlo: si no,
+    // balances y reportes (que suman MontoPesos) quedan con el valor viejo.
+    if ((updates.monto !== undefined || updates.moneda !== undefined)
+      && updates.montoPesos === undefined && updates.monto_pesos === undefined) {
+      const montoPesos = recalcularMontoPesos(row, updates);
+      if (montoPesos !== null) updates = { ...updates, montoPesos };
     }
 
     for (const [key, value] of Object.entries(updates)) {

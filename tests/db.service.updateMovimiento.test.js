@@ -67,3 +67,34 @@ describe('updateMovimiento - stamping de FechaCobro', () => {
     expect(row.set).not.toHaveBeenCalledWith('FechaCobro', expect.anything());
   });
 });
+
+describe('updateMovimiento - recálculo de MontoPesos', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const run = async (initial, updates) => {
+    const row = fakeRow({ ID_Unico: 'm', Estado: 'Cobrado', ...initial });
+    sheetService.getSheetCliente.mockResolvedValue({ getRows: async () => [row] });
+    await db.updateMovimiento(1, 'm', updates);
+    return row;
+  };
+
+  test('mismo tipo de moneda: conserva la cotización original', async () => {
+    const row = await run({ Monto: '100', Moneda: 'Dólares', MontoPesos: '120000' }, { monto: 50 });
+    expect(row.set).toHaveBeenCalledWith('MontoPesos', 60000);
+  });
+
+  test('pesos: MontoPesos = monto, con signo', async () => {
+    const row = await run({ Monto: '-500', Moneda: 'Pesos', MontoPesos: '-500' }, { monto: -800 });
+    expect(row.set).toHaveBeenCalledWith('MontoPesos', -800);
+  });
+
+  test('cambio de moneda a dólares: usa la cotización actual', async () => {
+    const row = await run({ Monto: '100', Moneda: 'Pesos', MontoPesos: '100' }, { moneda: 'Dólares' });
+    expect(row.set).toHaveBeenCalledWith('MontoPesos', 100 * 1200); // COTIZACION_DEFAULT de setup-env
+  });
+
+  test('editar solo el estado no toca MontoPesos', async () => {
+    const row = await run({ Monto: '100', Moneda: 'Pesos', MontoPesos: '100' }, { estado: 'Pendiente' });
+    expect(row.set).not.toHaveBeenCalledWith('MontoPesos', expect.anything());
+  });
+});
