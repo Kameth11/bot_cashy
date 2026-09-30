@@ -16,6 +16,8 @@ jest.mock('../src/services/command.service', () => ({ registrarMovimientoDesdeNL
 jest.mock('../src/services/personal.service', () => ({
   registrarMovimientoPersonal: jest.fn(),
   evaluarPresupuesto: jest.fn().mockResolvedValue(null),
+  fechaStrAIso: jest.requireActual('../src/services/personal.service').fechaStrAIso,
+  mesActualIso: jest.fn(() => '2026-09'),
 }));
 jest.mock('../src/handlers/comprobante', () => ({ registrarComprobanteDesdeEntities: jest.fn().mockResolvedValue('comp_1') }));
 
@@ -94,4 +96,34 @@ test('un movimiento de texto (sin comprobante) no registra nada extra', async ()
   state.pendingNlpMovimientos.set(2222, { entities: { tipo: 'gasto', descripcion: 'Luz', monto: 100, ambito: 'consultorio' } });
   await handleNlpSave(ctxFor(2222));
   expect(registrarComprobanteDesdeEntities).not.toHaveBeenCalled();
+});
+
+describe('guardar personal: aviso cuando la fecha cae en otro mes', () => {
+  const guardarConFecha = async (fecha, tipo = 'Egreso') => {
+    personalService.registrarMovimientoPersonal.mockResolvedValue({
+      movimiento: { idMov: 'p1', descripcion: 'Transferencia', monto: 5000, moneda: 'Pesos', categoria: 'otros', tipo, fecha },
+      viaje: null,
+    });
+    state.pendingNlpMovimientos.set(2222, { entities: entitiesFactura({ ambito: 'personal', categoria: 'otros' }) });
+    const ctx = ctxFor(2222);
+    await handleNlpSave(ctx);
+    return ctx.editMessageText.mock.calls[0][0];
+  };
+
+  test('fecha del mes actual: sin aviso, pero con la fecha visible', async () => {
+    const msg = await guardarConFecha('15/09/2026');
+    expect(msg).toContain('📅 15/09/2026');
+    expect(msg).not.toContain('otro mes');
+  });
+
+  test('fecha de otro mes: avisa en qué mes lo va a encontrar', async () => {
+    const msg = await guardarConFecha('15/08/2026');
+    expect(msg).toContain('otro mes');
+    expect(msg).toContain('2026-08');
+  });
+
+  test('el título refleja Ingreso vs Gasto', async () => {
+    expect(await guardarConFecha('15/09/2026', 'Ingreso')).toContain('Ingreso personal registrado');
+    expect(await guardarConFecha('15/09/2026', 'Egreso')).toContain('Gasto personal registrado');
+  });
 });

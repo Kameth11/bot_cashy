@@ -272,13 +272,21 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
     const extra = { parse_mode: 'Markdown' };
     if (DASHBOARD_URL) extra.reply_markup = { inline_keyboard: [[{ text: '📊 Ver Dashboard', url: DASHBOARD_URL }]] };
 
+    // El resumen personal (bot y dashboard) muestra un mes por vez: si la fecha
+    // del movimiento (p. ej. la de un comprobante viejo) cae en otro mes, no
+    // va a estar en el mes actual y conviene decirlo en vez de dejar al usuario
+    // buscándolo.
+    const iso = personalService.fechaStrAIso(movimiento.fecha) || '';
+    const avisoMes = iso && !iso.startsWith(personalService.mesActualIso())
+      ? `\n\n📆 _Ojo: la fecha es de otro mes (${iso.slice(0, 7)}). Lo vas a ver en Personal → ese mes, no en el actual._`
+      : '';
     const esIngreso = String(movimiento.tipo).toLowerCase() === 'ingreso';
     return ctx.editMessageText(
       `✅ *${esIngreso ? 'Ingreso' : 'Gasto'} personal registrado*\n\n` +
       `🏠 ${escapeMarkdown(movimiento.descripcion)}\n` +
       `💰 ${formatMonto(movimiento.monto, movimiento.moneda)}\n` +
       `📅 ${escapeMarkdown(String(movimiento.fecha))}\n` +
-      `🏷️ ${categoriaTexto}${viajeTexto}${alerta}`,
+      `🏷️ ${categoriaTexto}${viajeTexto}${alerta}${avisoMes}`,
       extra
     );
   } catch (error) {

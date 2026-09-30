@@ -20,7 +20,7 @@ describe('fechaStrAIso', () => {
   });
 
   test('devuelve null ante formatos que no reconoce', () => {
-    expect(fechaStrAIso('2026-03-05')).toBeNull();
+    expect(fechaStrAIso('marzo')).toBeNull();
     expect(fechaStrAIso('')).toBeNull();
     expect(fechaStrAIso(null)).toBeNull();
   });
@@ -143,5 +143,22 @@ describe('evaluarPresupuestosDesde', () => {
 describe('mesActualIso', () => {
   test('devuelve YYYY-MM', () => {
     expect(mesActualIso()).toMatch(/^\d{4}-\d{2}$/);
+  });
+});
+
+describe('fechaStrAIso tolera los formatos que puede devolver el Sheet', () => {
+  const { fechaStrAIso } = require('../src/services/personal.service');
+  test.each([
+    ['30/09/2026', '2026-09-30'],
+    ['3/9/2026', '2026-09-03'],
+    ['30-09-2026', '2026-09-30'],
+    ['30.09.2026', '2026-09-30'],
+    ['2026-09-30', '2026-09-30'],
+    ['2026-9-3 10:15', '2026-09-03'],
+    ['2026-09-30T10:15:00', '2026-09-30'],
+  ])('%s -> %s', (entrada, esperado) => expect(fechaStrAIso(entrada)).toBe(esperado));
+
+  test('basura o vacío -> null', () => {
+    for (const x of ['', null, undefined, 'ayer', '30/09']) expect(fechaStrAIso(x)).toBeNull();
   });
 });

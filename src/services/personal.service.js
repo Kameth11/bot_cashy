@@ -170,9 +170,14 @@ function horaAhoraStr() {
 }
 
 // Las fechas del Sheet son DD/MM/YYYY; para comparar rangos hace falta ISO.
+// Tolera también ISO (AAAA-MM-DD, con o sin hora) y separadores "-" o ".": si
+// el Sheet devuelve la celda en otro formato, el movimiento seguía en la
+// pestaña pero desaparecía de los resúmenes y del dashboard (que filtran por mes).
 function fechaStrAIso(fecha) {
   const raw = String(fecha || '').trim();
-  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
   if (!m) return null;
   return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
 }
