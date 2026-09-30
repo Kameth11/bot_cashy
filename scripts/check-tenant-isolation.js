@@ -1,4 +1,4 @@
-// Falla si aparece getSupabase().from(...) fuera de los archivos permitidos.
+// Falla si aparece una consulta a Supabase sin clasificar o fuera de tenant-db.js.
 // Es la red de seguridad de la Fase 2 de multi-tenancy (ver ARCHITECTURE.md
 // seccion 3): toda query a tablas de negocio debe pasar por
 // src/lib/tenant-db.js para no filtrar datos entre tenants.
@@ -21,12 +21,23 @@ const ALLOWED_FILES = new Set([
   path.join(SRC_DIR, 'services', 'tenant.service.js'),
 ]);
 
-// Detecta .from('movimientos')/.from("movimientos")/etc para cualquier
-// tabla de SCOPED_TABLES, sin importar como se obtuvo el cliente (no
-// depende de que el llamado a getSupabase() este en la misma linea).
-const FROM_PATTERN = new RegExp(
-  `\\.from\\(\\s*['"\`](${[...SCOPED_TABLES].join('|')})['"\`]\\s*\\)`
-);
+// Modelo "lista cerrada": TODA tabla que se consulte con .from(...) tiene que
+// estar clasificada acá o en SCOPED_TABLES (tenant-db.js). Antes el script solo
+// miraba las tablas de SCOPED_TABLES, así que una tabla nueva de negocio (o las
+// de v2) quedaba fuera del control sin que nada avisara.
+//
+//  - SCOPED_TABLES: datos de negocio por tenant → solo vía forTenant().
+//  - GLOBAL_TABLES: mapeo identidad/tenant o infraestructura, deliberadamente
+//    sin tenant_id (ver comentarios en tenant-db.js y tenant.service.js).
+//  - DRAFT_TABLES: esquemas draft que no existen en producción todavía. Al
+//    activarlas hay que sumarles tenant_id y pasarlas a SCOPED_TABLES.
+const GLOBAL_TABLES = new Set(['profiles', 'tenants', 'tenant_requests', 'auth_codes']);
+const DRAFT_TABLES = new Set(['movimientos_v2', 'movimiento_eventos_v2']);
+
+const FROM_LITERAL = /\.from\(\s*['"`]([a-z_0-9]+)['"`]\s*\)/g;
+const FROM_ANY = /\.from\(/;
+const NO_SUPABASE_FROM = /(Buffer|Array|Object|Uint8Array)\.from\(/;
+const RPC = /\.rpc\(/;
 
 function listJsFiles(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -38,36 +49,70 @@ function listJsFiles(dir) {
   });
 }
 
+// Analiza el contenido de un archivo y devuelve la lista de problemas. Pura
+// (sin I/O) para poder testearla.
+function analizarContenido(content, { scoped = SCOPED_TABLES } = {}) {
+  const problemas = [];
+  const lines = content.split('\n');
+
+  lines.forEach((line, idx) => {
+    if (RPC.test(line)) {
+      const ventana = lines.slice(Math.max(0, idx - 4), idx + 1).join('\n');
+      if (!ventana.includes('tenant-isolation-ignore')) {
+        problemas.push({ linea: idx + 1, texto: line.trim(), motivo: '.rpc() no está cubierto por el aislamiento de tenant' });
+      }
+    }
+
+    if (!FROM_ANY.test(line) || NO_SUPABASE_FROM.test(line)) return;
+
+    // El .from(tabla) suele venir varias líneas después de donde se obtuvo el
+    // cliente (forTenant(tenantId)\n  .from(...) o un comentario de
+    // excepción): se mira una ventana de líneas previas.
+    const ventana = lines.slice(Math.max(0, idx - 4), idx + 1).join('\n');
+    const ignorada = ventana.includes('tenant-isolation-ignore');
+
+    const literales = [...line.matchAll(FROM_LITERAL)].map(m => m[1]);
+    if (literales.length === 0) {
+      if (!ignorada) problemas.push({ linea: idx + 1, texto: line.trim(), motivo: '.from() con tabla dinámica: no se puede verificar (marcar con tenant-isolation-ignore si es una sonda)' });
+      return;
+    }
+
+    for (const tabla of literales) {
+      if (scoped.has(tabla)) {
+        if (!ventana.includes('forTenant(') && !ignorada) {
+          problemas.push({ linea: idx + 1, texto: line.trim(), motivo: `'${tabla}' es de negocio: usar forTenant(tenantId).from()` });
+        }
+      } else if (GLOBAL_TABLES.has(tabla) || DRAFT_TABLES.has(tabla)) {
+        continue;
+      } else if (!ignorada) {
+        problemas.push({ linea: idx + 1, texto: line.trim(), motivo: `tabla '${tabla}' sin clasificar: agregarla a SCOPED_TABLES (tenant-db.js) o a GLOBAL_TABLES (este script)` });
+      }
+    }
+  });
+
+  return problemas;
+}
+
 function main() {
   const offenders = [];
 
   for (const file of listJsFiles(SRC_DIR)) {
     if (ALLOWED_FILES.has(file)) continue;
-
     const content = fs.readFileSync(file, 'utf8');
-    const lines = content.split('\n');
-    lines.forEach((line, idx) => {
-      if (!FROM_PATTERN.test(line)) return;
-
-      // El .from(tabla) suele venir varias lineas despues de donde se
-      // obtuvo el cliente (forTenant(tenantId)\n  .from(...) o un
-      // comentario de excepcion). Se mira una ventana de lineas previas
-      // en vez de solo la linea anterior.
-      const ventana = lines.slice(Math.max(0, idx - 4), idx + 1).join('\n');
-      if (ventana.includes('forTenant(') || ventana.includes('tenant-isolation-ignore')) return;
-
-      offenders.push(`${path.relative(process.cwd(), file)}:${idx + 1}: ${line.trim()}`);
-    });
+    for (const p of analizarContenido(content)) {
+      offenders.push(`${path.relative(process.cwd(), file)}:${p.linea}: ${p.texto}\n      -> ${p.motivo}`);
+    }
   }
 
   if (offenders.length > 0) {
-    console.error('Query a Supabase fuera de tenant-db.js encontrada (riesgo de fuga cross-tenant):\n');
+    console.error('Riesgo de fuga cross-tenant: consultas a Supabase sin clasificar o fuera de tenant-db.js:\n');
     offenders.forEach(o => console.error(`  ${o}`));
-    console.error('\nUsa forTenant(tenantId).from(tabla) de src/lib/tenant-db.js en su lugar.');
     process.exit(1);
   }
 
-  console.log('check-tenant-isolation: OK, no hay queries de negocio fuera de tenant-db.js');
+  console.log('check-tenant-isolation: OK, todas las tablas consultadas están clasificadas y las de negocio pasan por tenant-db.js');
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { analizarContenido, GLOBAL_TABLES, DRAFT_TABLES };

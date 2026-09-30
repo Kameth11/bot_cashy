@@ -134,11 +134,22 @@ Leyenda de confianza: **[V]** verificado (corrida o lectura directa),
   `ensureProfile` no cree esas filas sombra y revisar si hay invitados afectados
   en producción (perfiles con `sheet_id` igual al de su dueño).
 
-- [ ] **7. Puntos ciegos del guard de aislamiento** **[V]**
+- [x] **7. Puntos ciegos del guard de aislamiento** **[V]**
   `scripts/check-tenant-isolation.js` busca `getSupabase().from(...)`; las
   consultas a `movimientos_v2` usan `supabase.from(...)` con variable y no las
   detecta. Además se filtran por `user_id`, no `tenant_id`. Hoy esas tablas no
   existen en producción; tratarlo cuando se activen v2.
+  **Corrección + resuelto (2026-09-30):** la descripción original era imprecisa:
+  para las tablas de `SCOPED_TABLES` el guard sí detectaba `supabase.from('x')`
+  (la regex no depende de cómo se obtuvo el cliente). El hueco real era que solo
+  miraba esas tablas: una tabla nueva de negocio, las de v2, un `.from(variable)`
+  o un `.rpc()` pasaban sin aviso. Ahora es una **lista cerrada**: toda tabla
+  tiene que estar en `SCOPED_TABLES` (vía `forTenant`), en `GLOBAL_TABLES`
+  (`profiles`, `tenants`, `tenant_requests`, `auth_codes`) o en `DRAFT_TABLES`
+  (v2, con aviso de sumarles `tenant_id` al activarlas); `.from(dinámico)` y
+  `.rpc()` fallan salvo `tenant-isolation-ignore`. Test:
+  `scripts.tenantIsolation`. Pendiente: `movimientos_v2` sigue filtrando por
+  `user_id` y no por `tenant_id`, hacerlo al activar v2.
 
 - [ ] **8. JWT de 180 días con renovación deslizante** **[V]**
   Sin revocación, en `localStorage`; en la práctica no vence mientras se use.
