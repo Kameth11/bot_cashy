@@ -1,6 +1,9 @@
 /**
  * /nlptest <frase>
- * Muestra el resultado del NLP sin guardar nada.
+ * Muestra lado a lado qué devuelven las reglas (quick NLP) y Gemini para la
+ * misma frase, y en qué difieren, sin guardar nada. Gemini se consulta SIEMPRE
+ * (en producción solo se consulta si las reglas no resuelven), así se ve qué
+ * pasaría con la IA en los casos donde las reglas aciertan o se equivocan.
  * Solo disponible para el admin (AUTHORIZED_USER_ID).
  */
 
@@ -34,6 +37,59 @@ function formatEntities(entities = {}) {
   return lines.length ? lines.join('\n') : '  _(vacío)_';
 }
 
+// Compara intent y entidades de dos resultados. Un valor ausente y null cuentan
+// igual; los números y textos se comparan normalizados.
+function compararNlp(a, b) {
+  const diffs = [];
+  if (a.intent !== b.intent) diffs.push(`intent (${a.intent} vs ${b.intent})`);
+
+  const ea = a.entities || {};
+  const eb = b.entities || {};
+  const norm = (v) => (v === undefined || v === null ? '' : String(v).trim().toLowerCase());
+  for (const key of new Set([...Object.keys(ea), ...Object.keys(eb)])) {
+    if (norm(ea[key]) !== norm(eb[key])) {
+      diffs.push(`${key} (${norm(ea[key]) || '—'} vs ${norm(eb[key]) || '—'})`);
+    }
+  }
+  return diffs;
+}
+
+async function consultarGemini(userId, frase) {
+  if (!geminiService.canAttemptRemoteNlp()) {
+    return { error: 'no disponible (sin GEMINI_API_KEY o en cooldown por rate limit)' };
+  }
+  try {
+    const result = await geminiService.parseMessage(userId, frase);
+    return result ? { result } : { error: 'sin resultado (API caída, timeout o respuesta inválida)' };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+function armarMensaje(frase, quickResult, gemini) {
+  let msg = `🧪 *NLP Test*\n\n📝 Frase: \`${frase}\`\n\n`;
+
+  msg += quickResult
+    ? `⚡ *Reglas* → \`${quickResult.intent}\`\n${formatEntities(quickResult.entities)}\n\n`
+    : `⚡ *Reglas* → ❌ no matchearon (en producción iría a Gemini)\n\n`;
+
+  msg += gemini.result
+    ? `🤖 *Gemini* → \`${gemini.result.intent}\`\n${formatEntities(gemini.result.entities)}\n\n`
+    : `🤖 *Gemini* → ❌ ${gemini.error}\n\n`;
+
+  if (quickResult && gemini.result) {
+    const diffs = compararNlp(quickResult, gemini.result);
+    msg += diffs.length
+      ? `⚠️ *Difieren:* ${diffs.join(', ')}`
+      : `✅ *Coinciden*`;
+  } else if (quickResult) {
+    msg += `_Sin Gemini no se puede comparar._`;
+  } else if (gemini.result) {
+    msg += `_Solo respondió Gemini._`;
+  }
+  return msg;
+}
+
 bot.command('nlptest', async (ctx) => {
   const userId = ctx.from.id;
 
@@ -46,6 +102,7 @@ bot.command('nlptest', async (ctx) => {
   if (!frase) {
     return ctx.reply(
       '🧪 *Uso:* `/nlptest <frase>`\n\n' +
+      'Compara lado a lado las reglas y Gemini.\n\n' +
       'Ejemplos:\n' +
       '`/nlptest pagaron 300 euros y faltan 200 restantes`\n' +
       '`/nlptest cobré 15000 de Juan en efectivo`\n' +
@@ -56,39 +113,13 @@ bot.command('nlptest', async (ctx) => {
 
   await ctx.reply('🔍 Analizando...').catch(() => {});
 
-  // 1. Quick NLP
   const quickResult = quickNlp.quickParse(frase);
+  const gemini = await consultarGemini(userId, frase);
+  const msg = armarMensaje(frase, quickResult, gemini);
 
-  let msg = `🧪 *NLP Test*\n\n📝 Frase: \`${frase}\`\n\n`;
-
-  if (quickResult) {
-    msg += `⚡ *Quick NLP* → \`${quickResult.intent}\`\n${formatEntities(quickResult.entities)}\n\n`;
-    msg += `_Gemini no fue consultado (quick NLP resolvió)_`;
-  } else {
-    msg += `⚡ *Quick NLP* → ❌ no matcheó\n\n`;
-
-    // 2. Gemini fallback
-    try {
-      msg += `🤖 *Gemini* → consultando...\n`;
-      await ctx.reply(msg, { parse_mode: 'Markdown' }).catch(() => {});
-      msg = '';
-
-      const geminiResult = await geminiService.parseMessage(userId, frase);
-      if (geminiResult) {
-        msg = `🤖 *Gemini* → \`${geminiResult.intent}\`\n${formatEntities(geminiResult.entities)}`;
-      } else {
-        msg = `🤖 *Gemini* → ❌ sin resultado (API no disponible o timeout)`;
-      }
-    } catch (err) {
-      msg = `🤖 *Gemini* → ❌ error: \`${err.message}\``;
-    }
-  }
-
-  if (msg) {
-    await ctx.reply(msg, { parse_mode: 'Markdown' }).catch(() => {
-      ctx.reply(msg.replace(/[`*_[\]]/g, '')).catch(() => {});
-    });
-  }
+  await ctx.reply(msg, { parse_mode: 'Markdown' }).catch(() => {
+    ctx.reply(msg.replace(/[`*_[\]]/g, '')).catch(() => {});
+  });
 });
 
-module.exports = {};
+module.exports = { compararNlp, armarMensaje };
