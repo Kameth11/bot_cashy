@@ -2,7 +2,8 @@
 // comprobante se registra en la pestaña y en Supabase. Un movimiento que se
 // guardó en un paso posterior completa el vínculo después.
 
-jest.mock('../src/lib/telegraf', () => ({ bot: { action: jest.fn(), on: jest.fn() } }));
+const mockSendDocument = jest.fn();
+jest.mock('../src/lib/telegraf', () => ({ bot: { action: jest.fn(), on: jest.fn(), telegram: { sendDocument: (...a) => mockSendDocument(...a) } } }));
 jest.mock('../src/lib/logger', () => ({ audit: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 jest.mock('../src/services/command.service', () => ({}));
 jest.mock('../src/services/comprobante.service', () => ({
@@ -44,6 +45,18 @@ test('si no se pudo subir, queda el file_id de Telegram', async () => {
   archivoService.subirArchivo.mockResolvedValue(null);
   await registrarComprobanteDesdeEntities(2222, entities());
   expect(comprobanteService.registrarComprobante).toHaveBeenCalledWith(2222, expect.objectContaining({ archivo: 'tg:f1' }));
+});
+
+test('subido desde el dashboard sin Supabase: se manda por Telegram y queda ese file_id', async () => {
+  archivoService.tomarArchivo.mockReturnValue({ buffer: Buffer.from('x'), mimeType: 'application/pdf' });
+  archivoService.subirArchivo.mockResolvedValue(null);
+  mockSendDocument.mockResolvedValue({ document: { file_id: 'tg-doc-1' } });
+  const e = entities();
+  e.comprobante.archivo = '';
+  const { registrarComprobanteCompleto } = require('../src/services/comprobante-registro.service');
+  await registrarComprobanteCompleto(2222, e, { respaldoTelegram: true });
+  expect(mockSendDocument).toHaveBeenCalledWith(2222, expect.objectContaining({ filename: 'comp_1.pdf' }), expect.anything());
+  expect(comprobanteService.registrarComprobante).toHaveBeenCalledWith(2222, expect.objectContaining({ archivo: 'tg:tg-doc-1' }));
 });
 
 test('un error al registrar no rompe el guardado del movimiento', async () => {

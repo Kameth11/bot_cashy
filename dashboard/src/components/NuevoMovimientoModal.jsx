@@ -9,7 +9,7 @@ function Seg({ active, onClick, children }) {
   )
 }
 
-const CATEGORIAS_INGRESO = [
+export const CATEGORIAS_INGRESO = [
   { value: '', label: 'Sin categoría' },
   { value: 'consulta', label: 'Consulta' },
   { value: 'tratamiento', label: 'Tratamiento' },
@@ -21,7 +21,7 @@ const CATEGORIAS_INGRESO = [
   { value: 'otro_ingreso', label: 'Otro ingreso' },
 ]
 
-const CATEGORIAS_EGRESO = [
+export const CATEGORIAS_EGRESO = [
   { value: '', label: 'Sin categoría' },
   { value: 'sueldos', label: 'Sueldos' },
   { value: 'honorarios', label: 'Honorarios' },

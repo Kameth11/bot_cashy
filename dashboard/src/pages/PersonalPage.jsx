@@ -4,6 +4,7 @@ import MetricCard from '../components/MetricCard'
 import { MontoCell } from '../components/Money'
 import PresupuestosModal from '../components/PresupuestosModal'
 import ComprobanteModal from '../components/ComprobanteModal'
+import SubirComprobanteModal from '../components/SubirComprobanteModal'
 import DatePickerButton from '../components/DatePickerButton'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
@@ -70,6 +71,7 @@ export default function PersonalPage() {
   const [error,   setError]   = useState(null)
   const [comprobantes, setComprobantes] = useState([])
   const [viendoComp, setViendoComp] = useState(null)
+  const [subiendo, setSubiendo] = useState(false)
   const [reload,  setReload]  = useState(0)
 
   const [categorias,     setCategorias]     = useState(null)
@@ -142,6 +144,13 @@ export default function PersonalPage() {
   return (
     <div className="page">
       {viendoComp && <ComprobanteModal comprobante={viendoComp} onCerrar={() => setViendoComp(null)} />}
+      {subiendo && (
+        <SubirComprobanteModal
+          ambitoInicial="personal"
+          onCerrar={() => setSubiendo(false)}
+          onGuardado={() => { setSubiendo(false); setReload(r => r + 1) }}
+        />
+      )}
       {showPresu && (
         <PresupuestosModal
           categorias={categorias}
@@ -176,6 +185,7 @@ export default function PersonalPage() {
             title="Ir a otra fecha"
             className="period-cal-btn"
           />
+          <button className="period-cal-btn" title="Subir ticket o factura" onClick={() => setSubiendo(true)}>📷</button>
         </div>
       </div>
 

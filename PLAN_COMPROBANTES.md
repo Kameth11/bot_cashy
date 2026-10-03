@@ -131,7 +131,7 @@ igual (nunca se pierde la carga por el archivo).
 | 1 ✅ | Clasificación + factura/ticket por foto y PDF en Telegram, confirmación, pendiente/vencimiento, ámbito personal, permisos, pestaña Comprobantes, duplicados, tests | 2–2,5 días |
 | 2 ✅ | Transferencias de pacientes + match con pendientes (2026-09-30: `extraerTransferencia`, `buscarPendientesDePagador`, botones cobrar/ingreso nuevo/cancelar, cobro parcial; duplicados por hash o CUIT/nombre + n° de operación + monto) | 1 día |
 | 3 ✅ | Archivo (Supabase Storage / file_id de Telegram) + migración 011 + ver 📎 en el dashboard (2026-09-30: `comprobante-archivo.service`, sube al guardar, `GET /api/comprobantes` y `/:id/archivo` por proxy con permisos, 📎 en Movimientos y Personal, vínculo diferido cuando el movimiento pide método de pago; **la migración 011 hay que correrla a mano en Supabase**) | 1,5 días |
-| 4 | Subir comprobante desde el dashboard | 1,5 días |
+| 4 ✅ | Subir comprobante desde el dashboard (2026-10-03: `POST /api/comprobantes/leer` con el archivo crudo + `POST /api/comprobantes`; lo leído queda del lado del servidor con TTL y del cliente solo se aceptan los campos editables; cuota diaria de IA; botón 📷 en Movimientos y en Personal; transferencias con elección del pendiente y aviso de cobro parcial; sin Supabase el archivo se guarda mandándolo por Telegram a quien lo subió; lógica compartida con el bot en `comprobante-registro.service`) | 1,5 días |
 | 5 ✅ | Ítems: se guardan desde la fase 1 (pestaña, columna `Items`) y en Supabase como `items jsonb` en `comprobantes` (no tabla aparte: siempre se leen junto al comprobante); vista de detalle en el modal del 📎 | — |
 
 Total ≈ 7–8 días de trabajo. Cada fase se sube a `main` por separado con

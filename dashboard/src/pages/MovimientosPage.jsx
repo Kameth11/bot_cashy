@@ -9,6 +9,8 @@ import { useApp } from '../contexts/AppContext'
 import DatePickerButton from '../components/DatePickerButton'
 import { ordenarPorFechaDesc } from '../utils/movimientos'
 import ComprobanteModal from '../components/ComprobanteModal'
+import SubirComprobanteModal from '../components/SubirComprobanteModal'
+import { useAuth } from '../hooks/useAuth'
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -36,6 +38,8 @@ function FechaCobroNote({ mov }) {
 
 export default function MovimientosPage() {
   const { reloadSignal } = useApp()
+  const { puede } = useAuth()
+  const [subiendo, setSubiendo] = useState(false)
 
   const [movimientos, setMovimientos] = useState([])
   const [loading,     setLoading]     = useState(false)
@@ -162,6 +166,12 @@ export default function MovimientosPage() {
           onCerrar={() => { setEditando(null); setModalError(null) }}
         />
       )}
+      {subiendo && (
+        <SubirComprobanteModal
+          onCerrar={() => setSubiendo(false)}
+          onGuardado={() => { setSubiendo(false); setReload(r => r + 1) }}
+        />
+      )}
       {viendoComp && <ComprobanteModal comprobante={viendoComp} onCerrar={() => setViendoComp(null)} />}
       {confirmDelete && (
         <ConfirmDeleteModal
@@ -178,6 +188,9 @@ export default function MovimientosPage() {
             {loading ? 'Cargando…' : `${filtered.length} registro${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`}
           </p>
         </div>
+        {puede('cargar_movimientos') && (
+          <button className="btn-secondary" onClick={() => setSubiendo(true)}>📷 Subir comprobante</button>
+        )}
       </div>
 
       {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}

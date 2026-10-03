@@ -81,6 +81,9 @@ const pendingDocumentoTipo    = new TTLMap(5 * 60 * 1000);
 // Archivo original de un comprobante mientras se confirma (id_comprobante ->
 // { buffer, mimeType }); se sube a Storage recién al guardar.
 const pendingComprobanteArchivos = new TTLMap(15 * 60 * 1000);
+// Comprobante subido desde el dashboard, leído y esperando que el usuario
+// confirme (id_comprobante -> { userId, tipo, entities, pendientes }).
+const pendingComprobantesDashboard = new TTLMap(15 * 60 * 1000);
 
 // Cache de documentos — TTL más largo (2 horas)
 const docsCache = new TTLMap(2 * 60 * 60 * 1000);
@@ -120,6 +123,7 @@ module.exports = {
   pendingAgendaDuplicados,
   pendingDocumentoTipo,
   pendingComprobanteArchivos,
+  pendingComprobantesDashboard,
   pendingTransferencias,
   pendingIngresoPacientes,
   pendingTurnoEdits,

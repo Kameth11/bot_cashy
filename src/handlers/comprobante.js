@@ -13,8 +13,9 @@ const logger = require('../lib/logger');
 const state = require('../state');
 const comprobanteService = require('../services/comprobante.service');
 const archivoService = require('../services/comprobante-archivo.service');
+const registro = require('../services/comprobante-registro.service');
 const cmd = require('../services/command.service');
-const { getRowDescripcion, getRowMonto, getRowMoneda, getRowIdUnico, getRowMetodoPago } = require('../utils/sheet-row');
+const { getRowDescripcion, getRowMonto, getRowMoneda } = require('../utils/sheet-row');
 const { formatMonto, escapeMarkdown } = require('../utils/formatter');
 
 async function procesarFactura(ctx, archivo) {
@@ -159,21 +160,7 @@ bot.action(/^transf_cobrar_(\d+)$/, async (ctx) => {
   state.pendingTransferencias.delete(userId);
 
   try {
-    const { entities } = pending;
-    const saldo = Math.abs(getRowMonto(fila, 0));
-    const parcial = entities.monto < saldo;
-    const sobrante = entities.monto > saldo ? Math.round((entities.monto - saldo) * 100) / 100 : 0;
-
-    // Cobro total: queda como cobrado por transferencia. En el parcial el
-    // pendiente sigue abierto, así que no se le pone método de pago.
-    if (!parcial && !getRowMetodoPago(fila, '')) fila.set('MetodoPago', 'transferencia');
-
-    let mensaje = await cmd.ejecutarCobrarFila(userId, fila, parcial ? entities.monto : null);
-    if (sobrante > 0) {
-      mensaje += `\n\nℹ️ La transferencia fue ${formatMonto(sobrante, entities.moneda)} mayor al pendiente. Si el resto es otro cobro, cargalo aparte.`;
-    }
-
-    await registrarComprobanteDesdeEntities(userId, entities, { idMovimiento: getRowIdUnico(fila, '') || null });
+    const { mensaje } = await registro.cobrarPendienteConTransferencia(userId, fila, pending.entities);
     return ctx.editMessageText(mensaje, { parse_mode: 'Markdown' });
   } catch (err) {
     logger.error('Comprobantes', 'Error al cobrar con transferencia', { userId, err: err.message });
@@ -199,38 +186,10 @@ bot.action('transf_cancel', async (ctx) => {
   return ctx.editMessageText('❌ Cancelado.');
 });
 
-// Se llama al guardar el movimiento (nlp-confirm.js / cobro con
-// transferencia). Sube el archivo a Storage si hay (si no, queda el file_id de
-// Telegram), registra en la pestaña y copia a Supabase. Un error acá no puede
-// deshacer ni frenar el movimiento ya guardado: se loguea y sigue.
-async function registrarComprobanteDesdeEntities(userId, entities, { idMovimiento = null } = {}) {
-  const c = entities && entities.comprobante;
-  if (!c || !c.id) return null;
-  try {
-    let archivo = c.archivo || '';
-    const pendiente = archivoService.tomarArchivo(c.id);
-    if (pendiente) {
-      const subido = await archivoService.subirArchivo(userId, c.id, pendiente);
-      if (subido) archivo = subido;
-    }
-
-    const datos = {
-      ...c,
-      archivo,
-      ambito: entities.ambito === 'personal' ? 'personal' : 'consultorio',
-      // Lo que el usuario corrigió en la confirmación manda sobre lo leído.
-      total: entities.monto != null ? Math.abs(Number(entities.monto)) : c.total,
-      moneda: entities.moneda || c.moneda,
-      idMovimiento,
-      cargadoPor: userId,
-    };
-    const id = await comprobanteService.registrarComprobante(userId, datos);
-    await archivoService.guardarEnSupabase(userId, { ...datos, id });
-    return id;
-  } catch (err) {
-    logger.error('Comprobantes', 'No se pudo registrar el comprobante', { userId, id: c.id, err: err.message });
-    return null;
-  }
+// Se llama al guardar el movimiento (nlp-confirm.js). La lógica vive en
+// comprobante-registro.service, compartida con el dashboard.
+function registrarComprobanteDesdeEntities(userId, entities, opts) {
+  return registro.registrarComprobanteCompleto(userId, entities, opts);
 }
 
 module.exports = { procesarFactura, procesarTransferencia, registrarComprobanteDesdeEntities };

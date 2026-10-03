@@ -1037,6 +1037,243 @@ app.get('/api/comprobantes/:id/archivo', authMiddleware, requierePermiso('ver_mo
   }
 });
 
+// ── Subir comprobante desde el dashboard (fase 4 de PLAN_COMPROBANTES.md) ──
+// Dos pasos, igual que en Telegram: 1) se sube el archivo y se lee con IA
+// (/leer devuelve lo leído para que el usuario lo revise); 2) el usuario
+// confirma (con sus correcciones) y se guarda. Lo leído queda del lado del
+// servidor (TTL): del cliente solo se aceptan los campos editables, nunca el
+// hash, el archivo ni los datos fiscales.
+const MIME_COMPROBANTE = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const subidaComprobante = express.raw({ type: MIME_COMPROBANTE, limit: config.MAX_PHOTO_SIZE_BYTES || 10 * 1024 * 1024 });
+
+function fechaIsoADdmm(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+
+function fechaDdmmAIso(ddmm) {
+  const m = String(ddmm || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+
+function comprobanteParaCliente(c) {
+  const { hash, archivo, mimeType, ...resto } = c || {};
+  return resto;
+}
+
+app.post('/api/comprobantes/leer', authMiddleware, requierePermiso('cargar_movimientos'), subidaComprobante, async (req, res) => {
+  const userId = req.user.userId;
+  const tipo = req.query.tipo === 'transferencia' ? 'transferencia' : 'factura';
+  const mimeType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (!MIME_COMPROBANTE.includes(mimeType) || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+    return res.status(400).json({ error: 'Mandá una foto (JPG, PNG, WEBP) o un PDF' });
+  }
+
+  const aiQuota = require('../lib/ai-quota');
+  const cuota = aiQuota.consumir(userId, 'media');
+  if (!cuota.ok) {
+    return res.status(429).json({ error: `Se alcanzó el límite diario de lectura de fotos del consultorio (${cuota.limite}). Mañana se renueva.` });
+  }
+
+  try {
+    const comprobanteService = require('../services/comprobante.service');
+    const vision = require('../services/comprobante-vision.service');
+    const archivoService = require('../services/comprobante-archivo.service');
+    const { geminiMediaSemaphore } = require('../lib/semaphore');
+    const buffer = req.body;
+    const hash = comprobanteService.hashArchivo(buffer);
+    const idComprobante = comprobanteService.generarIdComprobante();
+
+    const resultado = await geminiMediaSemaphore.run(() => (tipo === 'transferencia'
+      ? vision.extraerTransferencia(buffer, mimeType)
+      : vision.extraerFactura(buffer, mimeType)));
+
+    if (!resultado) return res.status(422).json({ error: 'No se pudo leer el comprobante. Probá con una foto más clara y derecha.' });
+    if (resultado.error === 'vision_no_configurada' || resultado.error === 'vision_dependencia_faltante') {
+      return res.status(503).json({ error: 'La lectura de imágenes no está configurada en el servidor.' });
+    }
+    if (resultado.error) {
+      return res.status(422).json({ error: tipo === 'transferencia' ? 'No parece un comprobante de transferencia.' : 'No parece una factura ni un ticket.' });
+    }
+
+    let entities;
+    let pendientes = [];
+    if (tipo === 'transferencia') {
+      const t = resultado.transferencia;
+      if (!t.monto) return res.status(422).json({ error: 'Leí el comprobante pero no encontré el monto.' });
+      const duplicado = await comprobanteService.buscarDuplicado(userId, { hash, cuit: t.cuitPagador, emisor: t.pagador, numero: t.numeroOperacion, total: t.monto });
+      entities = comprobanteService.transferenciaAEntities(t, {
+        idComprobante, hash, mimeType,
+        duplicado: duplicado ? { motivo: duplicado.motivo, fechaCarga: duplicado.comprobante.fechaCarga } : null,
+      });
+      try {
+        const cmd = require('../services/command.service');
+        const { getRowIdUnico, getRowDescripcion, getRowMonto, getRowMoneda, getRowFecha } = require('../utils/sheet-row');
+        const filas = await cmd.buscarPendientesDePagador(userId, t.pagador, { moneda: t.moneda });
+        pendientes = filas.map(f => ({
+          idUnico: getRowIdUnico(f, ''),
+          descripcion: getRowDescripcion(f, ''),
+          monto: Math.abs(getRowMonto(f, 0)),
+          moneda: getRowMoneda(f, 'Pesos'),
+          fecha: getRowFecha(f, ''),
+        })).filter(p => p.idUnico);
+      } catch (err) {
+        logger.warn('API', 'No se pudieron buscar pendientes del pagador', { err: err.message });
+      }
+    } else {
+      const f = resultado.factura;
+      if (!f.total) return res.status(422).json({ error: 'Leí el comprobante pero no encontré el total.' });
+      const duplicado = await comprobanteService.buscarDuplicado(userId, { hash, cuit: f.cuit, emisor: f.emisor, numero: f.numero, total: f.total });
+      entities = comprobanteService.facturaAEntities(f, {
+        idComprobante,
+        duplicado: duplicado ? { motivo: duplicado.motivo, fechaCarga: duplicado.comprobante.fechaCarga } : null,
+      });
+      entities.comprobante.hash = hash;
+      entities.comprobante.mimeType = mimeType;
+      entities.ambito = 'consultorio';
+      // Mismo detector de ámbito que el bot; solo el dueño tiene Personal.
+      if (esDuenoOAdmin(userId)) {
+        const { resolverAmbito, inferirCategoriaPersonal } = require('../services/personal-nlp.service');
+        const texto = comprobanteService.textoParaAmbito(f);
+        const preferencias = await personalService.leerPreferencias(userId).catch(() => ({}));
+        if (resolverAmbito(texto, { preferencias }).ambito === 'personal') {
+          entities.ambito = 'personal';
+          entities.categoriaConsultorio = entities.categoria;
+          entities.categoria = inferirCategoriaPersonal('gasto', texto);
+        }
+      }
+    }
+
+    archivoService.recordarArchivo(idComprobante, { buffer, mimeType });
+    state.pendingComprobantesDashboard.set(idComprobante, {
+      userId: String(userId), tipo, entities, pendientes: pendientes.map(p => p.idUnico),
+    });
+
+    logger.audit('comprobante_leido_dashboard', { userId, idComprobante, tipo });
+    res.json({
+      idComprobante,
+      tipo,
+      comprobante: comprobanteParaCliente(entities.comprobante),
+      sugerido: {
+        descripcion: entities.descripcion || '',
+        monto: Math.abs(Number(entities.monto) || 0),
+        moneda: entities.moneda || 'Pesos',
+        metodoPago: entities.metodo_pago || '',
+        estado: entities.estado || 'Cobrado',
+        categoria: entities.categoria || '',
+        proveedor: entities.proveedorNombre || '',
+        paciente: entities.pacienteNombre || '',
+        fechaVencimiento: fechaDdmmAIso(entities.fechaVencimiento),
+        ambito: entities.ambito,
+      },
+      pendientes,
+      puedePersonal: esDuenoOAdmin(userId) && tipo === 'factura',
+    });
+  } catch (err) {
+    if (err.code === 'SEMAPHORE_QUEUE_FULL') return res.status(503).json({ error: 'Estoy leyendo varias imágenes. Probá de nuevo en unos segundos.' });
+    logger.error('API', 'Error POST /api/comprobantes/leer', { err: err.message });
+    res.status(500).json({ error: 'Error al leer el comprobante' });
+  }
+});
+
+app.post('/api/comprobantes', authMiddleware, requierePermiso('cargar_movimientos'), async (req, res) => {
+  const userId = req.user.userId;
+  const body = req.body || {};
+  const pend = state.pendingComprobantesDashboard.get(String(body.idComprobante || ''));
+  if (!pend || pend.userId !== String(userId)) {
+    return res.status(410).json({ error: 'El comprobante leído expiró. Subilo de nuevo.' });
+  }
+
+  try {
+    const registro = require('../services/comprobante-registro.service');
+    const entities = { ...pend.entities, comprobante: { ...pend.entities.comprobante } };
+    const m = body.movimiento || {};
+
+    const desc = normalizarDescripcion(m.descripcion);
+    if (!desc.ok) return res.status(400).json({ error: 'La descripción es inválida' });
+    const monto = validarMonto(m.monto);
+    if (!monto.ok) return res.status(400).json({ error: 'El monto es inválido' });
+    const vto = validarFechaOpcional(m.fechaVencimiento);
+    if (!vto.ok) return res.status(400).json({ error: 'La fecha de vencimiento es inválida' });
+
+    entities.descripcion = desc.valor;
+    entities.monto = Math.abs(monto.valor);
+    entities.moneda = ['Dólares', 'Euros'].includes(m.moneda) ? m.moneda : 'Pesos';
+    entities.metodo_pago = ['efectivo', 'transferencia', 'tarjeta'].includes(m.metodoPago) ? m.metodoPago : null;
+    entities.estado = m.estado === 'Pendiente' ? 'Pendiente' : 'Cobrado';
+    if (m.categoria !== undefined) entities.categoria = sanitizarInput(m.categoria, 40) || entities.categoria;
+    if (m.proveedor !== undefined) entities.proveedorNombre = sanitizarInput(m.proveedor, 100) || null;
+    if (m.paciente !== undefined) entities.pacienteNombre = sanitizarInput(m.paciente, 100) || null;
+    entities.fechaVencimiento = vto.valor ? fechaIsoADdmm(vto.valor) : null;
+    entities.ambito = m.ambito === 'personal' && pend.tipo === 'factura' && esDuenoOAdmin(userId) ? 'personal' : 'consultorio';
+
+    // Transferencia que cobra un pendiente que ya existía.
+    if (pend.tipo === 'transferencia' && body.cobrarIdUnico) {
+      if (!pend.pendientes.includes(body.cobrarIdUnico)) return res.status(400).json({ error: 'Pendiente inválido' });
+      const cmd = require('../services/command.service');
+      const { getRowIdUnico } = require('../utils/sheet-row');
+      const filas = await cmd.buscarPendientesDePagador(userId, entities.pagadorNombre || entities.pacienteNombre, { moneda: entities.moneda, limite: 20 });
+      const fila = filas.find(f => getRowIdUnico(f, '') === body.cobrarIdUnico);
+      if (!fila) return res.status(409).json({ error: 'Ese pendiente ya no está pendiente. Recargá y probá de nuevo.' });
+      const { mensaje, idMovimiento } = await registro.cobrarPendienteConTransferencia(userId, fila, entities, { respaldoTelegram: true });
+      state.pendingComprobantesDashboard.delete(body.idComprobante);
+      invalidarCacheMovimientos(userId);
+      logger.audit('comprobante_guardado_dashboard', { userId, idComprobante: body.idComprobante, cobro: true });
+      return res.status(201).json({ ok: true, idComprobante: body.idComprobante, idMovimiento, mensaje: mensaje.replace(/[*_`]/g, '') });
+    }
+
+    let idMovimiento = null;
+    if (entities.ambito === 'personal') {
+      const { movimiento } = await personalService.registrarMovimientoPersonal(userId, {
+        descripcion: entities.descripcion,
+        monto: entities.monto,
+        tipo: 'gasto',
+        moneda: entities.moneda,
+        metodoPago: entities.metodo_pago,
+        categoria: entities.categoria,
+        comercio: entities.comprobante.emisor || null,
+        fecha: entities.fecha || undefined,
+        notas: entities.referenciaId,
+        origenCarga: 'dashboard',
+      });
+      idMovimiento = movimiento.idMov;
+    } else {
+      const esEgreso = pend.tipo === 'factura';
+      if ((entities.moneda === 'Dólares' && !state.cotizacionDolar) || (entities.moneda === 'Euros' && !state.cotizacionEuro)) {
+        await obtenerCotizacionDolar();
+      }
+      const resultado = await guardarMovimiento(userId, {
+        descripcion: entities.descripcion,
+        monto: esEgreso ? -entities.monto : entities.monto,
+        tipo: esEgreso ? 'Egreso' : 'Ingreso',
+        moneda: entities.moneda,
+        metodoPago: entities.metodo_pago || '',
+        estado: entities.estado,
+        categoria: entities.categoria || null,
+        pacienteNombre: esEgreso ? null : entities.pacienteNombre,
+        pagadorNombre: esEgreso ? null : (entities.pagadorNombre || entities.pacienteNombre),
+        proveedorNombre: esEgreso ? entities.proveedorNombre : null,
+        fechaPrestacion: entities.fechaPrestacion || entities.fecha || null,
+        fechaVencimiento: entities.fechaVencimiento,
+        referenciaId: entities.referenciaId,
+        origenCarga: 'dashboard',
+      });
+      idMovimiento = resultado && resultado.idUnico;
+    }
+
+    await registro.registrarComprobanteCompleto(userId, entities, { idMovimiento, respaldoTelegram: true });
+    state.pendingComprobantesDashboard.delete(body.idComprobante);
+    invalidarCacheMovimientos(userId);
+    logger.audit('comprobante_guardado_dashboard', { userId, idComprobante: body.idComprobante, ambito: entities.ambito });
+    res.status(201).json({ ok: true, idComprobante: body.idComprobante, idMovimiento });
+  } catch (err) {
+    if (err.message === 'monto_invalido') return res.status(400).json({ error: 'El monto es inválido' });
+    if (err.message === 'descripcion_invalida') return res.status(400).json({ error: 'La descripción es inválida' });
+    logger.error('API', 'Error POST /api/comprobantes', { err: err.message });
+    res.status(500).json({ error: 'Error al guardar el comprobante' });
+  }
+});
+
 app.get('/api/personal/categorias', authMiddleware, ownerOnly, (req, res) => {
   res.json({
     egreso: CATEGORIAS_EGRESO_PERSONAL,
