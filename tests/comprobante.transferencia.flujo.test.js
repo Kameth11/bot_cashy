@@ -101,8 +101,9 @@ test('"ingreso nuevo" y "cancelar"', async () => {
 test('errores de lectura: mensajes claros y sin estado colgado', async () => {
   const ctx1 = ctxBase();
   vision.extraerTransferencia.mockResolvedValue({ error: 'no_es_transferencia' });
+  vision.extraerFactura.mockResolvedValue({ error: 'no_es_comprobante' });
   await procesarTransferencia(ctx1, archivo);
-  expect(ctx1.reply.mock.calls[0][0]).toMatch(/No parece un comprobante de transferencia/);
+  expect(ctx1.reply.mock.calls[0][0]).toMatch(/ni una factura/);
 
   const ctx2 = ctxBase();
   vision.extraerTransferencia.mockResolvedValue({ transferencia: { ...T, monto: null } });
@@ -115,4 +116,23 @@ test('sesión vencida en un botón: avisa', async () => {
   const ctx = { ...ctxBase(), match: ['x', '0'] };
   await global.__acts['^transf_cobrar_(\\d+)$'].h(ctx);
   expect(ctx.editMessageText.mock.calls[0][0]).toMatch(/Sesión expirada/);
+});
+
+test('"transferencia" que en realidad es un pago a un servicio: se lee como factura (gasto de servicios)', async () => {
+  vision.extraerTransferencia.mockResolvedValue({ error: 'no_es_transferencia' });
+  vision.extraerFactura.mockResolvedValue({
+    factura: {
+      tipoDocumento: 'boleta_servicio', letra: null, emisor: 'Edenor', cuit: null, numero: null,
+      fechaEmision: '01/10/2026', fechaVencimiento: null, total: 45300.5, moneda: 'Pesos',
+      metodoPago: 'transferencia', pagado: true, rubro: 'electricidad', descripcion: 'Edenor',
+      categoria: 'servicios', items: [],
+    },
+  });
+  const ctx = ctxBase();
+  await procesarTransferencia(ctx, archivo);
+  expect(vision.extraerFactura).toHaveBeenCalledTimes(1);
+  expect(mostrarConfirmacion).toHaveBeenCalledTimes(1);
+  const e = mostrarConfirmacion.mock.calls[0][1];
+  expect(e).toMatchObject({ tipo: 'gasto', monto: 45300.5, categoria: 'servicios' });
+  expect(ctx.reply).not.toHaveBeenCalledWith(expect.stringMatching(/No parece/));
 });

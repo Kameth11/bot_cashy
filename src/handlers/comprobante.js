@@ -18,7 +18,7 @@ const cmd = require('../services/command.service');
 const { getRowDescripcion, getRowMonto, getRowMoneda } = require('../utils/sheet-row');
 const { formatMonto, escapeMarkdown } = require('../utils/formatter');
 
-async function procesarFactura(ctx, archivo) {
+async function procesarFactura(ctx, archivo, { desdeTransferencia = false } = {}) {
   const userId = ctx.from.id;
   const { extraerFactura } = require('../services/comprobante-vision.service');
 
@@ -28,6 +28,9 @@ async function procesarFactura(ctx, archivo) {
   if (!resultado) return ctx.reply('❌ No pude leer el comprobante. Probá con una foto más clara y derecha.');
   if (resultado.error === 'vision_no_configurada') return ctx.reply('⚠️ La lectura de imágenes no está configurada. Revisá `GEMINI_API_KEY`.');
   if (resultado.error === 'vision_dependencia_faltante') return ctx.reply('⚠️ Falta instalar la dependencia de Vision. Revisá `@google/generative-ai`.');
+  if (resultado.error === 'no_es_comprobante' && desdeTransferencia) {
+    return ctx.reply('⚠️ No parece un comprobante de transferencia ni una factura. Si es un cobro, escribilo, por ejemplo: `cobré 30000 de Juan por transferencia`; si es un gasto: `gasté 5000 en insumos`.', { parse_mode: 'Markdown' });
+  }
   if (resultado.error === 'no_es_comprobante') {
     return ctx.reply('⚠️ No parece una factura ni un ticket. Si es un gasto, probá con una foto más clara o escribilo, por ejemplo: `gasté 5000 en insumos`.', { parse_mode: 'Markdown' });
   }
@@ -86,7 +89,10 @@ async function procesarTransferencia(ctx, archivo) {
   if (resultado.error === 'vision_no_configurada') return ctx.reply('⚠️ La lectura de imágenes no está configurada. Revisá `GEMINI_API_KEY`.');
   if (resultado.error === 'vision_dependencia_faltante') return ctx.reply('⚠️ Falta instalar la dependencia de Vision. Revisá `@google/generative-ai`.');
   if (resultado.error === 'no_es_transferencia') {
-    return ctx.reply('⚠️ No parece un comprobante de transferencia. Si es un cobro, escribilo, por ejemplo: `cobré 30000 de Juan por transferencia`.', { parse_mode: 'Markdown' });
+    // Una captura de pago a Edenor, Movistar, YPF, etc. se parece a una
+    // transferencia pero es un gasto: se prueba como factura antes de pedirle
+    // al usuario que lo escriba.
+    return procesarFactura(ctx, archivo, { desdeTransferencia: true });
   }
 
   const t = resultado.transferencia;

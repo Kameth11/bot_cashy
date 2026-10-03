@@ -16,6 +16,7 @@
 
 const { GEMINI_API_KEY, GEMINI_MODEL } = require('../config');
 const { getGenAI, getSharp, extractJSON, FALLBACK_MODELS } = require('./vision.service');
+const { esProveedorDeServicios, ejemplosParaPrompt } = require('../utils/proveedores-servicios');
 
 const TIPOS_DOCUMENTO = ['agenda', 'factura', 'transferencia', 'otro'];
 
@@ -32,8 +33,8 @@ const PROMPT_CLASIFICAR = `Mirá la imagen o documento y decí qué es. Respond�
 
 Tipos posibles:
 - "agenda": agenda, turnero o planilla de turnos de pacientes (horarios con nombres).
-- "factura": factura, ticket, recibo, boleta de servicio (luz, gas, internet), nota de compra o cualquier comprobante de un GASTO o una compra.
-- "transferencia": comprobante de transferencia o pago recibido (captura de Mercado Pago, homebanking, billetera virtual) donde alguien le paga a otra persona.
+- "factura": factura, ticket, recibo, boleta de servicio (luz, gas, agua, internet, teléfono, cable), nota de compra o cualquier comprobante de un GASTO o una compra. Incluye los comprobantes de PAGO a una empresa, comercio o servicio (por ejemplo Edenor, Edesur, Movistar, Personal, Claro, Naturgy, YPF, Shell), aunque sea una captura de Mercado Pago, homebanking, Rapipago o Pago Fácil: si el dinero va a una empresa o servicio, es "factura", NO "transferencia".
+- "transferencia": comprobante de transferencia entre PERSONAS (captura de Mercado Pago, homebanking, billetera virtual) donde un paciente o una persona le paga a otra, o donde se mandó plata a una persona. Si el destinatario es una empresa de servicios, un comercio o un impuesto, no es "transferencia".
 - "otro": cualquier otra cosa.
 
 Formato: {"tipo":"factura","confianza":0.9}
@@ -63,6 +64,8 @@ Reglas:
 - Si un dato no se ve, usá null. No inventes.
 - "total" es el importe final (con impuestos). Si hay "Total" y "Subtotal", usá "Total".
 - Los montos argentinos usan punto para miles y coma para decimales: "45.300,50" -> 45300.5.
+- Si es un comprobante de PAGO de un servicio (captura de homebanking, Mercado Pago, Rapipago, Pago Fácil, ticket de estación de servicio), el emisor es la EMPRESA a la que se pagó (ej "Edenor", "YPF"), no la billetera ni el banco, y "pagado" es true.
+- Servicios públicos, telefonía, internet, TV y combustible (luz, gas, agua, internet, teléfono, cable, nafta) -> categoria "servicios". Empresas habituales: ${ejemplosParaPrompt()}; hay más, aplicá el mismo criterio a cualquier empresa de servicios o combustible de Argentina.
 - Servicios públicos (luz, gas, agua, internet, teléfono) -> categoria "servicios". Materiales o descartables odontológicos -> "insumos". Técnico/laboratorio dental -> "honorarios". AFIP, ingresos brutos, tasas -> "impuestos". Sistemas o suscripciones -> "software".
 - items: hasta 30 renglones; si el ticket no detalla ítems, devolvé [].
 - Si no es un comprobante de gasto: {"error":"no_es_comprobante"}`;
@@ -86,6 +89,7 @@ Reglas:
 - No confundas pagador y destinatario: el pagador es quien manda la plata.
 - Si un dato no se ve, usá null. No inventes.
 - Los montos argentinos usan punto para miles y coma para decimales: "30.000,00" -> 30000.
+- Si el destinatario es una empresa de servicios (luz, gas, agua, telefonía, internet, combustible), un comercio o un impuesto, no es un cobro de paciente: {"error":"no_es_transferencia"}
 - Si no es un comprobante de transferencia o pago: {"error":"no_es_transferencia"}`;
 
 // ── Normalización (pura) ─────────────────────────────────────────────────────
@@ -162,9 +166,14 @@ function normalizarFactura(raw) {
   const metodo = String(r.metodoPago || '').trim().toLowerCase();
   const moneda = /d[oó]lar|usd|u\$s/i.test(String(r.moneda || '')) ? 'Dólares' : 'Pesos';
   const emisor = textoCorto(r.emisor, 80);
+  const rubro = textoCorto(r.rubro, 60);
+  // El nombre del emisor manda sobre la interpretación del modelo: un pago a
+  // Edenor o YPF es siempre "servicios".
+  const esServicio = esProveedorDeServicios({ emisor, rubro });
+  const tipoDocumento = textoCorto(r.tipoDocumento, 30) || 'otro';
 
   return {
-    tipoDocumento: textoCorto(r.tipoDocumento, 30) || 'otro',
+    tipoDocumento: esServicio && tipoDocumento === 'otro' ? 'boleta_servicio' : tipoDocumento,
     letra: ['A', 'B', 'C'].includes(letra) ? letra : null,
     emisor,
     cuit: normalizarCuit(r.cuit),
@@ -175,9 +184,9 @@ function normalizarFactura(raw) {
     moneda,
     metodoPago: METODOS_PAGO.includes(metodo) ? metodo : null,
     pagado: typeof r.pagado === 'boolean' ? r.pagado : null,
-    rubro: textoCorto(r.rubro, 60),
+    rubro,
     descripcion: textoCorto(r.descripcion, 60) || emisor,
-    categoria: CATEGORIAS_EGRESO.includes(categoria) ? categoria : 'otro_egreso',
+    categoria: esServicio ? 'servicios' : (CATEGORIAS_EGRESO.includes(categoria) ? categoria : 'otro_egreso'),
     items: normalizarItems(r.items),
   };
 }
