@@ -16,7 +16,16 @@ function resolverKey(userId) {
 const tails = new Map(); // ownerId -> promise "tail" de la cadena actual
 
 function withUserWriteLock(userId, fn) {
-  const key = resolverKey(userId);
+  return withOwnerWriteLock(resolverKey(userId), fn);
+}
+
+// Lock por dueño del sheet, sin resolver desde un userId. Lo usan los espacios
+// compartidos (CASA): los datos viven en el sheet de quien creó la casa, pero
+// escriben miembros de OTRAS cuentas, cuyo resolverKey daría una key distinta y
+// permitiría escrituras en paralelo al mismo sheet. Con la key del dueño, esas
+// escrituras se serializan con las del propio dueño (misma cadena de promesas).
+function withOwnerWriteLock(ownerId, fn) {
+  const key = String(ownerId);
   const previous = tails.get(key) || Promise.resolve();
 
   // .then(fn, fn): corre fn aunque la anterior haya fallado, para que un
@@ -65,4 +74,4 @@ async function esperarPendientes(timeoutMs = 10000) {
   return true;
 }
 
-module.exports = { withUserWriteLock, runInBackground, pendientes, esperarPendientes };
+module.exports = { withUserWriteLock, withOwnerWriteLock, runInBackground, pendientes, esperarPendientes };

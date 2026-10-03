@@ -213,3 +213,39 @@ describe('lib/write-queue - drenado para apagado ordenado', () => {
     expect(await esperarPendientes(50)).toBe(true);
   });
 });
+
+describe('lib/write-queue: withOwnerWriteLock (espacios compartidos)', () => {
+  const { withOwnerWriteLock } = require('../src/lib/write-queue');
+
+  test('serializa con withUserWriteLock del dueño (misma cadena)', async () => {
+    // El dueño es su propio ownerId; un miembro de otra cuenta escribe con
+    // la key del dueño y no debe correr en paralelo con él.
+    obtenerClientePorUserId.mockImplementation((id) => ({ ownerId: id }));
+    const order = [];
+    const first = deferred();
+
+    const p1 = withUserWriteLock('77', async () => { await first.promise; order.push('dueño'); });
+    const p2 = withOwnerWriteLock(77, async () => { order.push('miembro'); });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(order).toEqual([]);
+    first.resolve();
+    await Promise.all([p1, p2]);
+    expect(order).toEqual(['dueño', 'miembro']);
+  });
+
+  test('owners distintos corren en paralelo', async () => {
+    const order = [];
+    const slow = deferred();
+    const pSlow = withOwnerWriteLock('a1', async () => { await slow.promise; order.push('a1'); });
+    await withOwnerWriteLock('b1', async () => { order.push('b1'); });
+    expect(order).toEqual(['b1']);
+    slow.resolve();
+    await pSlow;
+  });
+
+  test('un error no traba la cola y se propaga al caller', async () => {
+    await expect(withOwnerWriteLock('e1', async () => { throw new Error('boom'); })).rejects.toThrow('boom');
+    await expect(withOwnerWriteLock('e1', async () => 'ok')).resolves.toBe('ok');
+  });
+});
