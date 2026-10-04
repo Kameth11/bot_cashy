@@ -32,6 +32,11 @@ function buildProfileRow(userId, clienteData = {}, tenantId = null) {
     usuarios: Array.isArray(clienteData.usuarios) ? clienteData.usuarios : [],
     permisos: clienteData.permisos && typeof clienteData.permisos === 'object' ? clienteData.permisos : {},
   };
+  // `casas` solo viaja cuando la clave existe: la columna (migración 012) puede
+  // no estar creada todavía, y mandarla en TODOS los perfiles haría fallar el
+  // upsert de cualquier usuario, incluso de los que no usan casas. Un array
+  // vacío SÍ se manda: es como se borra la última casa de un perfil.
+  if (Array.isArray(clienteData.casas)) row.casas = clienteData.casas;
   if (tenantId) row.tenant_id = tenantId;
   return row;
 }
@@ -68,6 +73,10 @@ async function cargarClientes() {
           permisos: profile.permisos || {},
           creadoEn: profile.created_at || new Date().toISOString(),
         };
+        // Solo si tiene casas: así los perfiles sin casas no mandan la columna.
+        if (Array.isArray(profile.casas) && profile.casas.length > 0) {
+          clientes[userId].casas = profile.casas;
+        }
       }
       console.log(`Clientes cargados desde Supabase: ${Object.keys(clientes).length}`);
       return clientes;
@@ -215,6 +224,25 @@ async function setModoFullIA(ownerId, enabled) {
   return true;
 }
 
+// Casas compartidas a las que pertenece una cuenta: [{ casaId, ownerId, nombre }].
+// `ownerId` es la cuenta en cuyo sheet viven los datos de la casa; sale de acá
+// (dato del servidor), nunca de un request. null = la cuenta no tiene perfil
+// propio (un invitado del consultorio no puede pertenecer a una casa).
+function getCasas(userId) {
+  const c = clientes[String(userId)];
+  if (!c) return null;
+  return Array.isArray(c.casas) ? c.casas.map((x) => ({ ...x })) : [];
+}
+
+async function setCasas(userId, casas) {
+  const key = String(userId);
+  if (!clientes[key]) return false;
+
+  clientes[key] = { ...clientes[key], casas: Array.isArray(casas) ? casas.map((x) => ({ ...x })) : [] };
+  await guardarClientes(clientes, key);
+  return true;
+}
+
 // ¿Este sheet ya pertenece a otro consultorio? Se usa al registrar un sheet
 // para impedir que alguien "adopte" el sheet (y, vía sheet_id, el tenant) de
 // otro. Se ignoran las cuentas del propio usuario y sus invitados (que
@@ -344,6 +372,8 @@ module.exports = {
   sheetIdEnUsoPorOtro,
   eliminarCliente,
   setModoFullIA,
+  getCasas,
+  setCasas,
   getPermisos,
   setPermisos,
   buildProfileRow,

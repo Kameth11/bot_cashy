@@ -168,3 +168,46 @@ describe('setPermisos — loguea el error de Supabase en vez de tragárselo', ()
     errorSpy.mockRestore();
   });
 });
+
+// Casas compartidas (migración 012): la columna profiles.casas puede no estar
+// creada todavía. Si buildProfileRow la mandara en TODOS los perfiles, el
+// upsert de cualquier usuario fallaría (en silencio, como el bug de tenant_id).
+describe('casas en el perfil', () => {
+  test('un perfil sin casas NO manda la columna casas (compatible con una base sin migrar)', () => {
+    expect(clienteService.buildProfileRow('1', { sheetId: 's' })).not.toHaveProperty('casas');
+  });
+
+  test('un perfil con casas la manda', () => {
+    const casas = [{ casaId: 'c1', ownerId: '1', nombre: 'Casa' }];
+    expect(clienteService.buildProfileRow('1', { sheetId: 's', casas }).casas).toEqual(casas);
+  });
+
+  test('un array vacío SÍ se manda: así se borra la última casa de la base', () => {
+    expect(clienteService.buildProfileRow('1', { sheetId: 's', casas: [] }).casas).toEqual([]);
+  });
+
+  test('getCasas: null sin perfil propio, [] sin casas, copia con casas', async () => {
+    clienteService.clientes = { 10: { sheetId: 's' } };
+    expect(clienteService.getCasas('99')).toBeNull();
+    expect(clienteService.getCasas('10')).toEqual([]);
+
+    getSupabase.mockReturnValue(makeSupabaseSpy());
+    resolveOrCreateTenantId.mockResolvedValue('t1');
+    await clienteService.setCasas('10', [{ casaId: 'c1', ownerId: '10', nombre: 'Casa' }]);
+    const casas = clienteService.getCasas('10');
+    expect(casas).toEqual([{ casaId: 'c1', ownerId: '10', nombre: 'Casa' }]);
+    casas[0].nombre = 'mutado';
+    expect(clienteService.getCasas('10')[0].nombre).toBe('Casa'); // devuelve copias
+  });
+
+  test('setCasas persiste en Supabase y devuelve false si no hay perfil', async () => {
+    const spy = makeSupabaseSpy();
+    getSupabase.mockReturnValue(spy);
+    resolveOrCreateTenantId.mockResolvedValue('t1');
+    clienteService.clientes = { 10: { sheetId: 's' } };
+
+    expect(await clienteService.setCasas('10', [{ casaId: 'c1', ownerId: '10', nombre: 'Casa' }])).toBe(true);
+    expect(spy.calls.upsert.at(-1).row.casas).toEqual([{ casaId: 'c1', ownerId: '10', nombre: 'Casa' }]);
+    expect(await clienteService.setCasas('77', [])).toBe(false);
+  });
+});

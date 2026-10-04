@@ -8,7 +8,8 @@
 // Las escrituras emiten eventos SSE a mano: los movimientos del consultorio los
 // emiten desde db.service, y este camino no pasa por ahí.
 
-const { getDocCliente, invalidateCache } = require('./sheet.service');
+const { invalidateCache } = require('./sheet.service');
+const { getOrCreateTab } = require('./sheet-tab.service');
 const { withUserWriteLock } = require('../lib/write-queue');
 const { getSupabase, isAvailable } = require('../lib/supabase');
 const { forTenant } = require('../lib/tenant-db');
@@ -16,7 +17,7 @@ const { resolveTenantId } = require('./tenant.service');
 const { emitMovimientosUpdated } = require('./events.service');
 const { convertirAPesos } = require('./movimiento.service');
 const logger = require('../lib/logger');
-const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina } = require('../utils/date');
+const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina, fechaStrAIso } = require('../utils/date');
 
 const TAB_MOVIMIENTOS = 'Personal';
 const TAB_VIAJES = 'Viajes';
@@ -52,43 +53,10 @@ const CATEGORIAS_FUERA_DE_VIAJE = new Set([
 
 // ── Acceso a las pestañas ────────────────────────────────────────────────────
 
-// Espeja crearTabTurnosSiNoExiste (agenda.service.js): el getter headerValues
-// TIRA si el header no está cargado, así que hay que probarlo dentro del try, y
-// una tab que quedó a medio crear se rearma en vez de fallar.
 async function getTab(userId, title, fresh = false) {
-  const doc = await getDocCliente(userId, fresh);
-  if (!doc) return null;
-
   const cols = TABS[title];
   if (!cols) throw new Error(`Tab personal desconocida: ${title}`);
-
-  try {
-    let sheet = doc.sheetsByTitle[title];
-    if (sheet) {
-      let headerValues = null;
-      try {
-        await sheet.loadHeaderRow();
-        headerValues = sheet.headerValues;
-      } catch (_) {
-        headerValues = null;
-      }
-      if (!Array.isArray(headerValues) || headerValues.length === 0) {
-        await sheet.setHeaderRow(cols);
-        await sheet.loadHeaderRow();
-      }
-      return sheet;
-    }
-
-    console.log(`Creando tab ${title}...`);
-    sheet = await doc.addSheet({ title });
-    await sheet.setHeaderRow(cols);
-    await sheet.loadHeaderRow();
-    console.log(`Tab ${title} creada OK`);
-    return sheet;
-  } catch (err) {
-    console.error(`Error al crear tab ${title}:`, err.message);
-    throw new Error(`No se pudo acceder a la tab ${title}: ${err.message}`);
-  }
+  return getOrCreateTab(userId, title, cols, fresh);
 }
 
 // Si el doc no estaba cacheado con la tab recién creada, un segundo intento con
@@ -167,19 +135,6 @@ function fechaHoyStr() {
 
 function horaAhoraStr() {
   return horaArgentinaStr();
-}
-
-// Las fechas del Sheet son DD/MM/YYYY; para comparar rangos hace falta ISO.
-// Tolera también ISO (AAAA-MM-DD, con o sin hora) y separadores "-" o ".": si
-// el Sheet devuelve la celda en otro formato, el movimiento seguía en la
-// pestaña pero desaparecía de los resúmenes y del dashboard (que filtran por mes).
-function fechaStrAIso(fecha) {
-  const raw = String(fecha || '').trim();
-  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
-  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-  m = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-  if (!m) return null;
-  return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
 }
 
 function esEgreso(tipo) {
