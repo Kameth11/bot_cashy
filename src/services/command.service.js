@@ -928,6 +928,10 @@ function buildHelpMessage() {
     '`/viaje nuevo Brasil 10/01 20/01` - Abrir un viaje\n' +
     '`/viaje` - Ver el viaje activo y su total\n' +
     '_Si me equivoco de ámbito, corregilo con el botón y lo recuerdo._\n\n' +
+    '🏡 *Casa (gastos compartidos):*\n' +
+    '`/casa nueva Casa` - Crear una casa · `/casa invitar` - Invitar\n' +
+    '`/casa` - Resumen y saldos · `/casa saldar Ana 5000` - Registrar un pago\n' +
+    '`/casa ayuda` - Todos los comandos de casa\n\n' +
     '🧠 *Modo IA:*\n' +
     '`/modoia` - Ver estado del modo Full IA\n' +
     '`/modoia on` / `/modoia off` - Activar/desactivar'

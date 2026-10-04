@@ -163,6 +163,24 @@ async function obtenerCasaParaMiembro(userId, casaId) {
 
 const activos = (miembros) => miembros.filter((m) => m.estado === 'activo');
 
+// Casa "activa" de la cuenta: la que se usa cuando el texto no nombra ninguna.
+// Se guarda como marca en el índice del perfil (persiste con el resto). Si no
+// hay marca (o la casa activa se dejó), la primera.
+function getCasaActiva(userId) {
+  const casas = listarMisCasas(userId);
+  if (casas.length === 0) return null;
+  return casas.find((c) => c.activa) || casas[0];
+}
+
+async function setCasaActiva(userId, casaId) {
+  const casas = listarMisCasas(userId);
+  if (!casas.some((c) => c.casaId === String(casaId))) throw new CasaError('no_miembro', 'No pertenecés a esa casa');
+  await clienteService.setCasas(userId, casas.map((c) => ({ ...c, activa: c.casaId === String(casaId) })));
+}
+
+// Agrega una casa al índice del perfil y la deja como activa.
+const conCasaActiva = (casas, nueva) => [...casas.map((c) => ({ ...c, activa: false })), { ...nueva, activa: true }];
+
 // ── Casas y miembros ─────────────────────────────────────────────────────────
 
 async function crearCasa(userId, nombre, { alias } = {}) {
@@ -194,7 +212,7 @@ async function crearCasa(userId, nombre, { alias } = {}) {
     });
   });
 
-  await clienteService.setCasas(userId, [...actuales, { casaId, ownerId, nombre: nombreCasa }]);
+  await clienteService.setCasas(userId, conCasaActiva(actuales, { casaId, ownerId, nombre: nombreCasa }));
   logger.audit('casa_creada', { userId, casaId, nombre: nombreCasa });
   return { casaId, ownerId, nombre: nombreCasa, miembroId };
 }
@@ -278,7 +296,7 @@ async function unirMiembro(userId, { ownerId, casaId, miembroId = null, alias })
   });
 
   if (!actuales.some((c) => c.casaId === id)) {
-    await clienteService.setCasas(userId, [...actuales, { casaId: id, ownerId: owner, nombre: casa.nombre }]);
+    await clienteService.setCasas(userId, conCasaActiva(actuales, { casaId: id, ownerId: owner, nombre: casa.nombre }));
   }
   logger.audit('casa_miembro_unido', { userId, casaId: id, miembroId: miembro.id });
   return { casa, miembro };
@@ -539,6 +557,8 @@ module.exports = {
   COLS,
   MONEDAS,
   listarMisCasas,
+  getCasaActiva,
+  setCasaActiva,
   obtenerCasaParaMiembro,
   crearCasa,
   listarMiembros,

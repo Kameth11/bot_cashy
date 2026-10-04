@@ -67,6 +67,7 @@ require('./handlers/commands/rechazar');
 require('./handlers/commands/accesos');
 require('./handlers/commands/personal');
 require('./handlers/commands/viaje');
+require('./handlers/commands/casa');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');

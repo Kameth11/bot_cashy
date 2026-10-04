@@ -56,6 +56,8 @@ class TTLMap {
 // Flujos de conversación pendientes — expiran a los 30 minutos
 const pendingRegistros      = new TTLMap();
 const pendingCodigos        = new TTLMap();
+// Invitaciones a una CASA compartida — viven 24 h (las de consultorio usan el TTL por defecto)
+const pendingInvitacionesCasa = new TTLMap(24 * 60 * 60 * 1000);
 // Movimientos NLP pendientes de confirmación — expiran a los 5 minutos
 const pendingNlpMovimientos = new TTLMap(5 * 60 * 1000);
 const pendingPayments       = new TTLMap();
@@ -108,6 +110,7 @@ module.exports = {
   pendingNlpMovimientos,
   pendingRegistros,
   pendingCodigos,
+  pendingInvitacionesCasa,
   pendingPayments,
   pendingIntentosEmail,
   pendingIntentosCodigo,

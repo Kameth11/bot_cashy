@@ -63,7 +63,7 @@ describe('crearCasa', () => {
     expect(filas('1', 'Casas')).toHaveLength(1);
     expect(filas('1', 'Casas')[0]).toMatchObject({ ID_Casa: c.casaId, Nombre: 'Casa Dinamarca', CreadaPor: '1', Estado: 'activa' });
     expect(filas('1', 'CasaMiembros')[0]).toMatchObject({ Rol: 'creador', UserId: '1', Nombre: 'Ana', Estado: 'activo' });
-    expect(mockPerfiles['1']).toEqual([{ casaId: c.casaId, ownerId: '1', nombre: 'Casa Dinamarca' }]);
+    expect(mockPerfiles['1']).toEqual([{ casaId: c.casaId, ownerId: '1', nombre: 'Casa Dinamarca', activa: true }]);
   });
 
   test('puede tener varias casas, pero no dos con el mismo nombre (sin importar tildes ni mayúsculas)', async () => {
@@ -154,7 +154,7 @@ describe('miembros', () => {
     const c = await svc.crearCasa(1, 'Casa', { alias: 'Ana' });
     const r = await svc.unirMiembro(2, { ownerId: '1', casaId: c.casaId, alias: 'Beto' });
     expect(r.miembro.nombre).toBe('Beto');
-    expect(mockPerfiles['2']).toEqual([{ casaId: c.casaId, ownerId: '1', nombre: 'Casa' }]);
+    expect(mockPerfiles['2']).toEqual([{ casaId: c.casaId, ownerId: '1', nombre: 'Casa', activa: true }]);
   });
 
   test('reclamar un miembro virtual conserva su historial', async () => {
@@ -357,5 +357,29 @@ describe('calcularResumenCasa', () => {
   test('un no miembro no puede ver el resumen', async () => {
     const c = await svc.crearCasa(1, 'Casa');
     expect(await code(svc.calcularResumenCasa(2, c.casaId))).toBe('no_miembro');
+  });
+});
+
+describe('casa activa', () => {
+  test('la última creada o a la que te uniste queda activa', async () => {
+    const a = await svc.crearCasa(1, 'Casa A');
+    expect(svc.getCasaActiva(1).casaId).toBe(a.casaId);
+    const b = await svc.crearCasa(1, 'Casa B');
+    expect(svc.getCasaActiva(1).casaId).toBe(b.casaId);
+    expect(svc.listarMisCasas(1).filter((c) => c.activa)).toHaveLength(1);
+  });
+
+  test('setCasaActiva cambia la marca y rechaza casas ajenas', async () => {
+    const a = await svc.crearCasa(1, 'Casa A');
+    await svc.crearCasa(1, 'Casa B');
+    await svc.setCasaActiva(1, a.casaId);
+    expect(svc.getCasaActiva(1).casaId).toBe(a.casaId);
+    expect(await code(svc.setCasaActiva(2, a.casaId))).toBe('no_miembro');
+  });
+
+  test('sin casas: null; sin marca: la primera', async () => {
+    expect(svc.getCasaActiva(1)).toBeNull();
+    mockPerfiles['1'] = [{ casaId: 'x1', ownerId: '1', nombre: 'Una' }, { casaId: 'x2', ownerId: '1', nombre: 'Dos' }];
+    expect(svc.getCasaActiva(1).casaId).toBe('x1');
   });
 });
