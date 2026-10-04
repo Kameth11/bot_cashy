@@ -78,7 +78,7 @@ async function diagnosticoAmbito(userId, frase) {
     const r = resolverAmbito(frase, { preferencias, casas });
     const destino = r.ambito === 'casa' ? `casa (${r.casaNombre})` : r.ambito;
     const categoria = r.ambito === 'consultorio' ? null : inferirCategoriaPersonal('gasto', frase);
-    return `🏷️ *Ámbito:* \`${destino}\` (${r.razon})${r.ambiguo ? ' — ambiguo, pide confirmar' : ''}` +
+    return `🏷️ *Ámbito:* \`${destino}\` (\`${r.razon}\`)${r.ambiguo ? ' — ambiguo, pide confirmar' : ''}` +
       (r.termino ? `\n  término: \`${r.termino}\`` : '') +
       (categoria ? `\n  categoría: \`${categoria}\`` : '') +
       `\n  casas: ${casas.length}`;

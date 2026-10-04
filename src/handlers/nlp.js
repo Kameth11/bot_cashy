@@ -8,6 +8,7 @@ const { mostrarCobrar } = require('./cobrar-confirm');
 const { DASHBOARD_URL } = require('../config');
 const { requierePermisoBot } = require('../auth/bot-permisos');
 const { escapeMarkdown } = require('../utils/formatter');
+const { camposDeAmbito } = require('../lib/ambitos');
 
 // Permiso requerido por intent NLP. Mismo criterio que el mapa de comandos
 // del bot — un intent sin entrada acá se considera público/informativo
@@ -211,6 +212,9 @@ const INTENT_HANDLERS = {
 
   registrar_movimiento: async (ctx, entities) => {
     await mostrarConfirmacion(ctx, {
+      // Lo que decidió marcarAmbito (personal / casa / consultorio) tiene que
+      // llegar a la confirmación; antes se descartaba acá y todo salía consultorio.
+      ...camposDeAmbito(entities),
       tipo: entities.tipo || 'ingreso',
       descripcion: entities.descripcion || null,
       monto: entities.monto || null,

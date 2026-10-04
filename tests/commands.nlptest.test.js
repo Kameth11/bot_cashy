@@ -140,12 +140,19 @@ describe('diagnóstico de ámbito', () => {
 
   test('usa TUS preferencias y TUS casas', async () => {
     personalService.leerPreferencias.mockResolvedValue({ naturgy: 'personal' });
-    expect((await diagnosticoAmbito(1, 'pagué naturgy 25000'))).toContain('`personal` (preferencia)');
+    expect((await diagnosticoAmbito(1, 'pagué naturgy 25000'))).toContain('`personal` (`preferencia`)');
 
     casaService.listarMisCasas.mockReturnValue([{ casaId: 'c1', nombre: 'Casa', activa: true }]);
     const d = await diagnosticoAmbito(1, 'super 45000 casa');
     expect(d).toContain('casa (Casa)');
     expect(d).toContain('casas: 1');
+  });
+
+  test('los guiones bajos de la razón van en código: si no, Telegram rechaza el Markdown y llega sin formato', async () => {
+    const d = await diagnosticoAmbito(1, 'pague 15000 pesos para el cine');
+    expect(d).toContain('(`marcador_personal`)');
+    // Ningún "_" suelto fuera de un bloque de código.
+    expect(d.replace(/`[^`]*`/g, '')).not.toMatch(/_/);
   });
 
   test('si algo falla, lo informa sin romper el comando', async () => {

@@ -19,7 +19,29 @@ function esAmbito(entities, ambito) {
   return normalizarAmbito(entities && entities.ambito) === ambito;
 }
 
+// Campos que decide marcarAmbito (text.js) y que tienen que llegar INTACTOS a la
+// pantalla de confirmación. Cualquier handler que arme el objeto de confirmación
+// a mano tiene que copiarlos: si no, la detección de ámbito se pierde en
+// silencio y todo termina como consultorio.
+const CAMPOS_AMBITO = [
+  'ambito', 'ambiguoAmbito', 'terminoAmbito', 'textoOriginal', 'categoriaConsultorio',
+  'viajeId', 'viajeNombre', 'casasDisponibles',
+  'casaId', 'casaNombre', 'miembrosCasa', 'pagoPorId', 'pagoPorNombre',
+  'repartoIds', 'repartoNombres', 'avisoReparto',
+];
+
+// Solo copia los campos que existen: un movimiento sin ámbito sigue igual.
+function camposDeAmbito(entities) {
+  const salida = {};
+  for (const campo of CAMPOS_AMBITO) {
+    if (entities && entities[campo] !== undefined) salida[campo] = entities[campo];
+  }
+  return salida;
+}
+
 module.exports = {
+  CAMPOS_AMBITO,
+  camposDeAmbito,
   AMBITO_CONSULTORIO,
   AMBITO_PERSONAL,
   AMBITO_CASA,
