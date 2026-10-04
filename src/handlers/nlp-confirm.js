@@ -17,6 +17,21 @@ function esAmbitoPersonal(entities) {
   return String((entities || {}).ambito || '').toLowerCase() === 'personal';
 }
 
+function esAmbitoCasa(entities) {
+  return String((entities || {}).ambito || '').toLowerCase() === 'casa';
+}
+
+function esEgresoEntities(entities) {
+  return ['gasto', 'egreso'].includes(String((entities || {}).tipo || '').toLowerCase());
+}
+
+// "Ana, Beto y Tomás"
+function listaNombres(nombres) {
+  const n = (nombres || []).map((x) => escapeMarkdown(String(x)));
+  if (n.length <= 1) return n.join('');
+  return `${n.slice(0, -1).join(', ')} y ${n[n.length - 1]}`;
+}
+
 // Líneas extra cuando el movimiento viene de una foto/PDF de comprobante:
 // qué comprobante se leyó, vencimiento y aviso de duplicado.
 function lineasComprobante(es) {
@@ -57,6 +72,27 @@ function crearMensajeConfirmacion(entities) {
   const v = (x) => (x ? escapeMarkdown(String(x)) : '—');
   const categoriaTexto = es.categoria ? escapeMarkdown(String(es.categoria).replace(/_/g, ' ')) : '—';
 
+  // Casa compartida: importan quién pagó y entre quiénes se reparte.
+  if (esAmbitoCasa(es)) {
+    const reparto = es.repartoNombres && es.repartoNombres.length
+      ? listaNombres(es.repartoNombres)
+      : `todos (${listaNombres((es.miembrosCasa || []).map((m) => m.nombre))})`;
+    return (
+      `📋 *Entendí esto:*\n\n` +
+      `• Ámbito: 🏡 Casa — ${v(es.casaNombre)}\n` +
+      `• Tipo: Egreso 🔴\n` +
+      `• Monto: ${montoTexto}${es.monto ? monedaLabel : ''}\n` +
+      `• Categoría: ${categoriaTexto}\n` +
+      `• Detalle: ${v(es.descripcion)}\n` +
+      `• Pagó: ${v(es.pagoPorNombre)}\n` +
+      `• Reparto: ${reparto}\n` +
+      `• Método: ${v(metodo)}\n` +
+      (es.fecha ? `• Fecha: ${escapeMarkdown(String(es.fecha))}\n` : '') +
+      (es.avisoReparto ? `\n⚠️ _${escapeMarkdown(es.avisoReparto)}_\n` : '') +
+      `\n_¿Es correcto?_`
+    );
+  }
+
   // El ámbito personal tiene otros campos: no hay paciente ni tratamiento, y
   // sí importan la categoría y el viaje al que se atribuye.
   if (esAmbitoPersonal(es)) {
@@ -86,6 +122,7 @@ function crearMensajeConfirmacion(entities) {
   const avisoAmbiguo = es.ambiguoAmbito
     ? `\n⚠️ _Asumí que es del consultorio. Si es de tu casa, tocá el botón._\n`
     : '';
+  // (Con casas compartidas el botón ofrece también cada casa.)
 
   return (
     `📋 *Entendí esto:*\n\n` +
@@ -104,19 +141,40 @@ function crearMensajeConfirmacion(entities) {
 
 // ── Buttons ──────────────────────────────────────────────────────────────────
 
+// Con casas compartidas el toggle binario no alcanza: se ofrece cada ámbito al
+// que se puede mover el movimiento (menos el actual). Una casa solo para gastos.
+function botonesDeAmbito(entities) {
+  const es = entities || {};
+  const actual = esAmbitoCasa(es) ? `casa:${es.casaId}` : (esAmbitoPersonal(es) ? 'personal' : 'consultorio');
+  const opciones = [
+    { target: 'consultorio', label: '🏥 Consultorio' },
+    { target: 'personal', label: '🏠 Personal' },
+  ];
+  if (esEgresoEntities(es)) {
+    for (const c of es.casasDisponibles) opciones.push({ target: `casa:${c.casaId}`, label: `🏡 ${c.nombre}` });
+  }
+  const botones = opciones
+    .filter((o) => o.target !== actual)
+    .map((o) => Markup.button.callback(o.label, `nlp_set_ambito:${o.target}`));
+  const filas = [];
+  for (let i = 0; i < botones.length; i += 2) filas.push(botones.slice(i, i + 2));
+  return filas;
+}
+
 function confirmationButtons(entities) {
   const personal = esAmbitoPersonal(entities);
+  const tieneCasas = Array.isArray((entities || {}).casasDisponibles) && entities.casasDisponibles.length > 0;
   const filas = [
     [
       Markup.button.callback('✅ Guardar', 'nlp_save'),
       Markup.button.callback('❌ Cancelar', 'nlp_cancel'),
     ],
-    [
-      Markup.button.callback(
+    ...(tieneCasas
+      ? botonesDeAmbito(entities)
+      : [[Markup.button.callback(
         personal ? '🏥 Es del consultorio' : '🏠 Es personal',
         'nlp_toggle_ambito'
-      ),
-    ],
+      )]]),
   ];
 
   // Un gasto atribuido a un viaje se puede desatribuir sin tocar nada más: es
@@ -129,7 +187,20 @@ function confirmationButtons(entities) {
   return Markup.inlineKeyboard(filas);
 }
 
-function editFieldButtons() {
+function editFieldButtons(entities) {
+  if (esAmbitoCasa(entities)) {
+    return Markup.inlineKeyboard([
+      [
+        Markup.button.callback('💰 Monto', 'nlp_edit_monto'),
+        Markup.button.callback('💳 Método', 'nlp_edit_metodo'),
+      ],
+      [
+        Markup.button.callback('👤 Pagó', 'nlp_edit_pago'),
+        Markup.button.callback('👥 Entre quiénes', 'nlp_edit_reparto'),
+      ],
+      [Markup.button.callback('🔄 Reescribir', 'nlp_edit_reescribir')],
+    ]);
+  }
   return Markup.inlineKeyboard([
     [
       Markup.button.callback('💰 Monto', 'nlp_edit_monto'),
@@ -184,6 +255,41 @@ async function actualizarCampoNlp(ctx, userId, pending, text) {
     case 'pacienteNombre':
       entities.pacienteNombre = text.trim() || null;
       break;
+    case 'pagoPor': {
+      const { buscarMiembro } = require('../lib/casa-parse');
+      const r = buscarMiembro(entities.miembrosCasa, text);
+      if (!r.miembro) {
+        return ctx.reply(r.error === 'ambiguo'
+          ? `⚠️ Hay más de uno que coincide: ${r.candidatos.map((c) => c.nombre).join(', ')}. Escribí el nombre completo:`
+          : '⚠️ No encontré a esa persona en la casa. Escribí el nombre como figura en /casa miembros:');
+      }
+      entities.pagoPorId = r.miembro.id;
+      entities.pagoPorNombre = r.miembro.nombre;
+      break;
+    }
+    case 'reparto': {
+      const { buscarMiembro, normalizar } = require('../lib/casa-parse');
+      const limpio = normalizar(text);
+      if (/^(?:todos|todas|nosotros|los dos)$/.test(limpio)) {
+        entities.repartoIds = null;
+        entities.repartoNombres = null;
+        entities.avisoReparto = null;
+        break;
+      }
+      const ids = [];
+      const desconocidos = [];
+      for (const tok of limpio.split(/\s*,\s*|\s+(?:y|e)\s+/).filter(Boolean)) {
+        const r = buscarMiembro(entities.miembrosCasa, tok);
+        if (r.miembro) { if (!ids.includes(r.miembro.id)) ids.push(r.miembro.id); } else desconocidos.push(tok);
+      }
+      if (ids.length === 0 || desconocidos.length > 0) {
+        return ctx.reply(`⚠️ No reconocí a: ${desconocidos.join(', ') || text}. Escribí los nombres separados por "y" (ej: Ana y Beto) o "todos":`);
+      }
+      entities.repartoIds = ids;
+      entities.repartoNombres = ids.map((id) => entities.miembrosCasa.find((m) => m.id === id).nombre);
+      entities.avisoReparto = null;
+      break;
+    }
     case 'metodo_pago': {
       const m = text.toLowerCase().trim();
       if (!['efectivo', 'transferencia', 'tarjeta'].includes(m)) {
@@ -306,9 +412,10 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
   }
 }
 
-// Alterna consultorio <-> personal y RECUERDA la elección: la próxima vez que
-// aparezca ese término ambiguo ya arranca en el ámbito correcto.
-async function handleNlpToggleAmbito(ctx) {
+// Cambia el ámbito del movimiento pendiente y RECUERDA la elección: la próxima
+// vez que aparezca ese término ambiguo ya arranca en el ámbito correcto.
+// `target`: 'consultorio' | 'personal' | 'casa:<casaId>'.
+async function aplicarAmbito(ctx, target, comando) {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingNlpMovimientos.get(userId);
@@ -318,20 +425,73 @@ async function handleNlpToggleAmbito(ctx) {
   const { inferirCategoriaPersonal } = require('../services/personal-nlp.service');
   const { requiereDuenoBot } = require('../auth/bot-permisos');
 
-  const nuevoAmbito = esAmbitoPersonal(pending.entities) ? 'consultorio' : 'personal';
   // Las pestañas personales son las del dueño: un invitado no puede pasar
   // un movimiento a ese ámbito tocando el botón, aunque haya llegado acá
   // (mismo criterio que marcarAmbito en text.js).
-  if (nuevoAmbito === 'personal' && !requiereDuenoBot(ctx, 'nlp_toggle_ambito')) {
-    return;
-  }
+  if (target === 'personal' && !requiereDuenoBot(ctx, comando)) return;
 
   const entities = { ...pending.entities };
-  entities.ambito = nuevoAmbito;
-  entities.ambiguoAmbito = false;
+  const veniaDeConsultorio = !esAmbitoPersonal(entities) && !esAmbitoCasa(entities);
 
-  if (nuevoAmbito === 'personal') {
-    entities.categoriaConsultorio = entities.categoria;
+  // Datos propios de una casa: se limpian al salir de ella.
+  const limpiarCasa = () => {
+    entities.casaId = null;
+    entities.casaNombre = null;
+    entities.miembrosCasa = null;
+    entities.pagoPorId = null;
+    entities.pagoPorNombre = null;
+    entities.repartoIds = null;
+    entities.repartoNombres = null;
+    entities.avisoReparto = null;
+  };
+
+  if (target.startsWith('casa:')) {
+    const casaId = target.slice(5);
+    const casaService = require('../services/casa.service');
+    const { mensajeError } = require('../lib/casa-format');
+
+    // El callback viene del cliente: se valida contra el servidor, nunca se confía.
+    if (!casaService.listarMisCasas(userId).some((c) => c.casaId === casaId)) {
+      return ctx.reply('🔒 No pertenecés a esa casa.');
+    }
+    if (!esEgresoEntities(entities)) return ctx.reply('⚠️ En una casa solo se cargan gastos.');
+
+    let miembros;
+    try {
+      miembros = await casaService.listarMiembros(userId, casaId);
+    } catch (err) {
+      if (err instanceof casaService.CasaError) return ctx.reply(mensajeError(err));
+      throw err;
+    }
+    const yo = miembros.find((m) => m.userId === String(userId));
+    if (!yo) return ctx.reply('🔒 No pertenecés a esa casa.');
+
+    const { extraerPagoYReparto } = require('../lib/casa-parse');
+    const pr = extraerPagoYReparto(entities.textoOriginal || entities.descripcion || '', miembros, yo.id);
+    const nombreDe = (id) => (miembros.find((m) => m.id === id) || {}).nombre;
+    const casa = (entities.casasDisponibles || []).find((c) => c.casaId === casaId);
+
+    if (veniaDeConsultorio) entities.categoriaConsultorio = entities.categoria;
+    entities.ambito = 'casa';
+    entities.ambiguoAmbito = false;
+    entities.casaId = casaId;
+    entities.casaNombre = casa ? casa.nombre : null;
+    entities.categoria = inferirCategoriaPersonal(entities.tipo, `${entities.descripcion || ''} ${entities.textoOriginal || ''}`);
+    entities.miembrosCasa = miembros.map(({ id, nombre }) => ({ id, nombre }));
+    entities.pagoPorId = pr.pagoPorId;
+    entities.pagoPorNombre = nombreDe(pr.pagoPorId);
+    entities.repartoIds = pr.repartoIds;
+    entities.repartoNombres = pr.repartoIds ? pr.repartoIds.map(nombreDe) : null;
+    entities.avisoReparto = pr.repartoDesconocidos.length
+      ? `No encontré a ${pr.repartoDesconocidos.join(', ')} en la casa: lo repartí entre todos.`
+      : null;
+    entities.viajeId = null;
+    entities.viajeNombre = null;
+  } else if (target === 'personal') {
+    if (veniaDeConsultorio) entities.categoriaConsultorio = entities.categoria;
+    limpiarCasa();
+    entities.ambito = 'personal';
+    entities.ambiguoAmbito = false;
     entities.categoria = inferirCategoriaPersonal(
       entities.tipo,
       `${entities.descripcion || ''} ${entities.textoOriginal || ''}`
@@ -347,6 +507,9 @@ async function handleNlpToggleAmbito(ctx) {
     }
   } else {
     // Volviendo al consultorio: se restaura la categoría clínica original.
+    limpiarCasa();
+    entities.ambito = 'consultorio';
+    entities.ambiguoAmbito = false;
     entities.categoria = entities.categoriaConsultorio || null;
     entities.viajeId = null;
     entities.viajeNombre = null;
@@ -354,7 +517,7 @@ async function handleNlpToggleAmbito(ctx) {
 
   // Aprender la corrección para no volver a preguntar por este término.
   if (entities.terminoAmbito) {
-    await personalService.guardarPreferencia(userId, entities.terminoAmbito, nuevoAmbito);
+    await personalService.guardarPreferencia(userId, entities.terminoAmbito, target);
   }
 
   state.pendingNlpMovimientos.set(userId, { entities, editingCampo: null });
@@ -362,6 +525,23 @@ async function handleNlpToggleAmbito(ctx) {
     parse_mode: 'Markdown',
     ...confirmationButtons(entities),
   });
+}
+
+// Toggle binario consultorio <-> personal (usuarios sin casas, y mensajes viejos).
+async function handleNlpToggleAmbito(ctx) {
+  const pending = state.pendingNlpMovimientos.get(ctx.from.id);
+  const nuevo = pending && esAmbitoPersonal(pending.entities) ? 'consultorio' : 'personal';
+  return aplicarAmbito(ctx, nuevo, 'nlp_toggle_ambito');
+}
+
+// Selector de ámbito (usuarios con casas): nlp_set_ambito:<consultorio|personal|casa:id>
+async function handleNlpSetAmbito(ctx) {
+  const target = String((ctx.match && ctx.match[1]) || '');
+  if (target !== 'consultorio' && target !== 'personal' && !/^casa:[A-Za-z0-9_]+$/.test(target)) {
+    await ctx.answerCbQuery();
+    return ctx.reply('⚠️ Opción no válida.');
+  }
+  return aplicarAmbito(ctx, target, 'nlp_set_ambito');
 }
 
 async function handleNlpQuitarViaje(ctx) {
@@ -378,6 +558,54 @@ async function handleNlpQuitarViaje(ctx) {
   });
 }
 
+// ── Ámbito casa ──────────────────────────────────────────────────────────────
+
+async function guardarGastoCasaDesdeConfirmacion(ctx, userId, entities) {
+  const casaService = require('../services/casa.service');
+  const { fmt, formatearSaldos, mensajeError } = require('../lib/casa-format');
+
+  try {
+    const { movimiento, miembros } = await casaService.registrarGasto(userId, entities.casaId, {
+      descripcion: entities.descripcion,
+      monto: entities.monto,
+      moneda: entities.moneda,
+      metodoPago: entities.metodo_pago,
+      categoria: entities.categoria,
+      fecha: entities.fecha || undefined,
+      pagoPor: entities.pagoPorId || undefined,
+      repartoEntre: entities.repartoIds || undefined,
+    });
+
+    const nombre = (id) => (miembros.find((m) => m.id === id) || {}).nombre || id;
+    const reparto = movimiento.repartoEntre.length === miembros.length
+      ? 'todos'
+      : listaNombres(movimiento.repartoEntre.map(nombre));
+
+    // Saldos actualizados (best-effort: el gasto ya quedó guardado).
+    let saldos = '';
+    try {
+      const r = await casaService.calcularSaldosCasa(userId, entities.casaId);
+      saldos = `\n\n${formatearSaldos(r.saldos)}`;
+    } catch (err) {
+      console.error('Casa: no se pudieron calcular los saldos tras guardar:', err.message);
+    }
+
+    return ctx.editMessageText(
+      `✅ *Gasto registrado en ${escapeMarkdown(entities.casaNombre || 'la casa')}*\n\n` +
+      `🏡 ${escapeMarkdown(movimiento.descripcion)}\n` +
+      `💰 ${fmt(movimiento.monto, movimiento.moneda)}\n` +
+      `👤 Pagó: ${escapeMarkdown(nombre(movimiento.pagoPor))}\n` +
+      `👥 Reparto: ${reparto}\n` +
+      `🏷️ ${escapeMarkdown(String(movimiento.categoria || '').replace(/_/g, ' '))}${saldos}`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    if (error instanceof casaService.CasaError) return ctx.editMessageText(mensajeError(error));
+    console.error('Error al guardar gasto de casa:', error.message);
+    return ctx.editMessageText('❌ Error al guardar el gasto de la casa. Intentá de nuevo.');
+  }
+}
+
 // ── Action handlers (exported for testing) ────────────────────────────────────
 
 async function handleNlpSave(ctx) {
@@ -389,8 +617,11 @@ async function handleNlpSave(ctx) {
   }
   state.pendingNlpMovimientos.delete(userId);
 
-  // El ámbito personal tiene su propio almacenamiento (pestañas aparte) y no
-  // pasa por el modelo del consultorio.
+  // Casa y personal tienen su propio almacenamiento (pestañas aparte) y no
+  // pasan por el modelo del consultorio.
+  if (esAmbitoCasa(pending.entities)) {
+    return guardarGastoCasaDesdeConfirmacion(ctx, userId, pending.entities);
+  }
   if (esAmbitoPersonal(pending.entities)) {
     return guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, pending.entities);
   }
@@ -433,7 +664,7 @@ async function handleNlpEdit(ctx) {
   }
   return ctx.editMessageText('✏️ *¿Qué campo querés editar?*', {
     parse_mode: 'Markdown',
-    ...editFieldButtons(),
+    ...editFieldButtons((state.pendingNlpMovimientos.get(userId) || {}).entities),
   });
 }
 
@@ -479,11 +710,16 @@ const handleNlpEditPaciente = makeEditCampoHandler('pacienteNombre','👤 Ingres
 const handleNlpEditMetodo   = makeEditCampoHandler('metodo_pago',   '💳 Ingresá el método: efectivo / transferencia / tarjeta');
 const handleNlpEditTipo     = makeEditCampoHandler('tipo',          '📊 Ingresá el tipo: ingreso / gasto');
 const handleNlpEditEstado   = makeEditCampoHandler('estado',        '📋 Ingresá el estado: cobrado / pendiente');
+const handleNlpEditPago     = makeEditCampoHandler('pagoPor',       '👤 ¿Quién pagó? Escribí el nombre (ej: Ana):');
+const handleNlpEditReparto  = makeEditCampoHandler('reparto',       '👥 ¿Entre quiénes? Escribí los nombres separados por "y" (ej: Ana y Beto) o "todos":');
 
 // ── Register bot actions ──────────────────────────────────────────────────────
 
 bot.action('nlp_save',           handleNlpSave);
 bot.action('nlp_toggle_ambito',  handleNlpToggleAmbito);
+bot.action(/^nlp_set_ambito:(.+)$/, handleNlpSetAmbito);
+bot.action('nlp_edit_pago',      handleNlpEditPago);
+bot.action('nlp_edit_reparto',   handleNlpEditReparto);
 bot.action('nlp_quitar_viaje',   handleNlpQuitarViaje);
 bot.action('nlp_cancel',         handleNlpCancel);
 bot.action('nlp_edit',           handleNlpEdit);
@@ -499,7 +735,11 @@ bot.action('nlp_discard_old',    handleNlpDiscardOld);
 module.exports = {
   crearMensajeConfirmacion,
   esAmbitoPersonal,
+  esAmbitoCasa,
   handleNlpToggleAmbito,
+  handleNlpSetAmbito,
+  handleNlpEditPago,
+  handleNlpEditReparto,
   handleNlpQuitarViaje,
   mostrarConfirmacion,
   actualizarCampoNlp,

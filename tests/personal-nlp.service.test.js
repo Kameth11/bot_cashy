@@ -202,3 +202,76 @@ describe('detectarTerminoAmbiguo', () => {
     expect(detectarTerminoAmbiguo('consulta Juan')).toBeNull();
   });
 });
+
+describe('resolverAmbito — con casas compartidas', () => {
+  const CASAS = [
+    { casaId: 'casa_1', nombre: 'Casa', activa: true },
+    { casaId: 'casa_2', nombre: 'Casa Dinamarca' },
+  ];
+  const r = (texto, extra = {}) => resolverAmbito(texto, { casas: CASAS, ...extra });
+
+  test('SIN casas todo sigue igual que antes (sin regresión)', () => {
+    expect(resolverAmbito('pagué la luz de casa 80000')).toMatchObject({ ambito: 'personal', razon: 'calificador' });
+    expect(resolverAmbito('pagué la luz de casa 80000', { casas: [] })).toMatchObject({ ambito: 'personal' });
+    expect(resolverAmbito('hogar 5000', { casas: undefined })).toMatchObject({ ambito: 'personal' });
+  });
+
+  test('"luz de casa" va a la casa activa', () => {
+    expect(r('luz de casa 80000')).toMatchObject({ ambito: 'casa', casaId: 'casa_1', casaNombre: 'Casa', razon: 'calificador_casa' });
+  });
+
+  test('"hogar", "familiar" y "entre todos" también', () => {
+    expect(r('super hogar 5000').ambito).toBe('casa');
+    expect(r('cena familiar 5000').ambito).toBe('casa');
+    expect(r('pizza entre todos 5000').ambito).toBe('casa');
+  });
+
+  test('nombrar la casa por su nombre completo gana sobre la activa', () => {
+    expect(r('super 45000 casa dinamarca')).toMatchObject({ ambito: 'casa', casaId: 'casa_2' });
+    expect(r('super 45000 casa')).toMatchObject({ casaId: 'casa_1' }); // "casa" suelta = la activa
+  });
+
+  test('un nombre genérico ("Casa") no tapa a la casa activa', () => {
+    // Hay una casa llamada exactamente "Casa" pero la activa es otra: "casa" suelta va a la activa.
+    const casas = [{ casaId: 'casa_1', nombre: 'Casa' }, { casaId: 'casa_2', nombre: 'Casa Dinamarca', activa: true }];
+    expect(resolverAmbito('super 45000 casa', { casas }).casaId).toBe('casa_2');
+    expect(resolverAmbito('super 45000 casa dinamarca', { casas }).casaId).toBe('casa_2');
+  });
+
+  test('se puede nombrar solo la parte distintiva ("dinamarca")', () => {
+    expect(r('alquiler 500 dinamarca')).toMatchObject({ ambito: 'casa', casaId: 'casa_2' });
+  });
+
+  test('sin tildes ni mayúsculas', () => {
+    expect(r('SUPER 45000 CASA DINAMARCA').casaId).toBe('casa_2');
+  });
+
+  test('con otra casa activa, "de casa" va a esa', () => {
+    const casas = [{ casaId: 'casa_1', nombre: 'Casa' }, { casaId: 'casa_2', nombre: 'Casa Dinamarca', activa: true }];
+    expect(resolverAmbito('luz de casa 80000', { casas }).casaId).toBe('casa_2');
+  });
+
+  test('lo personal se declara con "mi", "personal", "mío"', () => {
+    expect(r('mi sueldo 500000')).toMatchObject({ ambito: 'personal' });
+    expect(r('luz personal 80000')).toMatchObject({ ambito: 'personal' });
+    expect(r('gasto mío 5000')).toMatchObject({ ambito: 'personal' });
+  });
+
+  test('el calificador de consultorio sigue ganando', () => {
+    expect(r('luz del consultorio 80000')).toMatchObject({ ambito: 'consultorio' });
+  });
+
+  test('un gasto sin señal de casa NO cae en casa (la casa es explícita o aprendida)', () => {
+    expect(r('super 45000')).toMatchObject({ ambito: 'personal' });
+    expect(r('insumos 30000').ambito).toBe('consultorio');
+    expect(r('luz 80000')).toMatchObject({ ambito: 'consultorio', ambiguo: true });
+  });
+
+  test('preferencia aprendida "casa:<id>": se usa si sigue siendo miembro', () => {
+    expect(r('luz 80000', { preferencias: { luz: 'casa:casa_2' } })).toMatchObject({ ambito: 'casa', casaId: 'casa_2', razon: 'preferencia' });
+  });
+
+  test('preferencia hacia una casa de la que ya no es miembro se ignora', () => {
+    expect(r('luz 80000', { preferencias: { luz: 'casa:casa_9' } })).toMatchObject({ ambito: 'consultorio', ambiguo: true });
+  });
+});

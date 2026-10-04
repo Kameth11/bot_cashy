@@ -70,6 +70,12 @@ const INGRESO_PERSONAL_PATTERNS = [
 // Ganan sobre cualquier otra señal: son una declaración del usuario.
 
 const CALIFICADOR_PERSONAL = /\b(?:de\s+(?:mi\s+)?casa|en\s+(?:mi\s+)?casa|del\s+depto|del\s+departamento|de\s+mi\s+depto|domicilio|hogar|personal(?:es)?|particular|mio|mia|propio|familiar)\b/i;
+// Con una CASA compartida de por medio, "de casa", "hogar" o "familiar" ya no
+// significan personal sino la casa; lo personal se declara con estas palabras.
+const CALIFICADOR_PERSONAL_FUERTE = /\b(?:personal(?:es)?|particular|mio|mia|propio)\b/i;
+// (Se prueban sobre el texto sin tildes.) "casa" suelta cuenta: con casas, nombrarla es nombrar la activa.
+const CALIFICADOR_CASA_GENERICO = /\b(?:casa|hogar|familiar|compartid[oa]s?|entre\s+todos)\b/i;
+
 const CALIFICADOR_CONSULTORIO = /\b(?:del?\s+consultorio|en\s+el\s+consultorio|de\s+la\s+clinica|del?\s+laboratorio|del?\s+local|de\s+la\s+oficina|laboral|del?\s+trabajo)\b/i;
 
 // ── Términos que ambos ámbitos reclaman (Capa 2/3) ───────────────────────────
@@ -186,6 +192,26 @@ function detectarTerminoAmbiguo(texto = '') {
   return TERMINOS_AMBIGUOS.find(t => new RegExp(`\\b${t}`, 'i').test(source)) || null;
 }
 
+// ¿El texto nombra a alguna de las casas del usuario? Se acepta el nombre completo
+// ("casa dinamarca") o su parte distintiva sin el "casa" ("dinamarca"). Gana el
+// nombre más largo, así "casa dinamarca" no se confunde con una casa llamada "Casa".
+function casaMencionada(texto, casas) {
+  const t = normalizar(texto);
+  const escapar = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const candidatos = [];
+  for (const c of casas) {
+    const nombre = normalizar(c.nombre);
+    // Un nombre genérico ("Casa", "Hogar") no identifica a una casa en particular:
+    // lo resuelve el calificador genérico hacia la casa activa.
+    if (nombre && !/^(?:casa|hogar|depto|departamento)$/.test(nombre)) candidatos.push({ c, clave: nombre });
+    const distintivo = nombre.replace(/^(?:casa|hogar|depto|departamento)\s+/, '');
+    if (distintivo !== nombre && distintivo.length >= 3) candidatos.push({ c, clave: distintivo });
+  }
+  candidatos.sort((a, b) => b.clave.length - a.clave.length);
+  const hit = candidatos.find(({ clave }) => new RegExp(`\\b${escapar(clave)}\\b`).test(t));
+  return hit ? hit.c : null;
+}
+
 /**
  * Resuelve si un movimiento es del ámbito personal o del consultorio.
  *
@@ -197,7 +223,8 @@ function detectarTerminoAmbiguo(texto = '') {
  * @param {string} rawText texto original del usuario
  * @param {object} opts
  * @param {object|Map} opts.preferencias mapa termino -> ambito
- * @returns {{ambito: 'personal'|'consultorio', ambiguo: boolean, termino: string|null, razon: string}}
+ * @param {Array<{casaId,nombre,activa?}>} opts.casas casas compartidas del usuario (opcional)
+ * @returns {{ambito: 'personal'|'consultorio'|'casa', casaId?: string, casaNombre?: string, ambiguo: boolean, termino: string|null, razon: string}}
  */
 function resolverAmbito(rawText, opts = {}) {
   const texto = String(rawText || '');
@@ -210,11 +237,24 @@ function resolverAmbito(rawText, opts = {}) {
     return preferencias[key] || null;
   };
 
+  // Casas compartidas del usuario (vacío = comportamiento histórico, sin cambios).
+  const casas = Array.isArray(opts.casas) ? opts.casas.filter((c) => c && c.casaId) : [];
+  const enCasa = (c, razon) => ({ ambito: 'casa', casaId: c.casaId, casaNombre: c.nombre, ambiguo: false, termino, razon });
+  const casaActiva = casas.find((c) => c.casaId === opts.casaActivaId) || casas.find((c) => c.activa) || casas[0];
+
   // Capa 1 — calificador explícito. Gana sobre todo.
   if (CALIFICADOR_CONSULTORIO.test(texto)) {
     return { ambito: 'consultorio', ambiguo: false, termino, razon: 'calificador' };
   }
-  if (CALIFICADOR_PERSONAL.test(texto) || POSESIVO_PERSONAL.test(normalizar(texto))) {
+  if (casas.length > 0) {
+    const mencionada = casaMencionada(texto, casas);
+    if (mencionada) return enCasa(mencionada, 'calificador_casa');
+    const sinTildes = normalizar(texto);
+    if (CALIFICADOR_PERSONAL_FUERTE.test(sinTildes) || POSESIVO_PERSONAL.test(sinTildes)) {
+      return { ambito: 'personal', ambiguo: false, termino, razon: 'calificador' };
+    }
+    if (CALIFICADOR_CASA_GENERICO.test(sinTildes)) return enCasa(casaActiva, 'calificador_casa');
+  } else if (CALIFICADOR_PERSONAL.test(texto) || POSESIVO_PERSONAL.test(normalizar(texto))) {
     return { ambito: 'personal', ambiguo: false, termino, razon: 'calificador' };
   }
 
@@ -234,6 +274,11 @@ function resolverAmbito(rawText, opts = {}) {
   const preferido = leerPreferencia(termino);
   if (preferido === 'personal' || preferido === 'consultorio') {
     return { ambito: preferido, ambiguo: false, termino, razon: 'preferencia' };
+  }
+  // "casa:<id>": solo vale si el usuario sigue perteneciendo a esa casa.
+  if (typeof preferido === 'string' && preferido.startsWith('casa:')) {
+    const c = casas.find((x) => x.casaId.toLowerCase() === preferido.slice(5));
+    if (c) return enCasa(c, 'preferencia');
   }
 
   // Capa 3 — fallback: consultorio, igual que hoy, pero marcado como ambiguo

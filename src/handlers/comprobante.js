@@ -61,7 +61,7 @@ async function procesarFactura(ctx, archivo, { desdeTransferencia = false } = {}
   const conAmbito = await marcarAmbito(userId, comprobanteService.textoParaAmbito(factura), {
     intent: 'registrar_movimiento',
     entities,
-  });
+  }, { permitirCasa: false });
 
   logger.info('Comprobantes', 'Factura leída', {
     userId, idComprobante, ambito: conAmbito.entities.ambito, duplicado: duplicado?.motivo || null,

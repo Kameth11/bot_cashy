@@ -216,6 +216,47 @@ const { confirmButtons, procesarFechaAgendaElegida } = require('./actions');
 
 const regexMsg = /^(consulta|servicio|gasto|pendiente)\s+(.+?)\s+(?:\$|U\$|USD|€|EUR)?\s*(-?\d+(?:\.\d{1,2})?)\s*((?:efectivo|transferencia|tarjeta))?$/i;
 
+// Completa un gasto que va a una CASA: categoría del hogar, quién pagó y entre
+// quiénes se reparte (por defecto paga quien escribe y se reparte entre todos).
+// Devuelve null si la casa no se puede leer.
+async function completarGastoDeCasa(userId, text, entities, deteccion) {
+  const casaService = require('../services/casa.service');
+  const { inferirCategoriaPersonal } = require('../services/personal-nlp.service');
+  const { extraerPagoYReparto } = require('../lib/casa-parse');
+
+  try {
+    const miembros = await casaService.listarMiembros(userId, deteccion.casaId);
+    const yo = miembros.find((m) => m.userId === String(userId));
+    if (!yo) return null;
+
+    const pr = extraerPagoYReparto(text, miembros, yo.id);
+    const nombreDe = (id) => (miembros.find((m) => m.id === id) || {}).nombre;
+    const conCasa = {
+      ...entities,
+      ambito: 'casa',
+      ambiguoAmbito: false,
+      terminoAmbito: deteccion.termino,
+      textoOriginal: text,
+      casaId: deteccion.casaId,
+      casaNombre: deteccion.casaNombre,
+      categoriaConsultorio: entities.categoria || null,
+      categoria: inferirCategoriaPersonal(entities.tipo, text),
+      miembrosCasa: miembros.map(({ id, nombre }) => ({ id, nombre })),
+      pagoPorId: pr.pagoPorId,
+      pagoPorNombre: nombreDe(pr.pagoPorId),
+      repartoIds: pr.repartoIds,
+      repartoNombres: pr.repartoIds ? pr.repartoIds.map(nombreDe) : null,
+    };
+    if (pr.repartoDesconocidos.length > 0) {
+      conCasa.avisoReparto = `No encontré a ${pr.repartoDesconocidos.join(', ')} en la casa: lo repartí entre todos.`;
+    }
+    return conCasa;
+  } catch (err) {
+    console.error('Casa: no se pudo preparar el gasto compartido:', err.message);
+    return null;
+  }
+}
+
 /**
  * Marca un movimiento con su ámbito (personal / consultorio) antes de mostrar
  * la confirmación. Solo aplica a `registrar_movimiento`: los intents de consulta
@@ -225,7 +266,7 @@ const regexMsg = /^(consulta|servicio|gasto|pendiente)\s+(.+?)\s+(?:\$|U\$|USD|�
  * la atribución al viaje activo. La categoría original se guarda para poder
  * volver atrás si el usuario toca el toggle.
  */
-async function marcarAmbito(userId, text, result) {
+async function marcarAmbito(userId, text, result, opts = {}) {
   if (!result || result.intent !== 'registrar_movimiento') return result;
 
   const personalService = require('../services/personal.service');
@@ -242,9 +283,39 @@ async function marcarAmbito(userId, text, result) {
   }
 
   const preferencias = await personalService.leerPreferencias(userId);
-  const { ambito, ambiguo, termino } = resolverAmbito(text, { preferencias });
+
+  // Casas compartidas del usuario. Las fotos de comprobantes no van a casa
+  // (opts.permitirCasa=false): el comprobante se registra solo para
+  // consultorio/personal. Sin casas, la detección es la de siempre.
+  // Nunca debe romper la carga de un movimiento: si falla, se sigue sin casas.
+  let casas = [];
+  if (opts.permitirCasa !== false) {
+    try {
+      casas = require('../services/casa.service').listarMisCasas(userId);
+    } catch (err) {
+      console.error('Casa: no se pudieron leer las casas del usuario:', err.message);
+    }
+  }
+
+  const esEgreso = ['gasto', 'egreso'].includes(String((result.entities || {}).tipo || '').toLowerCase());
+  let deteccion = resolverAmbito(text, { preferencias, casas });
+  // La casa es solo para gastos compartidos: un cobro o ingreso nunca va ahí.
+  if (deteccion.ambito === 'casa' && !esEgreso) {
+    deteccion = resolverAmbito(text, { preferencias, casas: [] });
+  }
 
   const entities = { ...(result.entities || {}) };
+  if (casas.length > 0) entities.casasDisponibles = casas.map(({ casaId, nombre }) => ({ casaId, nombre }));
+
+  if (deteccion.ambito === 'casa') {
+    const conCasa = await completarGastoDeCasa(userId, text, entities, deteccion);
+    if (conCasa) return { ...result, entities: conCasa };
+    // La casa no se pudo leer (sin acceso, sin sheet): se cae al ámbito que
+    // corresponde sin casas, en vez de perder el gasto.
+    deteccion = resolverAmbito(text, { preferencias, casas: [] });
+  }
+
+  const { ambito, ambiguo, termino } = deteccion;
   entities.ambito = ambito;
   entities.ambiguoAmbito = ambiguo;
   entities.terminoAmbito = termino;

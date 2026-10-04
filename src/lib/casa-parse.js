@@ -85,4 +85,53 @@ function parsearSaldar(texto) {
   return nombre ? { nombre, monto, moneda } : null;
 }
 
-module.exports = { parsearMontoTexto, parsearMoneda, buscarMiembro, buscarCasa, parsearSaldar, normalizar };
+const escaparRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * De un texto de gasto de casa saca QUIÉN PAGÓ y ENTRE QUIÉNES se reparte:
+ *   "super 45000 casa pagó Ana"           -> paga Ana
+ *   "luz 20000 casa pagué"                -> paga quien escribe
+ *   "cena 30000 casa entre Ana y Beto"    -> reparto solo entre ellos
+ *   "alquiler 500 casa pagó Beto entre Ana, Beto y Tomás"
+ *
+ * Por defecto paga quien escribe (yoId) y el reparto es de todos (null). Si en
+ * "entre ..." aparece un nombre que no se reconoce (o es ambiguo), NO se adivina:
+ * se devuelve en `repartoDesconocidos` y el reparto queda en todos.
+ * La comparación no distingue tildes, así que "pagó Ana" y "pago Ana" valen igual.
+ *
+ * @param {string} texto
+ * @param {Array<{id,nombre}>} miembros miembros activos de la casa
+ * @param {string} yoId id del miembro que escribe
+ * @returns {{pagoPorId: string, repartoIds: string[]|null, repartoDesconocidos: string[]}}
+ */
+function extraerPagoYReparto(texto, miembros, yoId) {
+  const t = normalizar(texto);
+  const lista = [...(miembros || [])].sort((a, b) => normalizar(b.nombre).length - normalizar(a.nombre).length);
+  const resultado = { pagoPorId: yoId, repartoIds: null, repartoDesconocidos: [] };
+
+  // Quién pagó: "pagó/puso/pagado por <nombre>", o primera persona ("pagué", "puse").
+  const VERBO = '(?:pago|puso|pagado\\s+por|lo\\s+pago)';
+  for (const m of lista) {
+    const re = new RegExp(`\\b${VERBO}\\s+(?:(?:el|la)\\s+)?${escaparRegex(normalizar(m.nombre))}\\b`);
+    if (re.test(t)) { resultado.pagoPorId = m.id; break; }
+  }
+
+  // Entre quiénes: lo que sigue a "entre", hasta un verbo de pago si lo hay.
+  const mEntre = t.match(/\bentre\s+(.+)$/);
+  if (mEntre) {
+    const resto = mEntre[1].split(/\b(?:pago|puso|pague|puse|pagado)\b/)[0].trim();
+    if (/^(?:todos|todas|nosotros|los\s+dos|las\s+dos)\b/.test(resto)) return resultado;
+
+    const tokens = resto.split(/\s*,\s*|\s+(?:y|e)\s+/).map((x) => x.trim()).filter(Boolean);
+    const ids = [];
+    for (const tok of tokens) {
+      const r = tok === 'yo' ? { miembro: (miembros || []).find((m) => m.id === yoId) } : buscarMiembro(miembros, tok);
+      if (r.miembro) { if (!ids.includes(r.miembro.id)) ids.push(r.miembro.id); }
+      else resultado.repartoDesconocidos.push(tok);
+    }
+    if (ids.length > 0 && resultado.repartoDesconocidos.length === 0) resultado.repartoIds = ids;
+  }
+  return resultado;
+}
+
+module.exports = { extraerPagoYReparto, parsearMontoTexto, parsearMoneda, buscarMiembro, buscarCasa, parsearSaldar, normalizar };

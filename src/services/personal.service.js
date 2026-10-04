@@ -143,6 +143,12 @@ function esEgreso(tipo) {
 
 // ── Preferencias de ámbito (memoria de correcciones) ─────────────────────────
 
+// 'personal' | 'consultorio' | 'casa:<casaId>' (la casa que el usuario eligió para ese término)
+function esAmbitoPreferido(ambito) {
+  const a = String(ambito || '');
+  return a === 'personal' || a === 'consultorio' || /^casa:[a-z0-9_]+$/i.test(a);
+}
+
 async function leerPreferencias(userId) {
   try {
     const sheet = await getTabConReintento(userId, TAB_PREFERENCIAS);
@@ -152,7 +158,7 @@ async function leerPreferencias(userId) {
     for (const row of rows) {
       const termino = String(row.get('Termino') || '').trim().toLowerCase();
       const ambito = String(row.get('Ambito') || '').trim().toLowerCase();
-      if (termino && (ambito === 'personal' || ambito === 'consultorio')) {
+      if (termino && esAmbitoPreferido(ambito)) {
         prefs[termino] = ambito;
       }
     }
@@ -166,7 +172,7 @@ async function leerPreferencias(userId) {
 
 async function guardarPreferencia(userId, termino, ambito) {
   const key = String(termino || '').trim().toLowerCase();
-  if (!key || !['personal', 'consultorio'].includes(ambito)) return false;
+  if (!key || !esAmbitoPreferido(ambito)) return false;
 
   try {
     const sheet = await getTabConReintento(userId, TAB_PREFERENCIAS);

@@ -120,7 +120,8 @@ test('dueño manda una factura → se lee y va a la confirmación con el víncul
 
   expect(procesarFotoAgenda).not.toHaveBeenCalled();
   expect(extraerFactura).toHaveBeenCalled();
-  expect(marcarAmbito).toHaveBeenCalledWith(2222, expect.stringContaining('insumos'), expect.anything());
+  // Las fotos de comprobantes no van a CASA: se pide explícitamente que no la considere.
+  expect(marcarAmbito).toHaveBeenCalledWith(2222, expect.stringContaining('insumos'), expect.anything(), { permitirCasa: false });
   const [, entities] = mostrarConfirmacion.mock.calls[0];
   expect(entities).toMatchObject({
     tipo: 'gasto', monto: 45300, proveedorNombre: 'Dental Sur', categoria: 'insumos', estado: 'Cobrado',

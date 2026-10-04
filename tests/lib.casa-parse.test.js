@@ -78,3 +78,63 @@ describe('parsearSaldar', () => {
     expect(parsearSaldar(entrada)).toBeNull();
   });
 });
+
+const { extraerPagoYReparto } = require('../src/lib/casa-parse');
+
+describe('extraerPagoYReparto', () => {
+  const MIEM = [
+    { id: 'a', nombre: 'Ana' }, { id: 'b', nombre: 'Beto' }, { id: 'c', nombre: 'Tomás' }, { id: 'd', nombre: 'Ana María' },
+  ];
+  const ex = (t, yo = 'a') => extraerPagoYReparto(t, MIEM, yo);
+
+  test('por defecto paga quien escribe y se reparte entre todos', () => {
+    expect(ex('super 45000 casa', 'b')).toEqual({ pagoPorId: 'b', repartoIds: null, repartoDesconocidos: [] });
+  });
+
+  test('"pagó X" / "puso X" / "pagado por X"', () => {
+    expect(ex('super 45000 casa pagó Beto').pagoPorId).toBe('b');
+    expect(ex('super 45000 casa pago Beto').pagoPorId).toBe('b');
+    expect(ex('luz 20000 casa puso Tomás').pagoPorId).toBe('c');
+    expect(ex('luz 20000 casa pagado por Beto').pagoPorId).toBe('b');
+    expect(ex('cena casa lo pagó el Beto').pagoPorId).toBe('b');
+  });
+
+  test('"pagué" / "puse" es quien escribe', () => {
+    expect(ex('super 45000 casa pagué', 'b').pagoPorId).toBe('b');
+    expect(ex('super 45000 casa puse yo', 'c').pagoPorId).toBe('c');
+  });
+
+  test('el nombre más largo gana ("Ana María" no se confunde con "Ana")', () => {
+    expect(ex('super casa pagó Ana María').pagoPorId).toBe('d');
+    expect(ex('super casa pagó Ana').pagoPorId).toBe('a');
+  });
+
+  test('"entre X y Y" y listas con comas', () => {
+    expect(ex('cena 30000 casa entre Ana y Beto').repartoIds).toEqual(['a', 'b']);
+    expect(ex('cena casa entre Ana, Beto y Tomás').repartoIds).toEqual(['a', 'b', 'c']);
+    expect(ex('cena casa entre yo y Beto', 'a').repartoIds).toEqual(['a', 'b']);
+  });
+
+  test('"entre todos" y similares dejan el reparto en todos', () => {
+    expect(ex('cena casa entre todos').repartoIds).toBeNull();
+    expect(ex('cena casa entre nosotros').repartoIds).toBeNull();
+  });
+
+  test('un nombre que no se reconoce NO se adivina: reparto en todos y queda marcado', () => {
+    const r = ex('cena casa entre Ana y Zoe');
+    expect(r.repartoIds).toBeNull();
+    expect(r.repartoDesconocidos).toEqual(['zoe']);
+  });
+
+  test('pagó + entre en la misma frase, en cualquier orden', () => {
+    const r1 = ex('alquiler 500 casa pagó Beto entre Ana y Beto');
+    expect(r1).toMatchObject({ pagoPorId: 'b', repartoIds: ['a', 'b'] });
+    const r2 = ex('alquiler 500 casa entre Ana y Beto pagó Beto');
+    expect(r2).toMatchObject({ pagoPorId: 'b', repartoIds: ['a', 'b'] });
+  });
+
+  test('sin miembros o texto vacío no rompe', () => {
+    expect(extraerPagoYReparto('', [], 'x')).toEqual({ pagoPorId: 'x', repartoIds: null, repartoDesconocidos: [] });
+    expect(extraerPagoYReparto('super casa', null, 'x').pagoPorId).toBe('x');
+  });
+});
