@@ -66,7 +66,28 @@ async function consultarGemini(userId, frase) {
   }
 }
 
-function armarMensaje(frase, quickResult, gemini) {
+// Qué ámbito y categoría resolvería el bot para esta frase CON TUS preferencias
+// aprendidas y TUS casas (es lo que decide marcarAmbito al cargar un movimiento).
+async function diagnosticoAmbito(userId, frase) {
+  try {
+    const { resolverAmbito, inferirCategoriaPersonal } = require('../../services/personal-nlp.service');
+    const personalService = require('../../services/personal.service');
+    const casaService = require('../../services/casa.service');
+    const preferencias = await personalService.leerPreferencias(userId);
+    const casas = casaService.listarMisCasas(userId);
+    const r = resolverAmbito(frase, { preferencias, casas });
+    const destino = r.ambito === 'casa' ? `casa (${r.casaNombre})` : r.ambito;
+    const categoria = r.ambito === 'consultorio' ? null : inferirCategoriaPersonal('gasto', frase);
+    return `🏷️ *Ámbito:* \`${destino}\` (${r.razon})${r.ambiguo ? ' — ambiguo, pide confirmar' : ''}` +
+      (r.termino ? `\n  término: \`${r.termino}\`` : '') +
+      (categoria ? `\n  categoría: \`${categoria}\`` : '') +
+      `\n  casas: ${casas.length}`;
+  } catch (err) {
+    return `🏷️ *Ámbito:* ❌ no se pudo calcular (${err.message})`;
+  }
+}
+
+function armarMensaje(frase, quickResult, gemini, ambito) {
   let msg = `🧪 *NLP Test*\n\n📝 Frase: \`${frase}\`\n\n`;
 
   msg += quickResult
@@ -87,6 +108,7 @@ function armarMensaje(frase, quickResult, gemini) {
   } else if (gemini.result) {
     msg += `_Solo respondió Gemini._`;
   }
+  if (ambito) msg += `\n\n${ambito}`;
   return msg;
 }
 
@@ -115,11 +137,11 @@ bot.command('nlptest', async (ctx) => {
 
   const quickResult = quickNlp.quickParse(frase);
   const gemini = await consultarGemini(userId, frase);
-  const msg = armarMensaje(frase, quickResult, gemini);
+  const msg = armarMensaje(frase, quickResult, gemini, await diagnosticoAmbito(userId, frase));
 
   await ctx.reply(msg, { parse_mode: 'Markdown' }).catch(() => {
     ctx.reply(msg.replace(/[`*_[\]]/g, '')).catch(() => {});
   });
 });
 
-module.exports = { compararNlp, armarMensaje };
+module.exports = { compararNlp, armarMensaje, diagnosticoAmbito };

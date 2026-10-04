@@ -6,6 +6,7 @@
 // Sheets ni Supabase.
 
 const { normalizar, tieneContextoClinico } = require('./quick_nlp.service');
+const { buscarProveedorEnTexto } = require('../utils/proveedores-servicios');
 
 // ── Categorías cerradas del ámbito personal ──────────────────────────────────
 
@@ -176,7 +177,7 @@ function inferirCategoriaPersonal(tipo, texto = '') {
   if (esEgreso(tipo)) {
     if (/alquiler/.test(source)) return 'alquiler';
     if (/expensa/.test(source)) return 'expensas';
-    if (/luz|agua|gas\b|internet|telefono|celular|cable|wifi|fibra/.test(source)) return 'servicios';
+    if (/luz|agua|gas\b|internet|telefono|celular|cable|wifi|fibra/.test(source) || buscarProveedorEnTexto(texto)) return 'servicios';
     if (/impuesto|monotributo|arba|afip|abl|rentas|patente/.test(source)) return 'impuestos';
     if (/farmacia|medicamento|remedio/.test(source)) return 'farmacia';
     return 'otros';
@@ -187,9 +188,15 @@ function inferirCategoriaPersonal(tipo, texto = '') {
 
 // Extrae el término ambiguo presente en el texto, si hay alguno.
 // Se usa como clave de la memoria de preferencias.
+// Las empresas de servicios (Naturgy, Edenor, Movistar...) cuentan como
+// ambiguas: la misma boleta puede ser del consultorio o de la casa, así que se
+// arranca en consultorio avisando y se recuerda la corrección por empresa.
 function detectarTerminoAmbiguo(texto = '') {
   const source = normalizar(String(texto || ''));
-  return TERMINOS_AMBIGUOS.find(t => new RegExp(`\\b${t}`, 'i').test(source)) || null;
+  const termino = TERMINOS_AMBIGUOS.find(t => new RegExp(`\\b${t}`, 'i').test(source));
+  if (termino) return termino;
+  const proveedor = buscarProveedorEnTexto(texto);
+  return proveedor && proveedor.grupo !== 'combustible' ? proveedor.nombre : null;
 }
 
 // ¿El texto nombra a alguna de las casas del usuario? Se acepta el nombre completo

@@ -57,3 +57,32 @@ describe('normalizarFactura con proveedores de servicios', () => {
     expect(normalizarFactura({ emisor: 'Dental Sur', categoria: 'insumos', total: 5 }).categoria).toBe('insumos');
   });
 });
+
+
+describe('buscarProveedorEnTexto (texto libre)', () => {
+  const { buscarProveedorEnTexto } = require('../src/utils/proveedores-servicios');
+
+  test.each([
+    ['pagué naturgy 25000', 'naturgy', 'gas'],
+    ['Edenor 30000', 'edenor', 'electricidad'],
+    ['movistar 8000', 'movistar', 'telefonia_internet_tv'],
+    ['AySA bimestral', 'aysa', 'agua'],
+    ['litoral gas 9000', 'litoral gas', 'gas'],
+    ['cargué nafta en YPF', 'ypf', 'combustible'],
+    ['fibertel del mes', 'fibertel', 'telefonia_internet_tv'],
+  ])('%s', (texto, nombre, grupo) => {
+    expect(buscarProveedorEnTexto(texto)).toEqual({ nombre, grupo });
+  });
+
+  test('no confunde palabras comunes: "personal", "claro", "flow"', () => {
+    expect(buscarProveedorEnTexto('gasto personal 5000')).toBeNull();
+    expect(buscarProveedorEnTexto('claro que sí 100')).toBeNull();
+    expect(buscarProveedorEnTexto('el flow del día')).toBeNull();
+  });
+
+  test('no matchea dentro de otra palabra', () => {
+    expect(buscarProveedorEnTexto('repetir 100')).toBeNull();      // contiene "epe"
+    expect(buscarProveedorEnTexto('personalizado 100')).toBeNull();
+    expect(buscarProveedorEnTexto('')).toBeNull();
+  });
+});

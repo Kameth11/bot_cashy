@@ -70,7 +70,7 @@ Reglas:
 - items: hasta 30 renglones; si el ticket no detalla ítems, devolvé [].
 - Si no es un comprobante de gasto: {"error":"no_es_comprobante"}`;
 
-const PROMPT_TRANSFERENCIA = `Sos un experto en leer comprobantes de transferencias bancarias y pagos de billeteras virtuales argentinas (Mercado Pago, homebanking, Ualá, Brubank, MODO, etc.). El comprobante es de un pago que RECIBE un consultorio odontológico de un paciente. Devolvé JSON puro con estas claves exactas:
+const PROMPT_TRANSFERENCIA = `Sos un experto en leer comprobantes de transferencias bancarias y pagos de billeteras virtuales argentinas (Mercado Pago, homebanking, Ualá, Brubank, MODO, etc.). El comprobante puede ser de una transferencia que un consultorio odontológico (o su dueño) RECIBIÓ de un paciente o de otra persona, o de una que ENVIÓ. Devolvé JSON puro con estas claves exactas:
 
 {
   "pagador": nombre de quien ENVÍA el dinero (titular de la cuenta de origen / "De" / "Remitente" / "Origen"), o null,
@@ -82,11 +82,16 @@ const PROMPT_TRANSFERENCIA = `Sos un experto en leer comprobantes de transferenc
   "hora": "HH:MM" o null,
   "banco": banco o billetera (ej "Mercado Pago", "Banco Galicia") o null,
   "numeroOperacion": número o código de operación / referencia / comprobante, o null,
-  "concepto": concepto o motivo que escribió quien pagó, o null
+  "concepto": concepto o motivo que escribió quien pagó, o null,
+  "direccion": "enviada" | "recibida" | null (ver reglas)
 }
 
 Reglas:
 - No confundas pagador y destinatario: el pagador es quien manda la plata.
+- "direccion" es desde el punto de vista de QUIEN TIENE EL COMPROBANTE (la persona que lo subió):
+  - "enviada": ella mandó la plata. Pistas: "Enviaste", "Transferiste", "Pagaste", "Dinero enviado", "Transferencia enviada", "Compra/Pago realizado", "Débito", "Para: <otra persona>".
+  - "recibida": ella recibió la plata. Pistas: "Recibiste", "Te transfirieron", "Dinero recibido", "Transferencia recibida", "Se acreditó", "De: <otra persona>".
+  - null si el comprobante no lo deja claro (por ejemplo muestra solo "Transferencia" con dos nombres y ninguna de esas palabras). No lo adivines.
 - Si un dato no se ve, usá null. No inventes.
 - Los montos argentinos usan punto para miles y coma para decimales: "30.000,00" -> 30000.
 - Si el destinatario es una empresa de servicios (luz, gas, agua, telefonía, internet, combustible), un comercio o un impuesto, no es un cobro de paciente: {"error":"no_es_transferencia"}
@@ -211,7 +216,18 @@ function normalizarTransferencia(raw) {
     banco: textoCorto(r.banco, 60),
     numeroOperacion: textoCorto(r.numeroOperacion, 40),
     concepto: textoCorto(r.concepto, 80),
+    direccion: normalizarDireccion(r.direccion),
   };
+}
+
+// 'enviada' (la persona que subió el comprobante mandó la plata), 'recibida' o
+// null si no está claro. Tolera lo que a veces devuelve el modelo ("Enviado",
+// "recibido", "envió"...).
+function normalizarDireccion(valor) {
+  const v = String(valor || '').toLowerCase();
+  if (/^\s*(?:envi|salida|saliente|egreso|debito|débito)/.test(v)) return 'enviada';
+  if (/^\s*(?:recib|entrada|entrante|ingreso|credito|crédito|acredit)/.test(v)) return 'recibida';
+  return null;
 }
 
 function normalizarClasificacion(raw) {

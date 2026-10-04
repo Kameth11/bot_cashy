@@ -8,7 +8,9 @@ jest.mock('../src/auth', () => ({
   esAdminOriginal: jest.fn(() => true),
 }));
 
-jest.mock('../src/services/quick_nlp.service', () => ({ quickParse: jest.fn() }));
+jest.mock('../src/services/quick_nlp.service', () => ({ ...jest.requireActual('../src/services/quick_nlp.service'), quickParse: jest.fn() }));
+jest.mock('../src/services/personal.service', () => ({ leerPreferencias: jest.fn(async () => ({})) }));
+jest.mock('../src/services/casa.service', () => ({ listarMisCasas: jest.fn(() => []) }));
 jest.mock('../src/services/gemini.service', () => ({
   canAttemptRemoteNlp: jest.fn(() => true),
   parseMessage: jest.fn(),
@@ -108,5 +110,54 @@ describe('/nlptest', () => {
     const ctx = makeCtx('/nlptest x');
     await handlers.nlptest(ctx);
     expect(ultimo(ctx)).toContain('boom');
+  });
+});
+
+
+describe('diagnóstico de ámbito', () => {
+  const personalService = require('../src/services/personal.service');
+  const casaService = require('../src/services/casa.service');
+  const { diagnosticoAmbito } = require('../src/handlers/commands/nlptest');
+
+  beforeEach(() => {
+    personalService.leerPreferencias.mockResolvedValue({});
+    casaService.listarMisCasas.mockReturnValue([]);
+  });
+
+  test('muestra el ámbito, la razón y la categoría que resolvería el bot', async () => {
+    const d = await diagnosticoAmbito(1, 'pague 15000 pesos para el cine');
+    expect(d).toContain('`personal`');
+    expect(d).toContain('marcador_personal');
+    expect(d).toContain('entretenimiento');
+  });
+
+  test('una empresa de servicios se marca como ambigua', async () => {
+    const d = await diagnosticoAmbito(1, 'pagué naturgy 25000');
+    expect(d).toContain('`consultorio`');
+    expect(d).toContain('ambiguo');
+    expect(d).toContain('naturgy');
+  });
+
+  test('usa TUS preferencias y TUS casas', async () => {
+    personalService.leerPreferencias.mockResolvedValue({ naturgy: 'personal' });
+    expect((await diagnosticoAmbito(1, 'pagué naturgy 25000'))).toContain('`personal` (preferencia)');
+
+    casaService.listarMisCasas.mockReturnValue([{ casaId: 'c1', nombre: 'Casa', activa: true }]);
+    const d = await diagnosticoAmbito(1, 'super 45000 casa');
+    expect(d).toContain('casa (Casa)');
+    expect(d).toContain('casas: 1');
+  });
+
+  test('si algo falla, lo informa sin romper el comando', async () => {
+    personalService.leerPreferencias.mockRejectedValue(new Error('sheet caído'));
+    expect(await diagnosticoAmbito(1, 'cine 100')).toContain('no se pudo calcular');
+  });
+
+  test('el mensaje completo incluye el diagnóstico al final', async () => {
+    quickNlp.quickParse.mockReturnValue({ intent: 'ver_hoy', entities: {} });
+    gemini.parseMessage.mockResolvedValue({ intent: 'ver_hoy', entities: {} });
+    const c = makeCtx('/nlptest ver hoy');
+    await handlers.nlptest(c);
+    expect(ultimo(c)).toContain('Ámbito');
   });
 });

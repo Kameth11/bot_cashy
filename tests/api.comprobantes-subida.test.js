@@ -184,3 +184,56 @@ test('respeta la cuota diaria de IA', async () => {
   for (let i = 0; i < limite; i++) aiQuota.consumir(2222, 'media');
   expect((await leer(2222)).status).toBe(429);
 });
+
+// ── Transferencia ENVIADA (egreso) ──────────────────────────────────────────
+const ENVIADA = { pagador: 'Matías Dueño', destinatario: 'Pinturería Sur', monto: 18000, moneda: 'Pesos', numeroOperacion: '987', fecha: '02/10/2026', direccion: 'enviada', concepto: 'pintura' };
+
+test('transferencia enviada: es un egreso, no busca pendientes de pacientes y ofrece Personal al dueño', async () => {
+  const cmd = require('../src/services/command.service');
+  vision.extraerTransferencia.mockResolvedValueOnce({ transferencia: ENVIADA });
+  const data = await (await leer(2222, 'transferencia')).json();
+
+  expect(data.tipoMovimiento).toBe('egreso');
+  expect(data.pendientes).toEqual([]);
+  expect(cmd.buscarPendientesDePagador).not.toHaveBeenCalled();
+  expect(data.sugerido).toMatchObject({ monto: 18000, proveedor: 'Pinturería Sur', paciente: '', metodoPago: 'transferencia' });
+  expect(data.puedePersonal).toBe(true);
+});
+
+test('transferencia recibida sigue siendo ingreso y no ofrece Personal', async () => {
+  const data = await (await leer(2222, 'transferencia')).json();
+  expect(data.tipoMovimiento).toBe('ingreso');
+  expect(data.puedePersonal).toBe(false);
+});
+
+test('guardar una transferencia enviada en consultorio: se guarda como EGRESO con el destinatario de proveedor', async () => {
+  vision.extraerTransferencia.mockResolvedValueOnce({ transferencia: ENVIADA });
+  const { idComprobante } = await (await leer(3333, 'transferencia')).json();
+  const res = await guardar(3333, { idComprobante, movimiento: { descripcion: 'Transferencia a Pinturería Sur', monto: 18000, moneda: 'Pesos', metodoPago: 'transferencia', proveedor: 'Pinturería Sur' } });
+  expect(res.status).toBe(201);
+  expect(guardarMovimiento).toHaveBeenCalledWith('3333', expect.objectContaining({
+    monto: -18000, tipo: 'Egreso', proveedorNombre: 'Pinturería Sur', pacienteNombre: null, pagadorNombre: null,
+  }));
+});
+
+test('guardar una transferencia enviada como Personal (dueño)', async () => {
+  vision.extraerTransferencia.mockResolvedValueOnce({ transferencia: ENVIADA });
+  const { idComprobante } = await (await leer(2222, 'transferencia')).json();
+  const res = await guardar(2222, { idComprobante, movimiento: { descripcion: 'Transferencia a Pinturería Sur', monto: 18000, ambito: 'personal', categoria: 'otros' } });
+  expect(res.status).toBe(201);
+  expect(personalService.registrarMovimientoPersonal).toHaveBeenCalledWith('2222', expect.objectContaining({ tipo: 'gasto', monto: 18000 }));
+});
+
+test('una transferencia RECIBIDA no puede guardarse como Personal aunque el cliente lo pida', async () => {
+  const { idComprobante } = await (await leer(2222, 'transferencia')).json();
+  await guardar(2222, { idComprobante, movimiento: { descripcion: 'Transferencia', monto: 30000, ambito: 'personal' } });
+  expect(personalService.registrarMovimientoPersonal).not.toHaveBeenCalled();
+  expect(guardarMovimiento).toHaveBeenCalledWith('2222', expect.objectContaining({ tipo: 'Ingreso', monto: 30000 }));
+});
+
+test('una transferencia enviada no se puede usar para cobrar un pendiente', async () => {
+  vision.extraerTransferencia.mockResolvedValueOnce({ transferencia: ENVIADA });
+  const data = await (await leer(3333, 'transferencia')).json();
+  const res = await guardar(3333, { idComprobante: data.idComprobante, cobrarIdUnico: 'mov_pend', movimiento: { descripcion: 'x', monto: 1 } });
+  expect(res.status).toBe(400);
+});

@@ -17,6 +17,9 @@ jest.mock('../src/services/command.service', () => ({
   ejecutarCobrarFila: jest.fn().mockResolvedValue('✅ cobrado'),
 }));
 jest.mock('../src/handlers/nlp-confirm', () => ({ mostrarConfirmacion: jest.fn().mockResolvedValue(true) }));
+jest.mock('../src/handlers/text', () => ({
+  marcarAmbito: jest.fn(async (userId, texto, result) => ({ ...result, entities: { ...result.entities, ambito: 'consultorio' } })),
+}));
 
 const state = require('../src/state');
 const vision = require('../src/services/comprobante-vision.service');
@@ -135,4 +138,47 @@ test('"transferencia" que en realidad es un pago a un servicio: se lee como fact
   const e = mostrarConfirmacion.mock.calls[0][1];
   expect(e).toMatchObject({ tipo: 'gasto', monto: 45300.5, categoria: 'servicios' });
   expect(ctx.reply).not.toHaveBeenCalledWith(expect.stringMatching(/No parece/));
+});
+
+// ── Transferencia ENVIADA: es un egreso ──────────────────────────────────────
+const ENVIADA = { pagador: 'Matías Dueño', destinatario: 'Pinturería Sur', monto: 18000, moneda: 'Pesos', fecha: '02/10/2026', cuitPagador: null, numeroOperacion: '987', banco: 'MP', concepto: 'pintura', direccion: 'enviada' };
+
+test('transferencia enviada: va a la confirmación como EGRESO, con el destinatario de proveedor', async () => {
+  vision.extraerTransferencia.mockResolvedValue({ transferencia: ENVIADA });
+  await procesarTransferencia(ctxBase(), archivo);
+
+  expect(mostrarConfirmacion).toHaveBeenCalledTimes(1);
+  const e = mostrarConfirmacion.mock.calls[0][1];
+  expect(e).toMatchObject({
+    tipo: 'gasto', monto: 18000, metodo_pago: 'transferencia', estado: 'Cobrado',
+    proveedorNombre: 'Pinturería Sur', pacienteNombre: null, pagadorNombre: null, direccionTransferencia: 'enviada',
+  });
+  expect(e.comprobante).toMatchObject({ tipo: 'transferencia', emisor: 'Pinturería Sur' });
+});
+
+test('transferencia enviada: NO busca pendientes de un paciente ni ofrece cobrar', async () => {
+  vision.extraerTransferencia.mockResolvedValue({ transferencia: ENVIADA });
+  await procesarTransferencia(ctxBase(), archivo);
+  expect(cmd.buscarPendientesDePagador).not.toHaveBeenCalled();
+  expect(state.pendingTransferencias.size).toBe(0);
+});
+
+test('transferencia enviada: el ámbito se decide con el destinatario y el concepto, y no va a casa', async () => {
+  const { marcarAmbito } = require('../src/handlers/text');
+  vision.extraerTransferencia.mockResolvedValue({ transferencia: ENVIADA });
+  await procesarTransferencia(ctxBase(), archivo);
+  expect(marcarAmbito).toHaveBeenCalledWith(1, expect.stringContaining('Pinturería Sur'), expect.objectContaining({ intent: 'registrar_movimiento' }), { permitirCasa: false });
+});
+
+test('transferencia enviada: el duplicado se busca por el destinatario (no por quien pagó)', async () => {
+  vision.extraerTransferencia.mockResolvedValue({ transferencia: ENVIADA });
+  await procesarTransferencia(ctxBase(), archivo);
+  expect(compService.buscarDuplicado).toHaveBeenCalledWith(1, expect.objectContaining({ emisor: 'Pinturería Sur', numero: '987', total: 18000 }));
+});
+
+test('sin dirección clara se mantiene el comportamiento de siempre: ingreso', async () => {
+  vision.extraerTransferencia.mockResolvedValue({ transferencia: { ...T, direccion: null } });
+  cmd.buscarPendientesDePagador.mockResolvedValue([]);
+  await procesarTransferencia(ctxBase(), archivo);
+  expect(mostrarConfirmacion.mock.calls[0][1]).toMatchObject({ tipo: 'ingreso', pacienteNombre: 'Juan Perez' });
 });

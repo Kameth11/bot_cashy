@@ -275,3 +275,39 @@ describe('resolverAmbito — con casas compartidas', () => {
     expect(r('luz 80000', { preferencias: { luz: 'casa:casa_9' } })).toMatchObject({ ambito: 'consultorio', ambiguo: true });
   });
 });
+
+
+describe('empresas de servicios en texto libre (Naturgy, Edenor, Movistar...)', () => {
+  const quick = require('../src/services/quick_nlp.service');
+
+  test('categoría servicios en el consultorio (antes caía en otro_egreso)', () => {
+    const r = quick.quickParse('pagué naturgy 25000');
+    expect(r.entities).toMatchObject({ tipo: 'gasto', monto: 25000, categoria: 'servicios' });
+  });
+
+  test('categoría servicios en personal (antes caía en "otros")', () => {
+    expect(inferirCategoriaPersonal('gasto', 'pagué naturgy 25000')).toBe('servicios');
+    expect(inferirCategoriaPersonal('gasto', 'movistar 8000')).toBe('servicios');
+  });
+
+  test('es ambiguo (consultorio o casa): arranca en consultorio avisando y recuerda por empresa', () => {
+    expect(resolverAmbito('pagué naturgy 25000')).toMatchObject({ ambito: 'consultorio', ambiguo: true, termino: 'naturgy', razon: 'fallback_ambiguo' });
+  });
+
+  test('tras corregir una vez, la preferencia por empresa manda', () => {
+    expect(resolverAmbito('pagué naturgy 25000', { preferencias: { naturgy: 'personal' } })).toMatchObject({ ambito: 'personal', ambiguo: false, razon: 'preferencia' });
+  });
+
+  test('"de casa" lo manda a personal como siempre', () => {
+    expect(resolverAmbito('pagué edenor 30000 de casa')).toMatchObject({ ambito: 'personal', razon: 'calificador' });
+  });
+
+  test('una empresa de combustible NO es ambigua: nafta/YPF ya eran personal', () => {
+    expect(resolverAmbito('ypf 20000')).toMatchObject({ ambito: 'personal', ambiguo: false });
+  });
+
+  test('palabras comunes no se confunden con una empresa', () => {
+    expect(detectarTerminoAmbiguo('gasto personal 5000')).not.toBe('personal');
+    expect(detectarTerminoAmbiguo('claro que si 100')).toBeNull();
+  });
+});

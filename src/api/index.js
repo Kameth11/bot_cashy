@@ -1065,6 +1065,21 @@ function comprobanteParaCliente(c) {
   return resto;
 }
 
+// Ámbito de un comprobante leído (consultorio / personal), con el mismo detector
+// que el bot. Solo el dueño o el admin tienen Personal; para el resto queda
+// consultorio. Modifica `entities` en el lugar.
+async function detectarAmbitoComprobante(userId, entities, texto) {
+  entities.ambito = 'consultorio';
+  if (!esDuenoOAdmin(userId)) return;
+  const { resolverAmbito, inferirCategoriaPersonal } = require('../services/personal-nlp.service');
+  const preferencias = await personalService.leerPreferencias(userId).catch(() => ({}));
+  if (resolverAmbito(texto, { preferencias }).ambito === 'personal') {
+    entities.ambito = 'personal';
+    entities.categoriaConsultorio = entities.categoria;
+    entities.categoria = inferirCategoriaPersonal('gasto', texto);
+  }
+}
+
 app.post('/api/comprobantes/leer', authMiddleware, requierePermiso('cargar_movimientos'), subidaComprobante, async (req, res) => {
   const userId = req.user.userId;
   const tipo = req.query.tipo === 'transferencia' ? 'transferencia' : 'factura';
@@ -1105,12 +1120,17 @@ app.post('/api/comprobantes/leer', authMiddleware, requierePermiso('cargar_movim
     if (tipo === 'transferencia') {
       const t = resultado.transferencia;
       if (!t.monto) return res.status(422).json({ error: 'Leí el comprobante pero no encontré el monto.' });
-      const duplicado = await comprobanteService.buscarDuplicado(userId, { hash, cuit: t.cuitPagador, emisor: t.pagador, numero: t.numeroOperacion, total: t.monto });
+      const dup = comprobanteService.datosDuplicadoTransferencia(t);
+      const duplicado = await comprobanteService.buscarDuplicado(userId, { hash, cuit: dup.cuit, emisor: dup.emisor, numero: t.numeroOperacion, total: t.monto });
       entities = comprobanteService.transferenciaAEntities(t, {
         idComprobante, hash, mimeType,
         duplicado: duplicado ? { motivo: duplicado.motivo, fechaCarga: duplicado.comprobante.fechaCarga } : null,
       });
-      try {
+      if (t.direccion === 'enviada') {
+        // Egreso: no hay pendientes de un paciente que cobrar. Mismo detector de
+        // ámbito que una factura (solo el dueño tiene Personal).
+        await detectarAmbitoComprobante(userId, entities, comprobanteService.textoParaAmbitoTransferencia(t));
+      } else try {
         const cmd = require('../services/command.service');
         const { getRowIdUnico, getRowDescripcion, getRowMonto, getRowMoneda, getRowFecha } = require('../utils/sheet-row');
         const filas = await cmd.buscarPendientesDePagador(userId, t.pagador, { moneda: t.moneda });
@@ -1134,18 +1154,8 @@ app.post('/api/comprobantes/leer', authMiddleware, requierePermiso('cargar_movim
       });
       entities.comprobante.hash = hash;
       entities.comprobante.mimeType = mimeType;
-      entities.ambito = 'consultorio';
       // Mismo detector de ámbito que el bot; solo el dueño tiene Personal.
-      if (esDuenoOAdmin(userId)) {
-        const { resolverAmbito, inferirCategoriaPersonal } = require('../services/personal-nlp.service');
-        const texto = comprobanteService.textoParaAmbito(f);
-        const preferencias = await personalService.leerPreferencias(userId).catch(() => ({}));
-        if (resolverAmbito(texto, { preferencias }).ambito === 'personal') {
-          entities.ambito = 'personal';
-          entities.categoriaConsultorio = entities.categoria;
-          entities.categoria = inferirCategoriaPersonal('gasto', texto);
-        }
-      }
+      await detectarAmbitoComprobante(userId, entities, comprobanteService.textoParaAmbito(f));
     }
 
     archivoService.recordarArchivo(idComprobante, { buffer, mimeType });
@@ -1171,7 +1181,8 @@ app.post('/api/comprobantes/leer', authMiddleware, requierePermiso('cargar_movim
         ambito: entities.ambito,
       },
       pendientes,
-      puedePersonal: esDuenoOAdmin(userId) && tipo === 'factura',
+      puedePersonal: esDuenoOAdmin(userId) && (tipo === 'factura' || entities.direccionTransferencia === 'enviada'),
+      tipoMovimiento: String(entities.tipo || '').toLowerCase() === 'gasto' ? 'egreso' : 'ingreso',
     });
   } catch (err) {
     if (err.code === 'SEMAPHORE_QUEUE_FULL') return res.status(503).json({ error: 'Estoy leyendo varias imágenes. Probá de nuevo en unos segundos.' });
@@ -1209,7 +1220,9 @@ app.post('/api/comprobantes', authMiddleware, requierePermiso('cargar_movimiento
     if (m.proveedor !== undefined) entities.proveedorNombre = sanitizarInput(m.proveedor, 100) || null;
     if (m.paciente !== undefined) entities.pacienteNombre = sanitizarInput(m.paciente, 100) || null;
     entities.fechaVencimiento = vto.valor ? fechaIsoADdmm(vto.valor) : null;
-    entities.ambito = m.ambito === 'personal' && pend.tipo === 'factura' && esDuenoOAdmin(userId) ? 'personal' : 'consultorio';
+    // Personal vale para facturas y para transferencias ENVIADAS (egresos); una recibida es un cobro del consultorio.
+    const admitePersonal = pend.tipo === 'factura' || pend.entities.direccionTransferencia === 'enviada';
+    entities.ambito = m.ambito === 'personal' && admitePersonal && esDuenoOAdmin(userId) ? 'personal' : 'consultorio';
 
     // Transferencia que cobra un pendiente que ya existía.
     if (pend.tipo === 'transferencia' && body.cobrarIdUnico) {
@@ -1242,7 +1255,8 @@ app.post('/api/comprobantes', authMiddleware, requierePermiso('cargar_movimiento
       });
       idMovimiento = movimiento.idMov;
     } else {
-      const esEgreso = pend.tipo === 'factura';
+      // Una factura es siempre egreso; una transferencia, según su dirección (enviada = egreso).
+      const esEgreso = pend.tipo === 'factura' || pend.entities.direccionTransferencia === 'enviada';
       if ((entities.moneda === 'Dólares' && !state.cotizacionDolar) || (entities.moneda === 'Euros' && !state.cotizacionEuro)) {
         await obtenerCotizacionDolar();
       }

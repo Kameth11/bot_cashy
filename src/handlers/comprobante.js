@@ -100,8 +100,9 @@ async function procesarTransferencia(ctx, archivo) {
     return ctx.reply('⚠️ Leí el comprobante pero no encontré el monto. Probá con una captura donde se vea el importe, o escribilo: `cobré 30000 de Juan por transferencia`.', { parse_mode: 'Markdown' });
   }
 
+  const dup = comprobanteService.datosDuplicadoTransferencia(t);
   const duplicado = await comprobanteService.buscarDuplicado(userId, {
-    hash, cuit: t.cuitPagador, emisor: t.pagador, numero: t.numeroOperacion, total: t.monto,
+    hash, cuit: dup.cuit, emisor: dup.emisor, numero: t.numeroOperacion, total: t.monto,
   });
 
   const idComprobante = comprobanteService.generarIdComprobante();
@@ -113,6 +114,24 @@ async function procesarTransferencia(ctx, archivo) {
     duplicado: duplicado ? { motivo: duplicado.motivo, fechaCarga: duplicado.comprobante.fechaCarga } : null,
   });
   archivoService.recordarArchivo(idComprobante, archivo);
+
+  // Una transferencia que el usuario ENVIÓ es un egreso: no hay pendientes de
+  // un paciente que cobrar. Se decide el ámbito (consultorio / personal) igual
+  // que con una factura, mirando a quién se le pagó y el concepto.
+  if (t.direccion === 'enviada') {
+    const { marcarAmbito } = require('./text');
+    const conAmbito = await marcarAmbito(userId, comprobanteService.textoParaAmbitoTransferencia(t), {
+      intent: 'registrar_movimiento',
+      entities,
+    }, { permitirCasa: false });
+
+    logger.info('Comprobantes', 'Transferencia enviada leída', {
+      userId, idComprobante, ambito: conAmbito.entities.ambito, duplicado: duplicado?.motivo || null,
+    });
+
+    const { mostrarConfirmacion } = require('./nlp-confirm');
+    return mostrarConfirmacion(ctx, conAmbito.entities);
+  }
 
   let pendientes = [];
   try {

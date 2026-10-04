@@ -37,6 +37,37 @@ const REGEX_EMISOR = new RegExp(`\\b(?:${TODOS.map((n) => escapar(quitarTildes(n
 // Rubros genéricos que declara el modelo ("electricidad", "telefonía", ...).
 const REGEX_RUBRO = /\b(?:electricidad|energia electrica|gas natural|agua potable|saneamiento|telefonia|telefono|internet|cable|television|combustible|nafta|gasoil|estacion de servicio)\b/;
 
+// ── Búsqueda en texto libre ("naturgy 25000") ────────────────────────────────
+// Un texto escrito a mano es más ambiguo que el emisor de un comprobante: "gasto
+// personal 5000" no es la telefonía Personal, ni "claro que sí" es Claro. Se
+// excluyen los nombres que son palabras comunes o siglas demasiado cortas.
+const AMBIGUOS_EN_TEXTO = new Set(['personal', 'claro', 'flow', 'puma', 'gulf', 'epe', 'edea', 'ersa', 'amx', 'telecom', 'speedy']);
+const NOMBRES_EN_TEXTO = [];
+for (const [grupo, nombres] of Object.entries(PROVEEDORES)) {
+  for (const n of nombres) {
+    const clave = quitarTildes(n);
+    if (!AMBIGUOS_EN_TEXTO.has(clave)) NOMBRES_EN_TEXTO.push({ clave, grupo });
+  }
+}
+// Más largos primero: "litoral gas" gana sobre "gas".
+NOMBRES_EN_TEXTO.sort((a, b) => b.clave.length - a.clave.length);
+const REGEX_EN_TEXTO = new RegExp(`\\b(?:${NOMBRES_EN_TEXTO.map((n) => escapar(n.clave)).join('|')})\\b`);
+
+// Fuente (sin banderas) para componer regex en otros módulos.
+const PATRON_EN_TEXTO = REGEX_EN_TEXTO.source;
+
+/**
+ * ¿El texto nombra a una empresa de servicios conocida?
+ * @returns {{ nombre: string, grupo: string } | null} nombre normalizado (sin tildes, minúsculas)
+ */
+function buscarProveedorEnTexto(texto) {
+  const t = quitarTildes(texto);
+  const m = REGEX_EN_TEXTO.exec(t);
+  if (!m) return null;
+  const hit = NOMBRES_EN_TEXTO.find((n) => n.clave === m[0]);
+  return hit ? { nombre: hit.clave, grupo: hit.grupo } : null;
+}
+
 function esProveedorDeServicios({ emisor, rubro } = {}) {
   if (emisor && REGEX_EMISOR.test(quitarTildes(emisor))) return true;
   return Boolean(rubro && REGEX_RUBRO.test(quitarTildes(rubro)));
@@ -47,4 +78,4 @@ function ejemplosParaPrompt() {
   return TODOS.join(', ');
 }
 
-module.exports = { PROVEEDORES, esProveedorDeServicios, ejemplosParaPrompt };
+module.exports = { PROVEEDORES, esProveedorDeServicios, buscarProveedorEnTexto, PATRON_EN_TEXTO, ejemplosParaPrompt };

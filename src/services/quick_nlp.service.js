@@ -1,3 +1,5 @@
+const { PATRON_EN_TEXTO } = require('../utils/proveedores-servicios');
+
 function normalizar(texto) {
   return texto
     .toLowerCase()
@@ -208,7 +210,7 @@ const EGRESO_CATEGORY_PATTERNS = [
   { categoria: 'insumos', pattern: /insumo|guante|bracket|anestesia|material|cartucho|aguja|jeringa|algod[oó]n|hilo|sutura|composite|amalgama|cemento|yeso|alginato|silicona|fresas?|turbina|pieza\s+de\s+mano/i },
   { categoria: 'alquiler', pattern: /alquiler/i },
   { categoria: 'expensas', pattern: /expensa/i },
-  { categoria: 'servicios', pattern: /luz|agua|internet|telefono|tel[eé]fono|gas|servicio|celular|fibra/i },
+  { categoria: 'servicios', pattern: new RegExp(`luz|agua|internet|telefono|tel[eé]fono|gas|servicio|celular|fibra|${PATRON_EN_TEXTO}`, 'i') },
   { categoria: 'impuestos', pattern: /impuesto|iva|ingresos\s+brutos|ganancia|monotributo|afip|arba|agip|tributo/i },
   { categoria: 'mantenimiento', pattern: /mantenimiento|autoclave|esterilizaci[oó]n|rayos\s*x|sillon|equipo|reparaci[oó]n|plomero|gasista|electricista|técnico|tecnico|limpiezas?/i },
   { categoria: 'software', pattern: /software|sistema|licencia|suscripcion|suscripción|turno|odontograma|crm|gestion|gestión/i },

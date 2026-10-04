@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const { getDocCliente, invalidateCache } = require('./sheet.service');
 const { withUserWriteLock } = require('../lib/write-queue');
 const logger = require('../lib/logger');
+const { esProveedorDeServicios } = require('../utils/proveedores-servicios');
 const { fechaArgentinaStr, horaArgentinaStr, normalizarFecha, ahoraArgentina } = require('../utils/date');
 
 const TAB_COMPROBANTES = 'Comprobantes';
@@ -268,9 +269,78 @@ function facturaAEntities(factura, { idComprobante, duplicado = null } = {}) {
   };
 }
 
+// `entities` del movimiento que sale de una transferencia, según su dirección:
+// recibida (o sin dato claro, que es el comportamiento histórico) -> ingreso;
+// enviada -> egreso. Pasa por la misma confirmación que un movimiento escrito.
+function transferenciaAEntities(t, opts = {}) {
+  return t.direccion === 'enviada'
+    ? transferenciaEnviadaAEntities(t, opts)
+    : transferenciaRecibidaAEntities(t, opts);
+}
+
+// Transferencia ENVIADA -> egreso ya Cobrado por transferencia. El destinatario
+// es el proveedor; si es una empresa de servicios (Edenor, Movistar...) la
+// categoría es "servicios".
+function transferenciaEnviadaAEntities(t, { idComprobante, hash = '', archivo = '', mimeType = '', duplicado = null } = {}) {
+  const destinatario = t.destinatario || null;
+  return {
+    tipo: 'gasto',
+    descripcion: destinatario ? `Transferencia a ${destinatario}` : 'Transferencia enviada',
+    monto: t.monto,
+    moneda: t.moneda || 'Pesos',
+    metodo_pago: 'transferencia',
+    estado: 'Cobrado',
+    categoria: esProveedorDeServicios({ emisor: destinatario }) ? 'servicios' : 'otro_egreso',
+    pacienteNombre: null,
+    pagadorNombre: null,
+    profesionalNombre: null,
+    proveedorNombre: destinatario,
+    tratamientoNombre: null,
+    fechaPrestacion: null,
+    fechaVencimiento: null,
+    fecha: t.fecha || null,
+    ambito: 'consultorio',
+    direccionTransferencia: 'enviada',
+    referenciaId: `${PREFIJO_REFERENCIA}${idComprobante}`,
+    comprobante: {
+      id: idComprobante,
+      tipo: 'transferencia',
+      tipoDocumento: 'transferencia',
+      letra: null,
+      emisor: destinatario,
+      cuit: null,
+      numero: t.numeroOperacion,
+      fechaEmision: t.fecha,
+      fechaVencimiento: null,
+      total: t.monto,
+      moneda: t.moneda,
+      items: [],
+      rubro: t.banco,
+      hash,
+      archivo,
+      mimeType,
+      duplicado,
+    },
+  };
+}
+
+// Emisor y CUIT con los que se busca un comprobante duplicado: en una
+// transferencia recibida es quien pagó; en una enviada, a quien se le pagó.
+function datosDuplicadoTransferencia(t) {
+  return t.direccion === 'enviada'
+    ? { cuit: null, emisor: t.destinatario }
+    : { cuit: t.cuitPagador, emisor: t.pagador };
+}
+
+// Texto que se le pasa al detector de ámbito (personal vs consultorio) para una
+// transferencia enviada: a quién se le pagó y el motivo.
+function textoParaAmbitoTransferencia(t) {
+  return [t.destinatario, t.concepto, t.banco].filter(Boolean).join(' ');
+}
+
 // Transferencia recibida -> `entities` de un ingreso ya Cobrado por
 // transferencia, que pasa por la misma confirmación que un cobro escrito.
-function transferenciaAEntities(t, { idComprobante, hash = '', archivo = '', mimeType = '', duplicado = null } = {}) {
+function transferenciaRecibidaAEntities(t, { idComprobante, hash = '', archivo = '', mimeType = '', duplicado = null } = {}) {
   const pagador = t.pagador || null;
   return {
     tipo: 'ingreso',
@@ -334,5 +404,7 @@ module.exports = {
   decidirEstado,
   facturaAEntities,
   transferenciaAEntities,
+  datosDuplicadoTransferencia,
+  textoParaAmbitoTransferencia,
   textoParaAmbito,
 };
