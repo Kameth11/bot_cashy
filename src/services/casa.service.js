@@ -23,6 +23,7 @@ const clienteService = require('./cliente.service');
 const { convertirAPesos } = require('./movimiento.service');
 const { calcularSaldos } = require('../lib/casa-saldos');
 const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina, fechaStrAIso } = require('../utils/date');
+const { emitMovimientosUpdated } = require('./events.service');
 const logger = require('../lib/logger');
 
 const TAB_CASAS = 'Casas';
@@ -163,6 +164,15 @@ async function obtenerCasaParaMiembro(userId, casaId) {
 
 const activos = (miembros) => miembros.filter((m) => m.estado === 'activo');
 
+// Avisa a los dashboards abiertos de los miembros que la casa cambió (SSE).
+// Best-effort: un fallo acá nunca debe romper la operación que ya se guardó.
+function notificarMiembros(miembros) {
+  for (const m of activos(miembros || [])) {
+    if (!m.userId) continue;
+    try { emitMovimientosUpdated(m.userId); } catch (_) { /* sin dashboard abierto */ }
+  }
+}
+
 // Casa "activa" de la cuenta: la que se usa cuando el texto no nombra ninguna.
 // Se guarda como marca en el índice del perfil (persiste con el resto). Si no
 // hay marca (o la casa activa se dejó), la primera.
@@ -224,7 +234,8 @@ async function listarMiembros(userId, casaId) {
 
 // Alta de un miembro sin Telegram (hijos, etc.): solo participa del reparto.
 async function agregarMiembroVirtual(userId, casaId, nombre) {
-  const { ownerId } = await obtenerCasaParaMiembro(userId, casaId);
+  const ctx = await obtenerCasaParaMiembro(userId, casaId);
+  const { ownerId } = ctx;
   const nombreMiembro = validarNombre(nombre, 'nombre');
   const sheet = await tab(ownerId, TAB_MIEMBROS);
 
@@ -240,6 +251,7 @@ async function agregarMiembroVirtual(userId, casaId, nombre) {
       ID_Casa: casaId, ID_Miembro: id, UserId: '', Nombre: nombreMiembro,
       Rol: 'miembro', Estado: 'activo', Alta: `${fechaArgentinaStr()} ${horaArgentinaStr()}`,
     });
+    notificarMiembros(ctx.miembros);
     logger.audit('casa_miembro_virtual_agregado', { userId, casaId, miembroId: id });
     return { id, nombre: nombreMiembro, userId: '' };
   });
@@ -298,6 +310,7 @@ async function unirMiembro(userId, { ownerId, casaId, miembroId = null, alias })
   if (!actuales.some((c) => c.casaId === id)) {
     await clienteService.setCasas(userId, conCasaActiva(actuales, { casaId: id, ownerId: owner, nombre: casa.nombre }));
   }
+  try { notificarMiembros(await leerMiembros(owner, id)); } catch (_) { /* best-effort */ }
   logger.audit('casa_miembro_unido', { userId, casaId: id, miembroId: miembro.id });
   return { casa, miembro };
 }
@@ -332,6 +345,7 @@ async function quitarMiembro(userId, casaId, miembroId) {
     const suyas = clienteService.getCasas(objetivo.userId);
     if (suyas) await clienteService.setCasas(objetivo.userId, suyas.filter((c) => c.casaId !== casaId));
   }
+  notificarMiembros(ctx.miembros);
   logger.audit('casa_miembro_baja', { userId, casaId, miembroId: objetivo.id, salida: esSalida });
   return true;
 }
@@ -406,6 +420,7 @@ async function registrarGasto(userId, casaId, datos = {}) {
   };
 
   await escribirMovimiento(ctx.ownerId, movimiento);
+  notificarMiembros(ctx.miembros);
   logger.audit('casa_gasto_registrado', { userId, casaId, idMov: movimiento.idMov, moneda, pagoPor });
   return { movimiento, miembros: activos(ctx.miembros) };
 }
@@ -442,6 +457,7 @@ async function registrarLiquidacion(userId, casaId, datos = {}) {
   };
 
   await escribirMovimiento(ctx.ownerId, movimiento);
+  notificarMiembros(ctx.miembros);
   logger.audit('casa_liquidacion_registrada', { userId, casaId, idMov: movimiento.idMov, moneda });
   return { movimiento };
 }
@@ -487,6 +503,7 @@ async function eliminarMovimiento(userId, casaId, idMov) {
       throw new CasaError('sin_permiso', 'Solo quien lo cargó o quien creó la casa puede borrarlo');
     }
     await fila.delete();
+    notificarMiembros(ctx.miembros);
     logger.audit('casa_movimiento_eliminado', { userId, casaId, idMov });
     return true;
   });

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useMatch } from 'react-router-dom'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from './hooks/useAuth'
 import { AppProvider, useApp } from './contexts/AppContext'
@@ -7,6 +7,7 @@ import NavBar from './components/NavBar'
 import BottomNav from './components/BottomNav'
 import NuevoMovimientoModal from './components/NuevoMovimientoModal'
 import NuevoPersonalModal from './components/NuevoPersonalModal'
+import NuevoCasaModal from './components/NuevoCasaModal'
 import ErrorBoundary from './components/ErrorBoundary'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -14,6 +15,7 @@ import AgendaPage from './pages/AgendaPage'
 import MovimientosPage from './pages/MovimientosPage'
 import ConfigPage from './pages/ConfigPage'
 import PersonalPage from './pages/PersonalPage'
+import CasaPage from './pages/CasaPage'
 import { api } from './services/api'
 
 function LayoutWithModal() {
@@ -30,6 +32,17 @@ function LayoutWithModal() {
   // no la tratamos como "en personal" para no pedir /api/personal/* de más.
   const enPersonal = esDueno && location.pathname.startsWith('/personal')
 
+  // Lo mismo para una casa compartida: el gasto se carga en la casa que se está
+  // mirando (/casa/:casaId). En /casa a secas todavía no hay una elegida.
+  const matchCasa = useMatch('/casa/:casaId')
+  const casaId = esDueno ? matchCasa?.params.casaId : undefined
+  const enSeccionCasa = esDueno && location.pathname.startsWith('/casa')
+
+  // Sin casa elegida no hay dónde cargar nada: no se deja abierto un modal "+ Nuevo".
+  useEffect(() => {
+    if (enSeccionCasa && !casaId && showNuevo) closeNuevo()
+  }, [enSeccionCasa, casaId, showNuevo, closeNuevo])
+
   const [categoriasPersonal, setCategoriasPersonal] = useState(null)
 
   useEffect(() => {
@@ -45,7 +58,10 @@ function LayoutWithModal() {
     setNuevoError(null)
     setCreando(true)
     try {
-      await api.post(enPersonal ? '/api/personal/movimientos' : '/api/movimientos', payload)
+      const ruta = casaId
+        ? `/api/casa/${casaId}/movimientos`
+        : enPersonal ? '/api/personal/movimientos' : '/api/movimientos'
+      await api.post(ruta, payload)
       closeNuevo()
       triggerReload()
     } catch (err) {
@@ -54,7 +70,7 @@ function LayoutWithModal() {
     } finally {
       setCreando(false)
     }
-  }, [closeNuevo, triggerReload, setNuevoError, setCreando, enPersonal])
+  }, [closeNuevo, triggerReload, setNuevoError, setCreando, enPersonal, casaId])
 
   return (
     <div className="app-layout">
@@ -66,13 +82,24 @@ function LayoutWithModal() {
           <Route path="/agenda"      element={puede('ver_agenda')      ? <AgendaPage />      : <Navigate to={defaultRoute} replace />} />
           <Route path="/config"      element={<ConfigPage />} />
           <Route path="/personal"    element={esDueno ? <PersonalPage /> : <Navigate to={defaultRoute} replace />} />
+          <Route path="/casa"        element={esDueno ? <CasaPage /> : <Navigate to={defaultRoute} replace />} />
+          <Route path="/casa/:casaId" element={esDueno ? <CasaPage /> : <Navigate to={defaultRoute} replace />} />
           <Route path="/solicitudes" element={<Navigate to="/config?tab=solicitudes" replace />} />
           <Route path="/accesos"     element={<Navigate to="/config?tab=accesos" replace />} />
           <Route path="*"            element={<Navigate to={defaultRoute} replace />} />
         </Routes>
       </main>
       <BottomNav />
-      {showNuevo && (enPersonal ? (
+      {showNuevo && casaId && (
+        <NuevoCasaModal
+          casaId={casaId}
+          guardando={creando}
+          error={nuevoError}
+          onGuardar={handleCrear}
+          onCerrar={closeNuevo}
+        />
+      )}
+      {showNuevo && !enSeccionCasa && (enPersonal ? (
         <NuevoPersonalModal
           categorias={categoriasPersonal}
           guardando={creando}

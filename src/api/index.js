@@ -1452,6 +1452,10 @@ app.post('/api/personal/viajes/cerrar', authMiddleware, ownerOnly, async (req, r
   }
 });
 
+// ── Casas compartidas (gastos entre varias personas) ──
+// Control de acceso por membresía a cada casa (casa.service), no ownerOnly.
+require('./casa.routes').registrarRutasCasa(app, { authMiddleware, obtenerCotizacionDolar });
+
 // ── Cotizacion (publica) ──
 app.get('/api/cotizacion', (req, res) => {
   res.json({ dolar: state.cotizacionDolar, euro: state.cotizacionEuro, fecha: state.cotizacionFecha });

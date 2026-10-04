@@ -9,56 +9,14 @@ import DatePickerButton from '../components/DatePickerButton'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import { formatFecha, formatPesos, etiquetaCategoria } from '../utils/format'
+import { etiquetaMes, mesesRecientes } from '../utils/meses'
+import BarraCategoria from '../components/BarraCategoria'
 
 // Paleta de la barra según cuánto se consumió del presupuesto.
 function colorPresupuesto(porcentaje) {
   if (porcentaje > 100) return 'var(--red)'
   if (porcentaje >= 80) return 'var(--amber)'
   return 'var(--green)'
-}
-
-function claveMes(fecha) {
-  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
-}
-
-function etiquetaMes(clave) {
-  const [a, m] = clave.split('-').map(Number)
-  // Se arma a mano en vez de con toLocaleDateString({month:'long',year:'2-digit'}),
-  // que en es-AR devuelve "julio de 26".
-  const nombre = new Date(a, m - 1, 1).toLocaleDateString('es-AR', { month: 'long' })
-  const esteAnio = new Date().getFullYear()
-  const capitalizado = nombre.charAt(0).toUpperCase() + nombre.slice(1)
-  return a === esteAnio ? capitalizado : `${capitalizado} ${String(a).slice(-2)}`
-}
-
-// Tres meses desde el actual hacia atrás. Con pocos botones se reparten parejo
-// el ancho y se leen bien en el celular; con seis quedaban apretados e
-// ilegibles. Para cualquier mes más viejo está el calendario.
-function mesesRecientes(cantidad = 3) {
-  const hoy = new Date()
-  return Array.from({ length: cantidad }, (_, i) =>
-    claveMes(new Date(hoy.getFullYear(), hoy.getMonth() - i, 1))
-  )
-}
-
-// Barra horizontal en CSS: el proyecto no tiene librería de charts y para esto
-// no hace falta sumar una dependencia.
-function BarraCategoria({ label, monto, porcentaje, color = 'var(--primary)' }) {
-  return (
-    <div className="pers-bar-row">
-      <div className="pers-bar-head">
-        <span className="pers-bar-label">{label}</span>
-        <span className="pers-bar-value">{formatPesos(monto)}</span>
-      </div>
-      <div className="pers-bar-track">
-        <div
-          className="pers-bar-fill"
-          style={{ width: `${Math.min(porcentaje, 100)}%`, background: color }}
-        />
-      </div>
-      <span className="pers-bar-pct">{porcentaje}%</span>
-    </div>
-  )
 }
 
 export default function PersonalPage() {

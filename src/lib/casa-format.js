@@ -48,5 +48,10 @@ function mensajeError(err) {
   return MENSAJES_ERROR[err && err.code] || '❌ Algo salió mal. Probá de nuevo.';
 }
 
+// Mismo mensaje sin emojis ni Markdown, para la API / el dashboard.
+function mensajeErrorPlano(err) {
+  return mensajeError(err).replace(/^[^\p{L}¿¡]+/u, '').replace(/[`*_]/g, '');
+}
 
-module.exports = { fmt, formatearSaldos, mensajeError, MENSAJES_ERROR };
+
+module.exports = { fmt, formatearSaldos, mensajeError, mensajeErrorPlano, MENSAJES_ERROR };

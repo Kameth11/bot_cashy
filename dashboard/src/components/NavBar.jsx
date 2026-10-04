@@ -11,6 +11,7 @@ export default function NavBar() {
   // El ámbito personal es una vista aparte, no un tab más: el BottomNav ya
   // tiene 4 items + FAB y un quinto no entra en pantallas de 375px.
   const enPersonal = location.pathname.startsWith('/personal')
+  const enCasa = location.pathname.startsWith('/casa')
 
   function handleLogout() {
     logout()
@@ -35,7 +36,7 @@ export default function NavBar() {
         {esDueno && (
           <div className="ambito-switch">
             <button
-              className={`ambito-btn${enPersonal ? '' : ' active'}`}
+              className={`ambito-btn${enPersonal || enCasa ? '' : ' active'}`}
               onClick={() => navigate('/')}
             >
               🏥 <span className="ambito-label">Consultorio</span>
@@ -46,10 +47,16 @@ export default function NavBar() {
             >
               🏠 <span className="ambito-label">Personal</span>
             </button>
+            <button
+              className={`ambito-btn${enCasa ? ' active' : ''}`}
+              onClick={() => navigate('/casa')}
+            >
+              🏡 <span className="ambito-label">Casa</span>
+            </button>
           </div>
         )}
         <div className="navbar-links">
-          {(enPersonal ? [] : links).map(([to, label]) => (
+          {(enPersonal || enCasa ? [] : links).map(([to, label]) => (
             <NavLink
               key={to}
               to={to}
