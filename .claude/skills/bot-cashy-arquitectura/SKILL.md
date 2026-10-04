@@ -84,6 +84,7 @@ handlers en `bot` de Telegraf vía `src/lib/telegraf.js`):
 | `salir.js` | `/salir` | Salir de una cuenta compartida |
 | `nlptest.js` | `/nlptest` | Testear el parser NLP sin registrar nada |
 | `profesional.js` | `/profesional` | Gestión de profesionales (sql `profesionales`) |
+| `casa.js` | `/casa`, y el canje de códigos de casa (lo usa también `/unir`) | Gastos compartidos entre cuentas: casas, miembros, invitaciones, saldos (ver sección Casas) |
 
 ## Handlers especiales
 
@@ -229,6 +230,10 @@ Optimizaciones para aguantar muchos usuarios/peticiones sin caerse (detalle en
   solo contra sí mismos. `runInBackground(userId, fn)` corre trabajo
   best-effort bajo el mismo lock sin bloquear al caller (dual-write a
   Sheets, sync de Agenda).
+  `withOwnerWriteLock(ownerId, fn)` toma la key del dueño directamente (sin
+  resolver desde un userId): lo usan las **casas compartidas**, donde escribe
+  un miembro de OTRA cuenta en el sheet del creador y tiene que quedar en la
+  misma cadena que las escrituras del dueño.
 - **Semáforo de Gemini**: `geminiMediaSemaphore` (`src/lib/semaphore.js`, máx
   3) acota la concurrencia de foto/voz.
 - **Lecturas acotadas**: `MAX_MOVIMIENTOS_READ` en `db.service.js`.
@@ -242,11 +247,33 @@ Optimizaciones para aguantar muchos usuarios/peticiones sin caerse (detalle en
 > caches, suscriptores SSE de `events.service.js`). Por eso NO se puede subir
 > el replica count en Railway hasta hacer la Fase 2 de escalado (Redis).
 
+## Casas compartidas (`src/services/casa.service.js`, `src/handlers/commands/casa.js`)
+
+Tercer ámbito (además de consultorio y personal): gastos compartidos entre
+varias cuentas. Ver `ARCHITECTURE.md` ("Espacios compartidos") para el porqué.
+
+- `casa.service.js` — casas, miembros (con y sin Telegram), gastos,
+  liquidaciones, resumen. **Todo acceso pasa por `obtenerCasaParaMiembro`**
+  (índice `profiles.casas` + verificación en el sheet). `CasaError` lleva un
+  `code` que bot y API traducen (`lib/casa-format.js`, `api/casa.routes.js`).
+- `lib/casa-saldos.js` (puro), `lib/casa-parse.js` (montos, nombres, "pagó X
+  entre Y y Z"), `lib/casa-format.js` (textos y mensajes de error).
+- `casa-invite.service.js` — códigos de un solo uso (24 h, en memoria,
+  `state.pendingInvitacionesCasa`); `/unir` los reconoce antes del flujo de
+  consultorio.
+- Detección: `personal-nlp.resolverAmbito(texto, { casas })` y
+  `text.marcarAmbito` (con `opts.permitirCasa`, que las fotos de comprobantes
+  ponen en `false`). Sin casas el comportamiento es el histórico.
+- Confirmación: `nlp-confirm.js` — selector `nlp_set_ambito:<ámbito>`; el
+  callback se valida en el servidor (membresía), nunca se confía en el cliente.
+- API/dashboard: `/api/casa/*` (acceso por membresía) y `CasaPage.jsx`.
+
 ## Dónde mirar el código fuente
 
 - `src/index.js` — orden de bootstrap.
 - `src/api/index.js` — API del dashboard (auth JWT, rate limit, SSE, rutas).
 - `src/lib/write-queue.js`, `src/lib/semaphore.js` — locks y concurrencia.
+- `src/services/casa.service.js`, `src/api/casa.routes.js` — casas compartidas.
 - `src/handlers/middleware.js`, `src/handlers/actions.js` — cross-cutting.
 - `src/auth/index.js`, `src/services/invite.service.js`,
   `src/services/cliente.service.js` — auth/multiusuario.

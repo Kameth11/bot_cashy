@@ -150,6 +150,51 @@ catastrófico, no para vender al segundo/tercer cliente.
   definir antes de cobrarle a un cliente externo real. No bloquea el
   trabajo técnico de las fases 1-3.
 
+### Espacios compartidos (CASA): compartir datos entre cuentas
+
+Hasta ahora un usuario pertenecía a **un solo espacio** (su consultorio, como
+dueño o invitado) y lo personal era privado del dueño. CASA es el primer
+espacio que cruza cuentas a propósito: varias personas, cada una con su propia
+cuenta y su Personal privado, cargan gastos compartidos con **quién pagó** y
+**entre quiénes se reparte**, y ven quién le debe a quién.
+
+- **Dónde viven los datos**: pestañas `Casas`, `CasaMiembros` y
+  `CasaMovimientos` del spreadsheet de **quien creó la casa**, claveadas por
+  `casaId` (una cuenta puede tener varias casas). Sheets es la fuente de
+  verdad; **no hay tablas de Supabase** en esta versión, así que
+  `SCOPED_TABLES` y `check-tenant-isolation` no cambian.
+- **Índice de pertenencia**: cada miembro guarda en su perfil
+  `casas: [{ casaId, ownerId, nombre, activa? }]` (`profiles.casas`, migración
+  `sql/migrations/012_casas.sql`). **No se reutiliza `usuarios[]`**: eso
+  repetiría el bug de orden de resolución de `obtenerClientePorUserId` que se
+  corrigió el 2026-09-23 (una persona resolvería a dueño o a invitado según el
+  orden de iteración).
+- **Único punto de control de acceso**: `casa.service.obtenerCasaParaMiembro`.
+  Toma el `ownerId` del perfil del usuario (dato del servidor, nunca del
+  request) **y** verifica en el propio sheet que figure como miembro activo.
+  Un índice forjado, un callback manipulado o un miembro dado de baja no
+  acceden. Todo (bot, API, dashboard) pasa por ahí.
+- **Escrituras**: `withOwnerWriteLock(ownerId, fn)` (`src/lib/write-queue.js`)
+  usa la misma key que las escrituras normales del dueño del sheet, así que un
+  miembro de **otra cuenta** se serializa con él en vez de escribir en paralelo.
+  Sigue valiendo la limitación de una sola instancia.
+- **Miembros sin Telegram**: filas de `CasaMiembros` sin `UserId`; participan
+  del reparto y una invitación puede reclamarlos conservando su historial.
+- **Saldos**: función pura `src/lib/casa-saldos.js`, en centavos, por moneda y
+  **sin conversión**; no dependen del mes. Los ids de los participantes se
+  guardan explícitos al registrar el gasto: quien se une después no hereda
+  gastos viejos. No se puede quitar a un miembro con saldo pendiente.
+- **Detección en el texto**: solo para quien tiene casas (sin casas, la
+  detección es la de siempre). La casa se elige por nombre ("casa dinamarca"),
+  por "casa/hogar/familiar/entre todos" (→ casa activa) o por una preferencia
+  aprendida; es solo para gastos. Las fotos de comprobantes no van a casa.
+- **API**: `/api/casa/*` (`src/api/casa.routes.js`) con acceso por membresía,
+  no `ownerOnly`. No devuelve ids de Telegram ajenos ni el dueño del sheet.
+- **Limitaciones conocidas**: solo Pesos, Dólares y Euros (no hay coronas
+  danesas ni cotización); los códigos de invitación viven en memoria (24 h);
+  si quien creó la casa se va, sus datos siguen en su sheet; un invitado de
+  consultorio sin cuenta propia no puede ser miembro.
+
 ### Regla para features nuevas mientras dura la transición
 
 Antes de implementar cualquier feature nueva del roadmap de producto,
@@ -568,3 +613,8 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-09-24 | `CONSULTORIO_MAP` (hardcodeado en `config/index.js`, un solo tenant) pasa a ser solo el fallback; el mapeo real se arma por tenant desde `profesionales.consultorio`, que cada profesional declara al hacer `/profesional` | Revisión de seguridad: un mapeo hardcodeado en código no escala a SaaS — un tenant nuevo necesitaría un deploy de código para configurar sus propios consultorios. Decisión de producto confirmada con el usuario: autoregistro por profesional (no un comando nuevo para el dueño), con CONSULTORIO_MAP como fallback si el tenant no tiene Supabase o todavía no cargó nada (compatibilidad con el tenant existente) |
 | 2026-09-30 | Auditoría de escalabilidad/arquitectura/seguridad documentada en `AUDITORIA_2026-09-30.md`, sin cambios de código | Revisión pedida por el dueño: quedan pendientes `trust proxy` (rate limit global compartido), lecturas de historial completo, cuota de Sheets sin retry, apagado ordenado, validación del `PUT` de movimientos y unicidad de `sheetId` |
 | 2026-09-30 | Sesión del dashboard: JWT 14 días + tope absoluto de 90 días (`authAt` se conserva al renovar) + se verifica que el usuario siga registrado en cada request | Auditoría 2026-09-30, ítem 8: con 180 días deslizantes un token filtrado servía indefinidamente y sobrevivía a sacar al usuario. La cookie httpOnly queda pendiente |
+| 2026-10-03 | Espacios compartidos (CASA): datos en pestañas del sheet de quien crea la casa, índice `profiles.casas` por miembro, control de acceso único en `casa.service.obtenerCasaParaMiembro` (perfil + sheet); `usuarios[]` NO se reutiliza | Primer espacio que comparte datos entre cuentas distintas. Reusar `usuarios[]` repetiría el bug de orden de resolución del 2026-09-23; verificar contra el sheet evita que un índice forjado o un miembro dado de baja accedan |
+| 2026-10-03 | `withOwnerWriteLock(ownerId, fn)`: lock por dueño del sheet, misma cadena que `withUserWriteLock` | Un miembro de otra cuenta que escribe en la casa de otro tenía una key distinta y podía escribir en paralelo al mismo sheet |
+| 2026-10-03 | CASA sin Supabase en esta versión (Sheets es la verdad; saldos siempre desde el Sheet) | Evita un tenant propio por casa y filas desalineadas en silencio en los saldos; se puede sumar un espejo después |
+| 2026-10-03 | Las fotos de comprobantes no van a CASA; un ingreso nunca va a CASA | El registro del comprobante colapsa el ámbito a consultorio/personal; CASA es solo para gastos compartidos |
+| 2026-10-03 | Un pago a una empresa de servicios (luz, gas, agua, telefonía, combustible) es gasto de `servicios` aunque venga de Mercado Pago/homebanking; catálogo en `src/utils/proveedores-servicios.js`, y una "transferencia" que no lo es se reintenta como factura | La captura de un pago a Edenor se parecía a una transferencia y se rechazaba; el nombre del emisor es más confiable que la interpretación del modelo |

@@ -202,6 +202,31 @@ SaldoPendiente | ReferenciaId | FechaCobro
   `getOutstandingFactor`/`getCompatibleAmountBase` (manejan cobros
   parciales con conversión de moneda).
 
+## Casas compartidas (pestañas + `profiles.casas`)
+
+Datos de las casas (gastos compartidos entre cuentas): **solo Sheets**, sin
+tablas de Supabase en esta versión. Pestañas del sheet de quien creó la casa
+(auto-creadas con `sheet-tab.service.getOrCreateTab`), claveadas por `ID_Casa`:
+
+- `Casas`: `ID_Casa | Nombre | CreadaPor | Creada | Estado`
+- `CasaMiembros`: `ID_Casa | ID_Miembro | UserId | Nombre | Rol | Estado | Alta`
+  (`UserId` vacío = miembro sin Telegram; `Estado` `activo`/`baja`, la baja no
+  borra la fila para conservar el historial de saldos)
+- `CasaMovimientos`: `ID_Mov | ID_Casa | Fecha | Hora | Tipo | Descripcion |
+  Monto | Moneda | MontoPesos | MetodoPago | Categoria | PagoPor | RepartoEntre |
+  Para | Notas | ID_Origen` (`Tipo` `gasto`/`liquidacion`; `RepartoEntre` son ids
+  de miembro separados por coma, explícitos)
+
+Índice de pertenencia: `profiles.casas` (JSONB, migración
+`sql/migrations/012_casas.sql`) = `[{ casaId, ownerId, nombre, activa? }]`.
+`cliente.service.buildProfileRow` **solo manda `casas` si la clave existe**
+(la columna puede no estar creada; mandarla siempre rompería el upsert de todos
+los perfiles). Un array vacío sí se manda: es como se borra la última casa.
+
+Como no hay tablas nuevas, `SCOPED_TABLES` y `check-tenant-isolation` no
+cambian. Si algún día se espeja a Supabase, cada casa necesita su tenant y hay
+que revisar `resolveTenantId`, que hoy solo mira el `ownerId` del usuario.
+
 ## Dónde mirar el código fuente
 
 - `src/services/db.service.js` — fachada, capability detection, wrappers.
@@ -214,3 +239,5 @@ SaldoPendiente | ReferenciaId | FechaCobro
 - `src/lib/google.js` — cliente Google Sheets (service account JWT).
 - `sql/schema.sql`, `sql/schema_mvp_odontologia.sql`,
   `sql/schema_v2_draft.sql`, `sql/profesionales.sql` — DDL.
+- `src/services/casa.service.js`, `src/services/sheet-tab.service.js`,
+  `sql/migrations/012_casas.sql` — casas compartidas.

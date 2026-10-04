@@ -161,6 +161,7 @@ Plan completo, fases y decisiones en `PLAN_COMPROBANTES.md`.
 | `/ayuda` | Todos los comandos |
 | `/personal` | Resumen del mes de finanzas personales |
 | `/viaje` | Ver / abrir / cerrar un viaje (agrupa gastos personales) |
+| `/casa` | Gastos compartidos: resumen, saldos, invitar, saldar (ver sección Casas) |
 
 ---
 
@@ -171,7 +172,7 @@ Además del cashflow del consultorio, el bot registra **finanzas personales**
 
 - **Almacenamiento**: pestañas propias del spreadsheet del usuario (`Personal`,
   `Viajes`, `Presupuestos`, `Preferencias`), auto-creadas. Dual-write opcional a
-  Supabase vía `sql/schema_personal.sql`. **No toca `movimientos_v2`** (su CHECK
+  Supabase vía `sql/migrations/008_movimientos_personales.sql`. **No toca `movimientos_v2`** (su CHECK
   rechaza las categorías personales y el error está silenciado).
 - **Ámbito automático**: `personal-nlp.service.js` decide personal vs
   consultorio con calificadores ("luz de casa"), memoria de correcciones
@@ -187,6 +188,33 @@ Además del cashflow del consultorio, el bot registra **finanzas personales**
   de ámbito se fuerza siempre a `consultorio`.
 
 Detalle completo en `ROADMAP_CASHY_CLINICA.md` sección 5.b.
+
+---
+
+## Casas compartidas (tercer ámbito)
+
+Además de consultorio y personal, varias personas pueden compartir gastos en
+una o más **casas** ("Casa", "Casa Dinamarca"): cada gasto guarda **quién pagó**
+y **entre quiénes se reparte**, y se calculan saldos (quién le debe a quién).
+
+- **Cada persona tiene su propia cuenta** (con su Personal privado); la casa es
+  un espacio aparte con sus miembros. Un invitado de consultorio sin cuenta
+  propia no puede ser miembro. También hay miembros **sin Telegram** (solo
+  participan del reparto).
+- **Datos**: pestañas `Casas`, `CasaMiembros`, `CasaMovimientos` del sheet de
+  quien creó la casa; el índice de pertenencia es `profiles.casas`
+  (`sql/migrations/012_casas.sql`). Sin Supabase en esta versión.
+- **Acceso**: todo pasa por `casa.service.obtenerCasaParaMiembro` (perfil +
+  verificación en el sheet). No usar `usuarios[]` ni `ownerOnly` para esto.
+- **Bot**: `/casa` (nueva, invitar, `/unir CODIGO`, saldo, saldar...) y cargar
+  con la palabra "casa": `super 45000 casa pagó Ana entre Ana y Beto`. Solo para
+  quien tiene casas; sin casas nada cambia. Solo gastos; las fotos de
+  comprobantes no van a casa.
+- **Dashboard/API**: botón 🏡 Casa y `/api/casa/*` (acceso por membresía).
+- **Monedas**: Pesos, Dólares y Euros (sin coronas danesas).
+
+Detalle y decisiones en `ARCHITECTURE.md` ("Espacios compartidos") y
+`ROADMAP_CASHY_CLINICA.md` sección 5.c.
 
 ---
 

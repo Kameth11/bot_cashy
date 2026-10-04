@@ -290,7 +290,7 @@ Segundo ámbito, separado del consultorio: gastos e ingresos de la vida privada
 - **Almacenamiento**: pestañas propias en el spreadsheet del usuario
   (`Personal`, `Viajes`, `Presupuestos`, `Preferencias`), auto-creadas con el
   mismo patrón que la hoja `Turnos`. Dual-write opcional a tablas propias de
-  Supabase (`sql/schema_personal.sql`).
+  Supabase (`sql/migrations/008_movimientos_personales.sql`).
 - **No toca `movimientos_v2`**: su CHECK sólo admite categorías del
   consultorio y rechaza `supermercado`; ese error está silenciado en
   `db.service.js`, así que la fila quedaría desincronizada sin avisar.
@@ -323,6 +323,38 @@ dashboard con switch de ámbito en el header; 9 endpoints bajo `/api/personal`.
 **Pendiente**: validación manual extremo a extremo con el Sheet real (las
 pestañas se auto-crean pero no se probó contra credenciales productivas), y el
 resumen periódico por Telegram (hoy el aviso es sólo al momento de cargar).
+
+---
+
+
+## 5.c Casas compartidas (gastos entre varias personas) — implementado
+
+Tercer ámbito: una o más casas compartidas ("Casa", "Casa Dinamarca") donde
+varias personas, cada una con su cuenta y su Personal privado, cargan gastos con
+**quién pagó** y **entre quiénes se reparte**, ven saldos y los liquidan.
+
+**Decisiones de fondo:**
+
+- **Datos en el sheet de quien crea la casa** (`Casas`, `CasaMiembros`,
+  `CasaMovimientos`), sin Supabase por ahora. Índice de pertenencia en
+  `profiles.casas` (migración `012_casas.sql`).
+- **Un solo control de acceso** (`casa.service.obtenerCasaParaMiembro`): mira el
+  perfil y además el sheet. Sin `ownerOnly` ni `usuarios[]`.
+- **Miembros con y sin Telegram**; una invitación (código de un solo uso, 24 h)
+  puede reclamar a un miembro sin Telegram conservando su historial.
+- **Saldos** en centavos, por moneda y sin conversión; el reparto guarda ids
+  explícitos (quien se une después no hereda gastos viejos).
+- **Compatibilidad**: quien no tiene casas no ve ningún cambio. Con casas,
+  "de casa", "hogar" y "familiar" van a la casa activa; "mi", "personal" y
+  "mío" siguen yendo a Personal.
+
+**Superficies**: `/casa` (nueva, lista, usar, miembros, agregar, invitar, unir,
+saldo, saldar, quitar, salir); cargar con "casa" en el texto; selector de
+ámbito en la confirmación NLP; vista Casa del dashboard y `/api/casa/*`.
+
+**Pendiente / ideas**: soportar coronas danesas (y su cotización); migrar una
+casa si su creador se va; espejo en Supabase; fotos de comprobantes hacia
+casa; reparto desigual (porcentajes o montos); invitación sin cuenta propia.
 
 ---
 
