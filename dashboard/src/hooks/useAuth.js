@@ -16,14 +16,20 @@ export function useAuth() {
     return data;
   }, []);
 
-  const login = useCallback(async (userId, code) => {
-    const { data } = await api.post('/api/auth/verify', { userId, code });
-    if (!data.token) throw new Error('Token no recibido');
+  // Guarda una sesión ya emitida ({token, user}). La usan el login con código y
+  // el login con Telegram: un solo lugar donde se escribe la sesión en el navegador.
+  const loginConSesion = useCallback(async (data) => {
+    if (!data?.token) throw new Error('Token no recibido');
     localStorage.setItem(STORAGE_KEY, data.token);
     if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
     setUser(data.user);
     return data;
   }, []);
+
+  const login = useCallback(async (userId, code) => {
+    const { data } = await api.post('/api/auth/verify', { userId, code });
+    return loginConSesion(data);
+  }, [loginConSesion]);
 
   const loginDemo = useCallback(() => {
     const demoUser = { userId: 'demo', isAdmin: false, permisos: [] };
@@ -71,5 +77,5 @@ export function useAuth() {
   // permisos granulares", que un invitado (ej. recepción) también puede tener.
   const esDueno = !!user && (user.isAdmin || user.isOwner);
 
-  return { user, loading, login, requestCode, loginDemo, logout, puede, esDueno };
+  return { user, loading, login, loginConSesion, requestCode, loginDemo, logout, puede, esDueno };
 }

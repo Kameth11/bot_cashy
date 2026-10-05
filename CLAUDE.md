@@ -36,7 +36,9 @@ reportes, etc.), ver `ROADMAP_CASHY_CLINICA.md`.
 
 El dashboard se sirve desde el mismo proceso/servicio que el bot (Express
 sirve el build estático de `dashboard/dist`). Tiene su propia API (`src/api/`)
-montada en el mismo `src/index.js`. Auth del dashboard: código de Telegram +
+montada en el mismo `src/index.js`. Auth del dashboard: **"Entrar con Telegram"**
+(deep link/QR + confirmación en el bot, `login-telegram.service.js`; ver
+`ARCHITECTURE.md` sección 4) o, como alternativa, código de Telegram +
 JWT de 14 días con renovación deslizante y tope absoluto de 90 días (ver
 `ARCHITECTURE.md` sección 4; falta moverlo a cookie httpOnly).
 

@@ -1,28 +1,143 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { QRCodeSVG } from 'qrcode.react'
 import { useAuth } from '../hooks/useAuth'
+import { useLoginTelegram } from '../hooks/useLoginTelegram'
 
-function Login() {
-  const { login, requestCode, loginDemo } = useAuth()
-  const navigate = useNavigate()
-  const [telegramId, setTelegramId] = useState('')
+const ULTIMO_ID_KEY = 'cashy_last_id'
+
+// localStorage puede no estar disponible (modo privado, datos bloqueados): la pantalla
+// tiene que funcionar igual.
+function leerUltimoId() {
+  try { return localStorage.getItem(ULTIMO_ID_KEY) || '' } catch { return '' }
+}
+function guardarUltimoId(id) {
+  try { localStorage.setItem(ULTIMO_ID_KEY, id) } catch { /* sin persistencia */ }
+}
+
+const estilos = {
+  boton: {
+    display: 'block', width: '100%', padding: '14px', boxSizing: 'border-box', textAlign: 'center',
+    background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', color: '#fff', border: 'none',
+    borderRadius: '10px', fontSize: '16px', fontWeight: 600, textDecoration: 'none', cursor: 'pointer',
+  },
+  botonSecundario: {
+    display: 'block', width: '100%', padding: '12px', boxSizing: 'border-box', textAlign: 'center',
+    background: '#fff', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '10px',
+    fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+  },
+  link: {
+    background: 'none', border: 'none', color: '#6366f1', fontSize: '13px', fontWeight: 600,
+    cursor: 'pointer', padding: 0, textDecoration: 'underline',
+  },
+  input: {
+    width: '100%', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '10px', fontSize: '16px', boxSizing: 'border-box',
+  },
+  etiqueta: { display: 'block', fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: '#374151' },
+  error: {
+    background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px',
+    borderRadius: '10px', marginBottom: '20px', fontSize: '14px',
+  },
+  nota: { textAlign: 'center', color: '#64748b', fontSize: '13px', marginTop: '16px' },
+}
+
+function formatoTiempo(seg) {
+  const m = Math.floor(seg / 60)
+  return `${m}:${String(seg % 60).padStart(2, '0')}`
+}
+
+// Con mouse y pantalla ancha (compu) se muestra el QR para escanearlo con el celular;
+// en celular/iPad alcanza con el botón, porque Telegram está en el mismo equipo.
+function esPantallaDeEscritorio() {
+  try { return window.matchMedia('(min-width: 768px) and (pointer: fine)').matches } catch { return false }
+}
+
+function LoginTelegram({ onSesion, onUsarCodigo }) {
+  const { estado, deepLink, restante, error, iniciar, consultarYa } = useLoginTelegram(onSesion)
+  const [mostrarQr] = useState(esPantallaDeEscritorio)
+
+  // La solicitud se crea al mostrar la pantalla: así el enlace ya está listo y el
+  // toque de la persona abre Telegram sin que el navegador lo bloquee.
+  useEffect(() => { iniciar() }, [iniciar])
+
+  if (estado === 'iniciando') {
+    return <p style={{ textAlign: 'center', color: '#64748b' }}>Preparando el ingreso…</p>
+  }
+
+  if (estado !== 'esperando') {
+    const mensajes = {
+      vencida: 'El pedido venció. Generá uno nuevo.',
+      rechazada: 'Rechazaste el ingreso. Si querés entrar, probá de nuevo.',
+      error: error || 'No se pudo iniciar el ingreso con Telegram.',
+    }
+    return (
+      <>
+        <div style={estilos.error}>{mensajes[estado]}</div>
+        <button type="button" style={estilos.boton} onClick={iniciar}>Probar de nuevo</button>
+        <p style={estilos.nota}>
+          <button type="button" style={estilos.link} onClick={onUsarCodigo}>Usar un código de 6 dígitos</button>
+        </p>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <a href={deepLink} target="_blank" rel="noopener noreferrer" style={estilos.boton}>
+        📲 Abrir Telegram y confirmar
+      </a>
+
+      {mostrarQr && (
+        <div style={{ textAlign: 'center', marginTop: '22px' }}>
+          <div style={{ display: 'inline-block', padding: '12px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+            <QRCodeSVG value={deepLink} size={168} />
+          </div>
+          <p style={{ color: '#64748b', fontSize: '13px', margin: '10px 0 0' }}>
+            O escaneá este código con la cámara del celular
+          </p>
+        </div>
+      )}
+
+      <p style={{ ...estilos.nota, marginTop: '22px' }}>
+        Esperando tu confirmación en Telegram… <strong>{formatoTiempo(restante)}</strong>
+        <br />
+        <button type="button" style={{ ...estilos.link, marginTop: '8px' }} onClick={consultarYa}>Ya confirmé</button>
+      </p>
+      <p style={estilos.nota}>
+        <button type="button" style={estilos.link} onClick={onUsarCodigo}>Prefiero usar un código de 6 dígitos</button>
+      </p>
+    </>
+  )
+}
+
+function LoginCodigo({ login, requestCode, onNavegar, onUsarTelegram }) {
+  const [telegramId, setTelegramId] = useState(leerUltimoId)
   const [codigo, setCodigo] = useState('')
   const [paso, setPaso] = useState('id')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [demo, setDemo] = useState(false)
+  const [reenviarEn, setReenviarEn] = useState(0)
+
+  useEffect(() => {
+    if (reenviarEn <= 0) return undefined
+    const t = setTimeout(() => setReenviarEn(s => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [reenviarEn])
 
   async function pedirCodigo(e) {
-    e.preventDefault()
+    if (e) e.preventDefault()
     setError('')
-    if (!telegramId.trim()) {
-      setError('Ingrese su ID de Telegram')
+    const id = telegramId.trim()
+    if (!id) {
+      setError('Ingresá tu ID de Telegram')
       return
     }
     setLoading(true)
     try {
-      await requestCode(telegramId.trim())
+      await requestCode(id)
+      guardarUltimoId(id)
       setPaso('codigo')
+      setReenviarEn(30)
     } catch (err) {
       setError(err?.response?.data?.error || 'No se pudo enviar el código')
     } finally {
@@ -30,28 +145,103 @@ function Login() {
     }
   }
 
-  async function verificarCodigo(e) {
-    e.preventDefault()
+  async function verificar(valor) {
     setError('')
-    if (!codigo.trim()) {
-      setError('Ingrese el código de 6 dígitos')
-      return
-    }
     setLoading(true)
     try {
-      await login(telegramId.trim(), codigo.trim())
-      navigate('/', { replace: true })
+      await login(telegramId.trim(), valor)
+      onNavegar()
     } catch (err) {
       setError(err?.response?.data?.error || 'Código inválido')
+      setCodigo('')
     } finally {
       setLoading(false)
     }
   }
 
+  function cambiarCodigo(e) {
+    const valor = e.target.value.replace(/\D/g, '').slice(0, 6)
+    setCodigo(valor)
+    // Al completar los 6 dígitos se envía solo.
+    if (valor.length === 6 && !loading) verificar(valor)
+  }
+
+  return (
+    <form onSubmit={paso === 'codigo' ? (e) => { e.preventDefault(); if (codigo.length === 6) verificar(codigo) } : pedirCodigo}>
+      <div style={{ marginBottom: '20px' }}>
+        <label style={estilos.etiqueta}>ID de Telegram</label>
+        <input
+          type="text"
+          inputMode="numeric"
+          autoComplete="username"
+          value={telegramId}
+          onChange={(e) => setTelegramId(e.target.value)}
+          placeholder="Ej: 123456789"
+          disabled={paso === 'codigo'}
+          style={{ ...estilos.input, opacity: paso === 'codigo' ? 0.6 : 1 }}
+        />
+      </div>
+
+      {paso === 'codigo' && (
+        <div style={{ marginBottom: '20px' }}>
+          <label style={estilos.etiqueta}>Código recibido en Telegram</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={codigo}
+            onChange={cambiarCodigo}
+            placeholder="123456"
+            maxLength={6}
+            autoFocus
+            style={{ ...estilos.input, letterSpacing: '2px', textAlign: 'center' }}
+          />
+        </div>
+      )}
+
+      {error && <div style={estilos.error}>{error}</div>}
+
+      <button type="submit" disabled={loading} style={{ ...estilos.boton, opacity: loading ? 0.7 : 1 }}>
+        {paso === 'id' ? 'Enviar código' : 'Ingresar'}
+      </button>
+
+      {paso === 'codigo' && (
+        <p style={estilos.nota}>
+          {reenviarEn > 0
+            ? `Podés pedir otro código en ${reenviarEn} s`
+            : <button type="button" style={estilos.link} onClick={() => pedirCodigo()}>Reenviar código</button>}
+        </p>
+      )}
+
+      <p style={estilos.nota}>
+        {paso === 'id'
+          ? 'Te enviaremos un código de 6 dígitos a tu Telegram'
+          : 'Escribí /start al bot si no lo tenés iniciado'}
+      </p>
+      <p style={estilos.nota}>
+        <button type="button" style={estilos.link} onClick={onUsarTelegram}>Entrar con Telegram sin código</button>
+      </p>
+    </form>
+  )
+}
+
+function Login() {
+  const { login, loginConSesion, requestCode, loginDemo } = useAuth()
+  const navigate = useNavigate()
+  const [modo, setModo] = useState('telegram')
+  const [demo, setDemo] = useState(false)
+
+  const irAlInicio = () => navigate('/', { replace: true })
+
+  async function alAprobarse(sesion) {
+    await loginConSesion(sesion)
+    irAlInicio()
+  }
+
   function entrarDemo() {
     setDemo(true)
     loginDemo()
-    navigate('/', { replace: true })
+    irAlInicio()
   }
 
   return (
@@ -87,129 +277,22 @@ function Login() {
           </p>
         </div>
 
-        {!demo ? (
-          <form onSubmit={paso === 'codigo' ? verificarCodigo : pedirCodigo}>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: 600,
-                marginBottom: '8px',
-                color: '#374151'
-              }}>
-                ID de Telegram
-              </label>
-              <input
-                type="text"
-                value={telegramId}
-                onChange={(e) => setTelegramId(e.target.value)}
-                placeholder="Ej: 123456789"
-                disabled={paso === 'codigo'}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '10px',
-                  fontSize: '16px',
-                  opacity: paso === 'codigo' ? 0.6 : 1
-                }}
-              />
-            </div>
-
-            {paso === 'codigo' && (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  marginBottom: '8px',
-                  color: '#374151'
-                }}>
-                  Código recibido en Telegram
-                </label>
-                <input
-                  type="text"
-                  value={codigo}
-                  onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ''))}
-                  placeholder="123456"
-                  maxLength={6}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '10px',
-                    fontSize: '16px',
-                    letterSpacing: '2px',
-                    textAlign: 'center'
-                  }}
-                />
-              </div>
-            )}
-
-            {error && (
-              <div style={{
-                background: '#fef2f2',
-                border: '1px solid #fecaca',
-                color: '#dc2626',
-                padding: '12px',
-                borderRadius: '10px',
-                marginBottom: '20px',
-                fontSize: '14px'
-              }}>
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '14px',
-                background: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '10px',
-                fontSize: '16px',
-                fontWeight: 600,
-                opacity: loading ? 0.7 : 1
-              }}
-            >
-              {paso === 'id' ? 'Enviar código' : 'Ingresar'}
-            </button>
-          </form>
-        ) : (
+        {demo ? (
           <p style={{ textAlign: 'center', color: '#10b981', fontWeight: 700 }}>Entrando en modo demo...</p>
+        ) : modo === 'telegram' ? (
+          <LoginTelegram onSesion={alAprobarse} onUsarCodigo={() => setModo('codigo')} />
+        ) : (
+          <LoginCodigo
+            login={login}
+            requestCode={requestCode}
+            onNavegar={irAlInicio}
+            onUsarTelegram={() => setModo('telegram')}
+          />
         )}
 
-        <button
-          type="button"
-          onClick={entrarDemo}
-          style={{
-            marginTop: '16px',
-            width: '100%',
-            padding: '12px',
-            background: '#fff',
-            color: '#374151',
-            border: '1px solid #e5e7eb',
-            borderRadius: '10px',
-            fontSize: '14px',
-            fontWeight: 600
-          }}
-        >
+        <button type="button" onClick={entrarDemo} style={{ ...estilos.botonSecundario, marginTop: '16px' }}>
           Entrar sin Telegram
         </button>
-
-        <p style={{
-          textAlign: 'center',
-          color: '#64748b',
-          fontSize: '13px',
-          marginTop: '20px'
-        }}>
-          {paso === 'id'
-            ? 'Te enviaremos un código de 6 dígitos a tu Telegram'
-            : 'Escribí /start al bot si no lo tenés iniciado'}
-        </p>
       </div>
     </div>
   )

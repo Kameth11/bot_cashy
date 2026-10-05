@@ -216,6 +216,26 @@ preguntarse:
 - Logger centralizado con redacción automática de secretos (`src/lib/logger.js`).
 - `JWT_SECRET` obligatorio, sin fallback inseguro (falla el arranque si falta).
 - Rate limiting en `/api/auth/request-code` y `/api/auth/verify`.
+- **Login "Entrar con Telegram"** (`/api/auth/telegram/start` y `/status`,
+  `src/services/login-telegram.service.js`, `src/handlers/login-actions.js`): el
+  navegador crea una solicitud, la persona la aprueba en el bot y el navegador entra
+  solo. Sin tipear el ID ni copiar códigos; sirve en celular, iPad y compu (QR).
+  - **Dos secretos**: `id` público (va en el link/QR, payload `login_<id>` de 22
+    caracteres) y `secret` que solo conoce el navegador que lo pidió (se guarda
+    hasheado; es lo que permite esperar y recibir la sesión). Quien vea el QR o el
+    link no obtiene la sesión. La sesión se entrega **una sola vez**.
+  - **La identidad sale de Telegram**: al aprobar se usa `ctx.from.id`, nunca algo
+    del link. Aprobación atómica e idempotente; solo en chat privado y solo para
+    cuentas registradas (un `/start login_...` nunca inicia un alta).
+  - **Confirmación obligatoria** en el bot, con IP, navegador/SO y hora del pedido y
+    botones ✅/❌: es la defensa contra alguien que te manda *su* link.
+  - **Estado en memoria, TTL 5 min** (una sola instancia; un redeploy en medio solo
+    obliga a reintentar). Con varias instancias haría falta un almacén compartido.
+  - Los endpoints **nunca responden 401** (el interceptor del dashboard recargaría la
+    página) y tienen rate limit propio por IP y por solicitud.
+  - `armarSesion(userId)` (`src/api/index.js`) es el único lugar que entrega el JWT
+    al dashboard: facilita migrar a cookie httpOnly (pendiente, ver abajo).
+  - El login por código de 6 dígitos sigue disponible como alternativa.
 - Auditoría de eventos sensibles (login, CRUD de movimientos vía dashboard).
 - Mutex de escritura por usuario (`src/lib/write-queue.js`) — evita race
   conditions Sheets/Supabase entre bot y dashboard.
@@ -618,3 +638,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-10-03 | CASA sin Supabase en esta versión (Sheets es la verdad; saldos siempre desde el Sheet) | Evita un tenant propio por casa y filas desalineadas en silencio en los saldos; se puede sumar un espejo después |
 | 2026-10-03 | Las fotos de comprobantes no van a CASA; un ingreso nunca va a CASA | El registro del comprobante colapsa el ámbito a consultorio/personal; CASA es solo para gastos compartidos |
 | 2026-10-03 | Un pago a una empresa de servicios (luz, gas, agua, telefonía, combustible) es gasto de `servicios` aunque venga de Mercado Pago/homebanking; catálogo en `src/utils/proveedores-servicios.js`, y una "transferencia" que no lo es se reintenta como factura | La captura de un pago a Edenor se parecía a una transferencia y se rechazaba; el nombre del emisor es más confiable que la interpretación del modelo |
+| 2026-10-05 | Login del dashboard "Entrar con Telegram" por deep link con confirmación en el bot; estado en memoria (TTL 5 min), `id` público + `secret` del navegador (hasheado), sesión de un solo uso, identidad = `ctx.from.id`; el código de 6 dígitos queda como alternativa | El login pedía el ID numérico de Telegram (casi nadie lo conoce) y copiar un código. Sin SQL nuevo; la confirmación con IP/navegador cubre el phishing de links ajenos. Limitaciones: una sola instancia y un login en curso se pierde en un redeploy |
