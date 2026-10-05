@@ -44,6 +44,8 @@ const { sanitizarInput } = require('../utils/formatter');
 const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const eventsService = require('../services/events.service');
+const loginTelegram = require('../services/login-telegram.service');
+const { obtenerUsernameBot } = require('../lib/bot-info');
 const state = require('../state');
 const logger = require('../lib/logger');
 const { createLimiter } = require('../lib/rate-limiter');
@@ -131,6 +133,28 @@ function usuarioRegistrado(userId) {
   return Boolean(esAdminOriginal(id) || obtenerClientePorUserId(id));
 }
 
+// Forma del usuario que reciben el dashboard (login, /me): una sola definición.
+function datosUsuario(userId) {
+  const id = String(userId);
+  const cliente = obtenerClientePorUserId(Number(id));
+  const esAdmin = esAdminOriginal(Number(id));
+  return {
+    userId: id,
+    isAdmin: esAdmin,
+    isOwner: esAdmin || !!cliente?.isOwner,
+    email: cliente?.email || null,
+    sheetId: getSheetId(Number(id)),
+    permisos: resolverPermisos(id),
+    modoFullIA: cliente?.modoFullIA || false,
+  };
+}
+
+// Sesión completa ({token, user}). Es el ÚNICO lugar que entrega el JWT al
+// dashboard, para poder migrarlo a una cookie httpOnly sin tocar cada login.
+function armarSesion(userId) {
+  return { token: firmarSesion(userId), user: datosUsuario(userId) };
+}
+
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'No autorizado' });
@@ -216,6 +240,13 @@ const requestCodeByIp   = createLimiter({ windowMs: 10 * 60 * 1000, max: 20 });
 const requestCodeByUser = createLimiter({ windowMs: 10 * 60 * 1000, max: 5 });
 const verifyByIp        = createLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
 const verifyByUser      = createLimiter({ windowMs: 10 * 60 * 1000, max: 10 });
+// Login con Telegram: la solicitud se crea al mostrar la pantalla de login (así el enlace
+// ya está listo y el toque del usuario no lo bloquea el navegador), por eso el cupo por IP
+// es holgado (varias personas de un mismo consultorio comparten IP). Crear solicitudes es
+// barato de abusar (cada una ocupa memoria) y esperar la aprobación es un polling cada ~2 s durante 5 min (≈150 requests).
+const telegramStartByIp  = createLimiter({ windowMs: 10 * 60 * 1000, max: 20 });
+const telegramStatusByIp = createLimiter({ windowMs: 10 * 60 * 1000, max: 300 });
+const telegramStatusById = createLimiter({ windowMs: 10 * 60 * 1000, max: 200 });
 
 function rateLimit(limiter, keyFn) {
   return (req, res, next) => {
@@ -327,11 +358,8 @@ app.post('/api/auth/verify',
 
   const DEV_TOKEN = process.env.DASHBOARD_DEV_TOKEN;
   if (DEV_TOKEN && process.env.NODE_ENV === 'development' && timingSafeEqualStr(code, DEV_TOKEN)) {
-    const token = firmarSesion(telegramId);
-    const cliente = obtenerClientePorUserId(Number(telegramId));
-    const esAdmin = esAdminOriginal(Number(telegramId));
     logger.audit('auth_dev_token_login', { telegramId });
-    return res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: getSheetId(Number(telegramId)), permisos: resolverPermisos(telegramId) } });
+    return res.json(armarSesion(telegramId));
   }
 
   const codeData = await leerCodigoAuth(telegramId);
@@ -380,18 +408,61 @@ app.post('/api/auth/verify',
     }
   }
 
-  const token = firmarSesion(telegramId);
-  const cliente = obtenerClientePorUserId(Number(telegramId));
-  const esAdmin = esAdminOriginal(Number(telegramId));
-  logger.audit('auth_verify_success', { telegramId, esAdmin });
-  res.json({ token, user: { userId: telegramId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: getSheetId(Number(telegramId)), permisos: resolverPermisos(telegramId), modoFullIA: cliente?.modoFullIA || false } });
+  logger.audit('auth_verify_success', { telegramId, esAdmin: esAdminOriginal(Number(telegramId)) });
+  res.json(armarSesion(telegramId));
 });
 
 // ── Auth: me ──
 app.get('/api/auth/me', authMiddleware, (req, res) => {
-  const cliente = obtenerClientePorUserId(Number(req.user.userId));
-  const esAdmin = esAdminOriginal(Number(req.user.userId));
-  res.json({ user: { userId: req.user.userId, isAdmin: esAdmin, isOwner: esAdmin || !!cliente?.isOwner, email: cliente?.email || null, sheetId: getSheetId(Number(req.user.userId)), permisos: resolverPermisos(req.user.userId), modoFullIA: cliente?.modoFullIA || false } });
+  res.json({ user: datosUsuario(req.user.userId) });
+});
+
+// ── Auth: entrar con Telegram (deep link + confirmación en el bot) ──
+// El navegador crea una solicitud, la persona la aprueba en el bot y el navegador
+// recibe la sesión. Ver services/login-telegram.service.js. Estos endpoints
+// NUNCA responden 401: el interceptor del dashboard recargaría la página.
+app.post('/api/auth/telegram/start',
+  rateLimit(telegramStartByIp, req => req.ip),
+  async (req, res) => {
+  try {
+    const username = await obtenerUsernameBot().catch(() => null);
+    if (!username) {
+      return res.status(503).json({ error: 'El ingreso con Telegram no está disponible ahora. Usá el código.' });
+    }
+    const s = loginTelegram.crearSolicitud({ ip: req.ip, userAgent: req.headers['user-agent'] });
+    logger.audit('auth_telegram_login_solicitado', { loginId: s.id, ip: req.ip });
+    res.status(201).json({
+      id: s.id,
+      secret: s.secret,
+      deepLink: `https://t.me/${username}?start=login_${s.id}`,
+      expiraEnSeg: s.expiraEnSeg,
+    });
+  } catch (err) {
+    if (err.message === 'demasiadas_solicitudes') {
+      return res.status(429).json({ error: 'Demasiados intentos. Probá de nuevo en unos minutos.' });
+    }
+    logger.error('API', 'Error POST /api/auth/telegram/start', { err: err.message });
+    res.status(500).json({ error: 'No se pudo iniciar el ingreso' });
+  }
+});
+
+app.post('/api/auth/telegram/status',
+  rateLimit(telegramStatusByIp, req => req.ip),
+  rateLimit(telegramStatusById, req => String((req.body || {}).id || req.ip)),
+  (req, res) => {
+  const { id, secret } = req.body || {};
+  const r = loginTelegram.consultar(id, secret);
+
+  if (r.estado === 'aprobada') {
+    // Entre la aprobación y la entrega la persona pudo ser dada de baja.
+    if (!usuarioRegistrado(r.userId) && process.env.NODE_ENV !== 'development') {
+      logger.audit('auth_telegram_login_rechazado', { loginId: id, motivo: 'usuario_no_registrado' });
+      return res.json({ estado: 'rechazada' });
+    }
+    logger.audit('auth_telegram_login_entregado', { loginId: id, userId: r.userId, ip: req.ip });
+    return res.json({ estado: 'aprobada', ...armarSesion(r.userId) });
+  }
+  res.json({ estado: r.estado });
 });
 
 app.post('/api/config/modo-ia', authMiddleware, ownerOnly, async (req, res) => {
@@ -1517,7 +1588,7 @@ function startApi() {
   });
 }
 
-module.exports = { app, startApi, authMiddleware, firmarSesion, SESSION_MAX_SEC, JWT_SECRET, warnIfDevTokenMisconfigured, authCodes };
+module.exports = { app, startApi, authMiddleware, firmarSesion, armarSesion, SESSION_MAX_SEC, JWT_SECRET, warnIfDevTokenMisconfigured, authCodes };
 
 // Arranque standalone (`node src/api/index.js`, sin el bot) — también espera
 // a que termine de cargar clientes.json/Supabase antes de atender requests.
