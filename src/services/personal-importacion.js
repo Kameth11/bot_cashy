@@ -220,7 +220,35 @@ async function importarPersona({ userId, datos, repo, aplicar = false }) {
   return informe;
 }
 
+/**
+ * Decide A QUIÉN se le importa. Un agregado (invitado) comparte el sheet de su dueño: leer
+ * "su" Personal del Sheet devolvería el del DUEÑO y se lo atribuiría a otra persona, que es
+ * exactamente la fuga que el Personal por persona evita. Por eso:
+ *   - solo se importa a dueños/admin (los únicos que pudieron usar Personal en el Sheet);
+ *   - cada sheet se procesa UNA sola vez, a nombre de quien lo tiene.
+ * @param {string[]} ids        candidatos (ids de perfiles)
+ * @param {(id:string)=>boolean} esDueno
+ * @param {(id:string)=>string|null} sheetDe  sheetId que resuelve esa persona
+ * @returns {{importar: Array<{userId:string, sheetId:string}>, omitidos: Array<{userId:string, motivo:string}>}}
+ */
+function elegirPersonasAImportar(ids, esDueno, sheetDe) {
+  const importar = [];
+  const omitidos = [];
+  const sheetsVistos = new Map();
+  for (const id of ids) {
+    const userId = String(id);
+    if (!esDueno(userId)) { omitidos.push({ userId, motivo: 'agregado: usa el sheet de su dueño, no tiene Personal propio en el Sheet' }); continue; }
+    const sheetId = sheetDe(userId);
+    if (!sheetId) { omitidos.push({ userId, motivo: 'sin sheet' }); continue; }
+    if (sheetsVistos.has(sheetId)) { omitidos.push({ userId, motivo: `comparte el sheet de ${sheetsVistos.get(sheetId)}: ya se procesa a nombre de ese dueño` }); continue; }
+    sheetsVistos.set(sheetId, userId);
+    importar.push({ userId, sheetId });
+  }
+  return { importar, omitidos };
+}
+
 module.exports = {
+  elegirPersonasAImportar,
   importarPersona,
   mapearMovimiento,
   mapearViaje,

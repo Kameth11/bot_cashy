@@ -22,10 +22,11 @@ const soloUsuario = idxUser >= 0 ? String(args[idxUser + 1] || '').trim() : null
 async function main() {
   const clienteService = require('../src/services/cliente.service');
   const config = require('../src/config');
-  const { importarPersona, contar } = require('../src/services/personal-importacion');
+  const { importarPersona, elegirPersonasAImportar, contar } = require('../src/services/personal-importacion');
+  const { esAdminOriginal, obtenerClientePorUserId } = require('../src/auth');
   const repo = require('../src/services/personal-repo.supabase');
   const personal = require('../src/services/personal.service');
-  const { getDocCliente } = require('../src/services/sheet.service');
+  const { getDocCliente, getSheetId } = require('../src/services/sheet.service');
 
   if (!config.USE_SUPABASE) {
     console.error('USE_SUPABASE no está en true: no hay a dónde importar.');
@@ -37,20 +38,27 @@ async function main() {
   // Personas con Personal en el Sheet: las cuentas con registro propio (dueños) y el admin.
   const ids = new Set(Object.keys(clienteService.clientes));
   if (config.AUTHORIZED_USER_ID) ids.add(String(config.AUTHORIZED_USER_ID));
-  const personas = soloUsuario ? [soloUsuario] : [...ids];
+  const candidatos = soloUsuario ? [soloUsuario] : [...ids];
+
+  // SOLO dueños, y cada sheet una vez: un agregado comparte el sheet de su dueño y
+  // "su" Personal sería el del dueño (ver elegirPersonasAImportar).
+  const esDueno = (id) => Boolean(esAdminOriginal(Number(id)) || (obtenerClientePorUserId(Number(id)) || {}).isOwner);
+  const { importar: personas, omitidos } = elegirPersonasAImportar(candidatos, esDueno, (id) => getSheetId(Number(id)));
 
   console.log(aplicar ? '=== IMPORTACIÓN (escribe en Supabase) ===' : '=== SIMULACRO (no escribe nada) ===');
-  console.log(`Personas a revisar: ${personas.length}\n`);
+  console.log(`Candidatos: ${candidatos.length} · se importan: ${personas.length} · omitidos: ${omitidos.length}`);
+  for (const o of omitidos) console.log(`  (omitido) ${o.userId}: ${o.motivo}`);
+  console.log('');
 
   let errores = 0;
-  for (const userId of personas) {
+  for (const { userId, sheetId } of personas) {
     try {
       const datos = await leerDelSheet(userId, { personal, getDocCliente });
       const total = datos.movimientos.length + datos.viajes.length + datos.presupuestos.length + Object.keys(datos.preferencias).length;
-      if (total === 0) { console.log(`- ${userId}: sin Personal en el Sheet`); continue; }
+      if (total === 0) { console.log(`- ${userId} (sheet …${String(sheetId).slice(-6)}): sin Personal en el Sheet`); continue; }
 
       const r = await importarPersona({ userId, datos, repo, aplicar });
-      imprimir(r, contar);
+      imprimir(r, contar, { sheetId, datos });
     } catch (err) {
       errores++;
       console.error(`- ${userId}: ERROR ${err.message}`);
@@ -89,9 +97,16 @@ async function leerDelSheet(userId, { personal, getDocCliente }) {
   return { movimientos, viajes, presupuestos, preferencias };
 }
 
-function imprimir(r, contar) {
+function imprimir(r, contar, { sheetId, datos } = {}) {
   const m = r.movimientos;
-  console.log(`- ${r.userId}`);
+  console.log(`- ${r.userId} (sheet …${String(sheetId || '').slice(-6)})`);
+  // Huella para comprobar de dónde sale cada cosa: primera y última fila leídas.
+  const movs = (datos && datos.movimientos) || [];
+  if (movs.length) {
+    const f = (x) => `${x.fecha} "${String(x.descripcion || '').slice(0, 30)}" ${x.monto}`;
+    console.log(`    primera     : ${f(movs[0])}`);
+    console.log(`    última      : ${f(movs[movs.length - 1])}`);
+  }
   console.log(`    movimientos : ${m.leidos} leídos · ${m.aImportar} a importar · ${m.yaExistentes} ya estaban · ${m.descartados.length} descartados${r.aplicado ? ` · ${m.importados} importados` : ''}`);
   if (m.descartados.length) console.log(`                  descartados por motivo: ${JSON.stringify(contar(m.descartados))}`);
   if (m.avisos.length) console.log(`                  categorías ajustadas a "otros": ${m.avisos.length}`);

@@ -177,3 +177,44 @@ describe('el script', () => {
     expect(src).toMatch(/SIMULACRO \(no escribe nada\)/);
   });
 });
+
+describe('elegirPersonasAImportar: nunca se le atribuye a una persona el Personal de otra', () => {
+  // El caso real de producción: un dueño, un invitado que comparte su sheet, y otro dueño aparte.
+  const DUENO = '1419810344';
+  const INVITADO = '8321573327';
+  const OTRO = '6279333302';
+  const duenos = new Set([DUENO, OTRO]);
+  const sheets = { [DUENO]: 'sheetA', [INVITADO]: 'sheetA', [OTRO]: 'sheetB' };
+  const elegir = (ids) => imp.elegirPersonasAImportar(ids, (id) => duenos.has(id), (id) => sheets[id] || null);
+
+  test('el invitado que comparte el sheet del dueño se OMITE (leerlo daría el Personal del dueño)', () => {
+    const r = elegir([DUENO, INVITADO, OTRO]);
+    expect(r.importar.map(p => p.userId)).toEqual([DUENO, OTRO]);
+    expect(r.omitidos).toEqual([{ userId: INVITADO, motivo: expect.stringMatching(/agregado/) }]);
+  });
+
+  test('aunque el invitado figure PRIMERO, no gana el sheet', () => {
+    const r = elegir([INVITADO, DUENO]);
+    expect(r.importar).toEqual([{ userId: DUENO, sheetId: 'sheetA' }]);
+  });
+
+  test('dos dueños con el MISMO sheet: se procesa una sola vez, a nombre del primero', () => {
+    const r = imp.elegirPersonasAImportar(['1', '2'], () => true, () => 'mismoSheet');
+    expect(r.importar).toEqual([{ userId: '1', sheetId: 'mismoSheet' }]);
+    expect(r.omitidos[0].motivo).toMatch(/comparte el sheet de 1/);
+  });
+
+  test('un dueño sin sheet se omite', () => {
+    const r = imp.elegirPersonasAImportar(['9'], () => true, () => null);
+    expect(r.importar).toEqual([]);
+    expect(r.omitidos[0].motivo).toBe('sin sheet');
+  });
+
+  test('el script usa esta selección (no recorre los perfiles a ciegas)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'importar-personal-a-supabase.js'), 'utf8');
+    expect(src).toMatch(/elegirPersonasAImportar\(/);
+    expect(src).toMatch(/\(omitido\)/);
+  });
+});
