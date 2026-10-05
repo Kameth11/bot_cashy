@@ -143,3 +143,12 @@ describe('POST /api/auth/telegram/status', () => {
     expect(r.body.token).toBeUndefined();
   });
 });
+
+describe('cabeceras de seguridad', () => {
+  // Con COOP same-origin (default de helmet) la ventana emergente de Google queda en
+  // blanco y el login con Google no completa nunca.
+  test('Cross-Origin-Opener-Policy permite las ventanas emergentes (login con Google)', async () => {
+    const res = await fetch(`${baseUrl}/api/auth/config`);
+    expect(res.headers.get('cross-origin-opener-policy')).toBe('same-origin-allow-popups');
+  });
+});

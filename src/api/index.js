@@ -57,8 +57,14 @@ const app = express();
 // Headers de seguridad estándar (HSTS, X-Content-Type-Options, X-Frame-Options,
 // etc.). Se desactiva la Content-Security-Policy: el mismo Express sirve el
 // build estático del dashboard (SPA de Vite) y la CSP por defecto de helmet lo
-// rompería. El resto de los headers no afecta al SPA.
-app.use(helmet({ contentSecurityPolicy: false }));
+// rompería. Cross-Origin-Opener-Policy: el default de helmet (same-origin) corta la
+// comunicación con la ventana emergente de "Entrar con Google" (queda en blanco y el
+// token nunca llega al dashboard); same-origin-allow-popups la permite y sigue
+// aislando al resto de las ventanas. El resto de los headers no afecta al SPA.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+}));
 
 // Railway (y cualquier PaaS) pone un proxy delante: sin esto req.ip es la IP
 // del proxy para TODOS los clientes y los rate limiters por IP terminan
