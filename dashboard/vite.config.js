@@ -13,6 +13,11 @@ export default defineConfig({
       // sprite de Bluesky) y no los usa nadie: no tiene sentido precachearlos.
       includeAssets: ['icon.svg', 'favicon-32.png', 'apple-touch-icon.png'],
       workbox: {
+        // La versión nueva toma el control apenas se instala (sin esperar a que se
+        // cierren todas las pestañas), y limpia el caché de la anterior.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         // Por defecto el service worker responde a CUALQUIER navegación con la pantalla
         // principal de la app: abrir /api/... o /privacidad.html a mano mostraba una
         // página en blanco. Estas rutas las sirve el servidor, no la app.

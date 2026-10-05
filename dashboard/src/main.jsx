@@ -5,14 +5,27 @@ import { registerSW } from 'virtual:pwa-register'
 import App from './App.jsx'
 import './index.css'
 
-// Chequea cada 60s si hay un build nuevo y recarga sola cuando lo hay, para
-// que una pestaña/PWA ya abierta no se quede pegada a JS viejo (bug reportado
-// en iOS Safari, pero el mismo registerSW.js genérico tampoco lo maneja en desktop).
+// Una versión nueva tiene que llegar sola, sin que nadie fuerce la recarga (en el
+// celular no se puede). Se busca al abrir/volver a la app y cada 60s; cuando el
+// service worker nuevo toma el control, se recarga la página una vez.
+const habiaControlador = !!navigator.serviceWorker?.controller
+let recargando = false
+navigator.serviceWorker?.addEventListener('controllerchange', () => {
+  if (!habiaControlador || recargando) return
+  recargando = true
+  window.location.reload()
+})
+
 registerSW({
   immediate: true,
   onRegisteredSW(swUrl, registration) {
     if (!registration) return
-    setInterval(() => registration.update(), 60 * 1000)
+    const buscar = () => registration.update().catch(() => {})
+    setInterval(buscar, 60 * 1000)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') buscar()
+    })
+    window.addEventListener('online', buscar)
   },
 })
 
