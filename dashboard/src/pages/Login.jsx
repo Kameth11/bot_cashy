@@ -48,15 +48,8 @@ function formatoTiempo(seg) {
   return `${m}:${String(seg % 60).padStart(2, '0')}`
 }
 
-// Con mouse y pantalla ancha (compu) se muestra el QR para escanearlo con el celular;
-// en celular/iPad alcanza con el botón, porque Telegram está en el mismo equipo.
-function esPantallaDeEscritorio() {
-  try { return window.matchMedia('(min-width: 768px) and (pointer: fine)').matches } catch { return false }
-}
-
 function LoginTelegram({ onSesion, onUsarCodigo, previo = null, emailGoogle = null }) {
   const { estado, deepLink, restante, error, iniciar, consultarYa } = useLoginTelegram(onSesion)
-  const [mostrarQr] = useState(esPantallaDeEscritorio)
 
   // La solicitud se crea al mostrar la pantalla: así el enlace ya está listo y el
   // toque de la persona abre Telegram sin que el navegador lo bloquee.
@@ -95,16 +88,14 @@ function LoginTelegram({ onSesion, onUsarCodigo, previo = null, emailGoogle = nu
         📲 Abrir Telegram y confirmar
       </a>
 
-      {mostrarQr && (
-        <div style={{ textAlign: 'center', marginTop: '22px' }}>
-          <div style={{ display: 'inline-block', padding: '12px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-            <QRCodeSVG value={deepLink} size={168} />
-          </div>
-          <p style={{ color: '#64748b', fontSize: '13px', margin: '10px 0 0' }}>
-            O escaneá este código con la cámara del celular
-          </p>
+      <div style={{ textAlign: 'center', marginTop: '22px' }}>
+        <div style={{ display: 'inline-block', padding: '12px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+          <QRCodeSVG value={deepLink} size={168} />
         </div>
-      )}
+        <p style={{ color: '#64748b', fontSize: '13px', margin: '10px 0 0' }}>
+          ¿Telegram está en otro dispositivo? Escaneá este código con el celular
+        </p>
+      </div>
 
       <p style={{ ...estilos.nota, marginTop: '22px' }}>
         Esperando tu confirmación en Telegram… <strong>{formatoTiempo(restante)}</strong>
