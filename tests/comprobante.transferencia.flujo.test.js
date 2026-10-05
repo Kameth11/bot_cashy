@@ -167,7 +167,7 @@ test('transferencia enviada: el ámbito se decide con el destinatario y el conce
   const { marcarAmbito } = require('../src/handlers/text');
   vision.extraerTransferencia.mockResolvedValue({ transferencia: ENVIADA });
   await procesarTransferencia(ctxBase(), archivo);
-  expect(marcarAmbito).toHaveBeenCalledWith(1, expect.stringContaining('Pinturería Sur'), expect.objectContaining({ intent: 'registrar_movimiento' }), { permitirCasa: false });
+  expect(marcarAmbito).toHaveBeenCalledWith(1, expect.stringContaining('Pinturería Sur'), expect.objectContaining({ intent: 'registrar_movimiento' }), { permitirCasa: false, personalSoloDueno: true });
 });
 
 test('transferencia enviada: el duplicado se busca por el destinatario (no por quien pagó)', async () => {

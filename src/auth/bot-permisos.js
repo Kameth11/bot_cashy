@@ -4,6 +4,7 @@
 
 const { resolverPermisos, esAdminOriginal, obtenerClientePorUserId } = require('./index');
 const logger = require('../lib/logger');
+const { puedeUsarPersonal } = require('./personal-acceso');
 
 const MENSAJE_SIN_PERMISO = '🔒 No tenés permiso para hacer esto. Si creés que deberías tenerlo, pedile al dueño de la cuenta que te lo habilite.';
 const MENSAJE_SOLO_DUENO = '🔒 Este comando es solo para el dueño de la cuenta.';
@@ -39,4 +40,15 @@ function requiereDuenoBot(ctx, comando) {
   return false;
 }
 
-module.exports = { tienePermisoBot, esDuenoBot, requierePermisoBot, requiereDuenoBot };
+// Comandos del ámbito Personal (/personal, /viaje): dueño/admin en modo 'sheets'; cualquier
+// usuario registrado en modo 'supabase' (cada uno con el suyo). Ver auth/personal-acceso.js.
+function requierePersonalBot(ctx, comando) {
+  const userId = ctx.from?.id;
+  if (puedeUsarPersonal(userId)) return true;
+
+  logger.audit('permiso_denegado', { userId, permiso: 'personal', comando, canal: 'bot' });
+  ctx.reply(MENSAJE_SOLO_DUENO).catch(() => {});
+  return false;
+}
+
+module.exports = { tienePermisoBot, esDuenoBot, requierePermisoBot, requiereDuenoBot, requierePersonalBot };

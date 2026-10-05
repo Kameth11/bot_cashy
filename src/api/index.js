@@ -45,6 +45,7 @@ const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const eventsService = require('../services/events.service');
 const loginTelegram = require('../services/login-telegram.service');
+const { puedeUsarPersonal } = require('../auth/personal-acceso');
 const { obtenerUsernameBot } = require('../lib/bot-info');
 const state = require('../state');
 const logger = require('../lib/logger');
@@ -146,6 +147,8 @@ function datosUsuario(userId) {
     sheetId: getSheetId(Number(id)),
     permisos: resolverPermisos(id),
     modoFullIA: cliente?.modoFullIA || false,
+    // ¿Ve la sección Personal? (dueño/admin, o cualquiera si Personal vive en Supabase)
+    puedePersonal: puedeUsarPersonal(id),
   };
 }
 
@@ -216,6 +219,16 @@ function timingSafeEqualStr(a, b) {
 function ownerOnly(req, res, next) {
   const cliente = obtenerClientePorUserId(Number(req.user?.userId));
   if (!cliente?.isOwner && !esAdminOriginal(req.user?.userId)) {
+    return res.status(403).json({ error: 'Solo el dueño del consultorio' });
+  }
+  next();
+}
+
+// Acceso al ámbito Personal: dueño/admin en modo 'sheets'; cualquier usuario registrado en
+// modo 'supabase' (cada uno ve y toca SOLO el suyo: req.user.userId, nunca un id del
+// request). Ver auth/personal-acceso.js.
+function personalAccess(req, res, next) {
+  if (!puedeUsarPersonal(req.user?.userId)) {
     return res.status(403).json({ error: 'Solo el dueño del consultorio' });
   }
   next();
@@ -1363,7 +1376,7 @@ app.post('/api/comprobantes', authMiddleware, requierePermiso('cargar_movimiento
   }
 });
 
-app.get('/api/personal/categorias', authMiddleware, ownerOnly, (req, res) => {
+app.get('/api/personal/categorias', authMiddleware, personalAccess, (req, res) => {
   res.json({
     egreso: CATEGORIAS_EGRESO_PERSONAL,
     ingreso: CATEGORIAS_INGRESO_PERSONAL,
@@ -1372,7 +1385,7 @@ app.get('/api/personal/categorias', authMiddleware, ownerOnly, (req, res) => {
 
 // Un solo request trae todo lo que la vista Personal necesita (totales, por
 // categoría, presupuestos y viaje activo), en vez de encadenar cuatro.
-app.get('/api/personal/resumen', authMiddleware, ownerOnly, async (req, res) => {
+app.get('/api/personal/resumen', authMiddleware, personalAccess, async (req, res) => {
   try {
     const mes = MES_REGEX.test(String(req.query.mes || '')) ? String(req.query.mes) : undefined;
     const resumen = await personalService.calcularResumenPersonal(req.user.userId, mes);
@@ -1383,7 +1396,7 @@ app.get('/api/personal/resumen', authMiddleware, ownerOnly, async (req, res) => 
   }
 });
 
-app.get('/api/personal/movimientos', authMiddleware, ownerOnly, async (req, res) => {
+app.get('/api/personal/movimientos', authMiddleware, personalAccess, async (req, res) => {
   try {
     const movimientos = await personalService.obtenerMovimientosPersonales(req.user.userId);
     res.json({ movimientos });
@@ -1393,7 +1406,7 @@ app.get('/api/personal/movimientos', authMiddleware, ownerOnly, async (req, res)
   }
 });
 
-app.post('/api/personal/movimientos', authMiddleware, ownerOnly, async (req, res) => {
+app.post('/api/personal/movimientos', authMiddleware, personalAccess, async (req, res) => {
   try {
     const body = req.body || {};
 
@@ -1437,7 +1450,7 @@ app.post('/api/personal/movimientos', authMiddleware, ownerOnly, async (req, res
   }
 });
 
-app.delete('/api/personal/movimientos/:idMov', authMiddleware, ownerOnly, async (req, res) => {
+app.delete('/api/personal/movimientos/:idMov', authMiddleware, personalAccess, async (req, res) => {
   try {
     const eliminado = await personalService.eliminarMovimientoPersonal(req.user.userId, req.params.idMov);
     if (!eliminado) return res.status(404).json({ error: 'Movimiento no encontrado' });
@@ -1448,7 +1461,7 @@ app.delete('/api/personal/movimientos/:idMov', authMiddleware, ownerOnly, async 
   }
 });
 
-app.get('/api/personal/presupuestos', authMiddleware, ownerOnly, async (req, res) => {
+app.get('/api/personal/presupuestos', authMiddleware, personalAccess, async (req, res) => {
   try {
     const presupuestos = await personalService.obtenerPresupuestos(req.user.userId);
     res.json({ presupuestos });
@@ -1459,7 +1472,7 @@ app.get('/api/personal/presupuestos', authMiddleware, ownerOnly, async (req, res
 });
 
 // Upsert por categoría. Monto 0 desactiva el presupuesto sin borrar el registro.
-app.put('/api/personal/presupuestos', authMiddleware, ownerOnly, async (req, res) => {
+app.put('/api/personal/presupuestos', authMiddleware, personalAccess, async (req, res) => {
   try {
     const body = req.body || {};
     const categoria = normalizarCategoriaPersonal(body.categoria);
@@ -1479,7 +1492,7 @@ app.put('/api/personal/presupuestos', authMiddleware, ownerOnly, async (req, res
   }
 });
 
-app.get('/api/personal/viajes', authMiddleware, ownerOnly, async (req, res) => {
+app.get('/api/personal/viajes', authMiddleware, personalAccess, async (req, res) => {
   try {
     const viaje = await personalService.obtenerViajeActivo(req.user.userId);
     // `_row` es la fila del Sheet: no debe salir por la API.
@@ -1490,7 +1503,7 @@ app.get('/api/personal/viajes', authMiddleware, ownerOnly, async (req, res) => {
   }
 });
 
-app.post('/api/personal/viajes', authMiddleware, ownerOnly, async (req, res) => {
+app.post('/api/personal/viajes', authMiddleware, personalAccess, async (req, res) => {
   try {
     const body = req.body || {};
     const nombre = sanitizarInput(body.nombre, 80);
@@ -1526,7 +1539,7 @@ app.post('/api/personal/viajes', authMiddleware, ownerOnly, async (req, res) => 
   }
 });
 
-app.post('/api/personal/viajes/cerrar', authMiddleware, ownerOnly, async (req, res) => {
+app.post('/api/personal/viajes/cerrar', authMiddleware, personalAccess, async (req, res) => {
   try {
     const cerrado = await personalService.cerrarViaje(req.user.userId);
     if (!cerrado) return res.status(404).json({ error: 'No hay ningún viaje activo' });

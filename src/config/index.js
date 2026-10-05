@@ -49,6 +49,15 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const USE_SUPABASE = process.env.USE_SUPABASE === 'true';
 
+// Dónde vive el ámbito PERSONAL: 'sheets' (pestañas del sheet del dueño; solo el dueño
+// lo usa) o 'supabase' (por persona, privado, abierto a todo usuario registrado).
+// Arranca en 'sheets' y se activa a mano DESPUÉS de correr la migración 013 e importar
+// los datos existentes. 'supabase' exige USE_SUPABASE=true; si no, se ignora.
+const PERSONAL_STORE = process.env.PERSONAL_STORE === 'supabase' ? 'supabase' : 'sheets';
+if (PERSONAL_STORE === 'supabase' && !USE_SUPABASE) {
+  console.warn('PERSONAL_STORE=supabase se ignora porque USE_SUPABASE no es true: Personal sigue en el Sheet');
+}
+
 const DASHBOARD_URL = process.env.DASHBOARD_URL ||
   (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '');
 
@@ -92,6 +101,7 @@ module.exports = {
   SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY,
   USE_SUPABASE,
+  PERSONAL_STORE,
   DASHBOARD_URL,
   CONSULTORIO_MAP,
 };

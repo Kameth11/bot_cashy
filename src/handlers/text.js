@@ -272,13 +272,18 @@ async function marcarAmbito(userId, text, result, opts = {}) {
   const personalService = require('../services/personal.service');
   const { resolverAmbito, inferirCategoriaPersonal } = require('../services/personal-nlp.service');
   const { esDuenoBot } = require('../auth/bot-permisos');
+  const { puedeUsarPersonal } = require('../auth/personal-acceso');
 
   // Las finanzas personales son las del dueño (viven en pestañas de su
   // mismo sheet). Un invitado no tiene ámbito personal propio: si el
   // detector cree que el mensaje es "personal", lo tratamos igual como
   // consultorio en vez de tocar las pestañas privadas del dueño — mismo
   // criterio que el fallback histórico de ambigüedad.
-  if (!esDuenoBot(userId)) {
+  // `personalSoloDueno`: las fotos de comprobantes viven en la pestaña Comprobantes del sheet
+  // del consultorio, así que un agregado no puede mandar un comprobante a Personal aunque
+  // pueda usar el suyo para el resto (un comprobante personal suyo lo vería el dueño).
+  const puedePersonal = opts.personalSoloDueno ? esDuenoBot(userId) : puedeUsarPersonal(userId);
+  if (!puedePersonal) {
     return { ...result, entities: { ...(result.entities || {}), ambito: 'consultorio' } };
   }
 
@@ -325,7 +330,7 @@ async function marcarAmbito(userId, text, result, opts = {}) {
     entities.categoriaConsultorio = entities.categoria || null;
     entities.categoria = inferirCategoriaPersonal(entities.tipo, text);
 
-    const viaje = await personalService.obtenerViajeActivo(userId);
+    const viaje = await personalService.obtenerViajeActivo(userId).catch(() => null);
     const fechaMov = entities.fecha || personalService.fechaHoyStr();
     if (viaje && personalService.correspondeAlViaje(viaje, {
       fecha: fechaMov,

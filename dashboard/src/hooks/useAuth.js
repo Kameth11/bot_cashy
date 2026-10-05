@@ -77,5 +77,11 @@ export function useAuth() {
   // permisos granulares", que un invitado (ej. recepción) también puede tener.
   const esDueno = !!user && (user.isAdmin || user.isOwner);
 
-  return { user, loading, login, loginConSesion, requestCode, loginDemo, logout, puede, esDueno };
+  // ¿Ve la sección Personal? El servidor lo decide (dueño/admin, o cualquier usuario
+  // registrado cuando Personal vive en Supabase: cada uno ve solo el suyo). Una sesión
+  // guardada antes de este cambio no trae el dato: hasta que /api/auth/me la refresque
+  // se usa el criterio anterior.
+  const puedePersonal = !!user && (user.puedePersonal ?? esDueno);
+
+  return { user, loading, login, loginConSesion, requestCode, loginDemo, logout, puede, esDueno, puedePersonal };
 }

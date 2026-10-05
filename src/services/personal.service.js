@@ -1,9 +1,15 @@
-// Almacenamiento del ámbito personal.
+// Almacenamiento del ámbito personal. Dos modos (PERSONAL_STORE, lib/personal-store.js):
 //
-// Fuente de verdad: pestañas dedicadas en el spreadsheet del usuario (mismo
-// patrón que la hoja "Turnos" de la agenda). Cuando USE_SUPABASE=true se hace
-// dual-write a tablas propias — NO a movimientos_v2, que tiene un CHECK con las
-// categorías del consultorio y rechazaría "supermercado" en silencio.
+//   'sheets'   (default) Pestañas dedicadas en el spreadsheet del DUEÑO (mismo patrón
+//              que la hoja "Turnos" de la agenda). Si USE_SUPABASE=true se hace
+//              dual-write best-effort a tablas propias — NO a movimientos_v2, que tiene
+//              un CHECK con las categorías del consultorio.
+//   'supabase' Tablas por persona (personal-repo.supabase.js), SIN Sheet ni espejo: lo
+//              personal de un agregado nunca debe escribirse en el sheet del dueño.
+//              Los errores de la base se propagan (no se tragan).
+//
+// Las funciones puras (evaluarPresupuestosDesde, correspondeAlViaje, fechaStrAIso...)
+// son comunes a los dos modos.
 //
 // Las escrituras emiten eventos SSE a mano: los movimientos del consultorio los
 // emiten desde db.service, y este camino no pasa por ahí.
@@ -17,6 +23,8 @@ const { resolveTenantId } = require('./tenant.service');
 const { emitMovimientosUpdated } = require('./events.service');
 const { convertirAPesos } = require('./movimiento.service');
 const logger = require('../lib/logger');
+const { personalEnSupabase } = require('../lib/personal-store');
+const repoSupabase = require('./personal-repo.supabase');
 const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina, fechaStrAIso } = require('../utils/date');
 
 const TAB_MOVIMIENTOS = 'Personal';
@@ -151,6 +159,10 @@ function esAmbitoPreferido(ambito) {
 
 async function leerPreferencias(userId) {
   try {
+    if (personalEnSupabase()) {
+      const prefs = await repoSupabase.leerPreferencias(userId);
+      return Object.fromEntries(Object.entries(prefs).filter(([, ambito]) => esAmbitoPreferido(ambito)));
+    }
     const sheet = await getTabConReintento(userId, TAB_PREFERENCIAS);
     if (!sheet) return {};
     const rows = await sheet.getRows();
@@ -175,6 +187,11 @@ async function guardarPreferencia(userId, termino, ambito) {
   if (!key || !esAmbitoPreferido(ambito)) return false;
 
   try {
+    if (personalEnSupabase()) {
+      await repoSupabase.guardarPreferencia(userId, key, ambito);
+      logger.audit('personal_preferencia_guardada', { userId, termino: key, ambito });
+      return true;
+    }
     const sheet = await getTabConReintento(userId, TAB_PREFERENCIAS);
     if (!sheet) return false;
 
@@ -201,6 +218,9 @@ async function guardarPreferencia(userId, termino, ambito) {
 // ── Viajes ───────────────────────────────────────────────────────────────────
 
 async function obtenerViajeActivo(userId) {
+  // En modo Supabase el error se propaga: un "no hay viaje" falso por una falla de la
+  // base haría atribuir mal los gastos. Quien solo decora (marcarAmbito) lo atrapa.
+  if (personalEnSupabase()) return repoSupabase.obtenerViajeActivo(userId);
   try {
     const sheet = await getTabConReintento(userId, TAB_VIAJES);
     if (!sheet) return null;
@@ -225,6 +245,12 @@ async function obtenerViajeActivo(userId) {
 }
 
 async function crearViaje(userId, { nombre, fechaInicio, fechaFin, presupuesto = null, moneda = 'Pesos' }) {
+  if (personalEnSupabase()) {
+    const idViaje = generarIdViaje();
+    const viaje = await repoSupabase.crearViaje(userId, { idViaje, nombre, fechaInicio, fechaFin, presupuesto, moneda });
+    logger.audit('personal_viaje_creado', { userId, idViaje, nombre });
+    return viaje;
+  }
   const sheet = await getTabConReintento(userId, TAB_VIAJES);
   if (!sheet) throw new Error('sin_sheet');
 
@@ -245,6 +271,11 @@ async function crearViaje(userId, { nombre, fechaInicio, fechaFin, presupuesto =
 }
 
 async function cerrarViaje(userId) {
+  if (personalEnSupabase()) {
+    const cerrado = await repoSupabase.cerrarViaje(userId);
+    if (cerrado) logger.audit('personal_viaje_cerrado', { userId, idViaje: cerrado.idViaje });
+    return cerrado;
+  }
   const viaje = await obtenerViajeActivo(userId);
   if (!viaje) return null;
 
@@ -278,6 +309,7 @@ function correspondeAlViaje(viaje, { fecha, categoria }) {
 // ── Presupuestos ─────────────────────────────────────────────────────────────
 
 async function obtenerPresupuestos(userId) {
+  if (personalEnSupabase()) return repoSupabase.listarPresupuestos(userId);
   try {
     const sheet = await getTabConReintento(userId, TAB_PRESUPUESTOS);
     if (!sheet) return [];
@@ -301,6 +333,17 @@ async function obtenerPresupuestos(userId) {
  * Devuelve null si no hay presupuesto definido para esa categoría.
  */
 async function evaluarPresupuesto(userId, categoria, fecha = fechaHoyStr()) {
+  // Es un aviso que se agrega DESPUÉS de guardar: si falla (base caída) no puede hacer
+  // parecer que el guardado falló.
+  try {
+    return await evaluarPresupuestoInterno(userId, categoria, fecha);
+  } catch (error) {
+    logger.warn('Personal', 'No se pudo evaluar el presupuesto', { userId, err: error.message });
+    return null;
+  }
+}
+
+async function evaluarPresupuestoInterno(userId, categoria, fecha) {
   const presupuestos = await obtenerPresupuestos(userId);
   const presupuesto = presupuestos.find(p => p.categoria === categoria);
   if (!presupuesto) return null;
@@ -336,6 +379,7 @@ function rowToMovimientoPersonal(row) {
 }
 
 async function obtenerMovimientosPersonales(userId) {
+  if (personalEnSupabase()) return repoSupabase.listarMovimientos(userId);
   try {
     const sheet = await getTabConReintento(userId, TAB_MOVIMIENTOS);
     if (!sheet) return [];
@@ -421,8 +465,9 @@ async function registrarMovimientoPersonal(userId, datos) {
     throw new Error('descripcion_invalida');
   }
 
-  const sheet = await getTabConReintento(userId, TAB_MOVIMIENTOS);
-  if (!sheet) throw new Error('sin_sheet');
+  const enSupabase = personalEnSupabase();
+  const sheet = enSupabase ? null : await getTabConReintento(userId, TAB_MOVIMIENTOS);
+  if (!enSupabase && !sheet) throw new Error('sin_sheet');
 
   const fecha = datos.fecha || fechaHoyStr();
 
@@ -451,6 +496,17 @@ async function registrarMovimientoPersonal(userId, datos) {
     notas,
     origenCarga,
   };
+
+  if (enSupabase) {
+    // `cargadoPor`: quién lo cargó (distinto del dueño del Personal cuando, más
+    // adelante, alguien carga a nombre de otra persona).
+    await repoSupabase.insertarMovimiento(userId, movimiento, { createdBy: datos.cargadoPor || userId });
+    emitMovimientosUpdated(userId);
+    logger.audit('personal_movimiento_registrado', {
+      userId, idMov: movimiento.idMov, categoria: movimiento.categoria, viajeId: movimiento.viajeId, store: 'supabase',
+    });
+    return { movimiento, viaje: viajeId ? viajeActivo : null };
+  }
 
   await withUserWriteLock(userId, () => sheet.addRow({
     ID_Mov: movimiento.idMov,
@@ -486,6 +542,14 @@ async function registrarMovimientoPersonal(userId, datos) {
 }
 
 async function eliminarMovimientoPersonal(userId, idMov) {
+  if (personalEnSupabase()) {
+    const eliminado = await repoSupabase.eliminarMovimiento(userId, idMov);
+    if (eliminado) {
+      emitMovimientosUpdated(userId);
+      logger.audit('personal_movimiento_eliminado', { userId, idMov, store: 'supabase' });
+    }
+    return eliminado;
+  }
   const sheet = await getTabConReintento(userId, TAB_MOVIMIENTOS);
   if (!sheet) throw new Error('sin_sheet');
 
@@ -521,6 +585,12 @@ async function guardarPresupuesto(userId, categoria, montoMensual, moneda = 'Pes
   const monto = parseFloat(montoMensual);
   if (!cat) throw new Error('categoria_invalida');
   if (!Number.isFinite(monto) || monto < 0) throw new Error('monto_invalido');
+
+  if (personalEnSupabase()) {
+    await repoSupabase.guardarPresupuesto(userId, cat, monto, moneda);
+    logger.audit('personal_presupuesto_guardado', { userId, categoria: cat, monto, store: 'supabase' });
+    return { categoria: cat, montoMensual: monto, moneda, activo: monto > 0 };
+  }
 
   const sheet = await getTabConReintento(userId, TAB_PRESUPUESTOS);
   if (!sheet) throw new Error('sin_sheet');

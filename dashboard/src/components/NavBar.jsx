@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useApp } from '../contexts/AppContext'
 
 export default function NavBar() {
-  const { user, logout, puede, esDueno } = useAuth()
+  const { user, logout, puede, esDueno, puedePersonal } = useAuth()
   const { openNuevo }           = useApp()
   const navigate                = useNavigate()
   const location                = useLocation()
@@ -33,7 +33,7 @@ export default function NavBar() {
     <nav className="navbar">
       <div className="navbar-left">
         <span className="navbar-logo">🦷 Cashy</span>
-        {esDueno && (
+        {(esDueno || puedePersonal) && (
           <div className="ambito-switch">
             <button
               className={`ambito-btn${enPersonal || enCasa ? '' : ' active'}`}
@@ -41,18 +41,22 @@ export default function NavBar() {
             >
               🏥 <span className="ambito-label">Consultorio</span>
             </button>
-            <button
-              className={`ambito-btn${enPersonal ? ' active' : ''}`}
-              onClick={() => navigate('/personal')}
-            >
-              🏠 <span className="ambito-label">Personal</span>
-            </button>
-            <button
-              className={`ambito-btn${enCasa ? ' active' : ''}`}
-              onClick={() => navigate('/casa')}
-            >
-              🏡 <span className="ambito-label">Casa</span>
-            </button>
+            {puedePersonal && (
+              <button
+                className={`ambito-btn${enPersonal ? ' active' : ''}`}
+                onClick={() => navigate('/personal')}
+              >
+                🏠 <span className="ambito-label">Personal</span>
+              </button>
+            )}
+            {esDueno && (
+              <button
+                className={`ambito-btn${enCasa ? ' active' : ''}`}
+                onClick={() => navigate('/casa')}
+              >
+                🏡 <span className="ambito-label">Casa</span>
+              </button>
+            )}
           </div>
         )}
         <div className="navbar-links">

@@ -423,12 +423,12 @@ async function aplicarAmbito(ctx, target, comando) {
 
   const personalService = require('../services/personal.service');
   const { inferirCategoriaPersonal } = require('../services/personal-nlp.service');
-  const { requiereDuenoBot } = require('../auth/bot-permisos');
+  const { requierePersonalBot } = require('../auth/bot-permisos');
 
-  // Las pestañas personales son las del dueño: un invitado no puede pasar
-  // un movimiento a ese ámbito tocando el botón, aunque haya llegado acá
-  // (mismo criterio que marcarAmbito en text.js).
-  if (target === 'personal' && !requiereDuenoBot(ctx, comando)) return;
+  // En modo 'sheets' las pestañas personales son las del dueño: un invitado no puede
+  // pasar un movimiento a ese ámbito tocando el botón. En modo 'supabase' cada persona
+  // tiene el suyo (mismo criterio que marcarAmbito en text.js).
+  if (target === 'personal' && !requierePersonalBot(ctx, comando)) return;
 
   const entities = { ...pending.entities };
   const veniaDeConsultorio = !esAmbitoPersonal(entities) && !esAmbitoCasa(entities);
@@ -497,7 +497,7 @@ async function aplicarAmbito(ctx, target, comando) {
       `${entities.descripcion || ''} ${entities.textoOriginal || ''}`
     );
 
-    const viaje = await personalService.obtenerViajeActivo(userId);
+    const viaje = await personalService.obtenerViajeActivo(userId).catch(() => null);
     if (viaje && personalService.correspondeAlViaje(viaje, {
       fecha: entities.fecha || personalService.fechaHoyStr(),
       categoria: entities.categoria,

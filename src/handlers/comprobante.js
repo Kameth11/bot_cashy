@@ -61,7 +61,7 @@ async function procesarFactura(ctx, archivo, { desdeTransferencia = false } = {}
   const conAmbito = await marcarAmbito(userId, comprobanteService.textoParaAmbito(factura), {
     intent: 'registrar_movimiento',
     entities,
-  }, { permitirCasa: false });
+  }, { permitirCasa: false, personalSoloDueno: true });
 
   logger.info('Comprobantes', 'Factura leída', {
     userId, idComprobante, ambito: conAmbito.entities.ambito, duplicado: duplicado?.motivo || null,
@@ -123,7 +123,7 @@ async function procesarTransferencia(ctx, archivo) {
     const conAmbito = await marcarAmbito(userId, comprobanteService.textoParaAmbitoTransferencia(t), {
       intent: 'registrar_movimiento',
       entities,
-    }, { permitirCasa: false });
+    }, { permitirCasa: false, personalSoloDueno: true });
 
     logger.info('Comprobantes', 'Transferencia enviada leída', {
       userId, idComprobante, ambito: conAmbito.entities.ambito, duplicado: duplicado?.motivo || null,

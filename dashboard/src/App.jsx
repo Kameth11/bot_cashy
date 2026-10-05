@@ -20,7 +20,7 @@ import { api } from './services/api'
 
 function LayoutWithModal() {
   const { showNuevo, closeNuevo, nuevoError, setNuevoError, creando, setCreando, triggerReload } = useApp()
-  const { puede, esDueno } = useAuth()
+  const { puede, esDueno, puedePersonal } = useAuth()
   const location = useLocation()
 
   // Ruta raíz: redirigir al primer destino permitido según permisos
@@ -30,7 +30,7 @@ function LayoutWithModal() {
   // un movimiento personal, no uno del consultorio. La sección Personal es
   // solo del dueño — si un invitado llega a esta ruta (redirect en curso),
   // no la tratamos como "en personal" para no pedir /api/personal/* de más.
-  const enPersonal = esDueno && location.pathname.startsWith('/personal')
+  const enPersonal = puedePersonal && location.pathname.startsWith('/personal')
 
   // Lo mismo para una casa compartida: el gasto se carga en la casa que se está
   // mirando (/casa/:casaId). En /casa a secas todavía no hay una elegida.
@@ -81,7 +81,7 @@ function LayoutWithModal() {
           <Route path="/movimientos" element={puede('ver_movimientos') ? <MovimientosPage /> : <Navigate to={defaultRoute} replace />} />
           <Route path="/agenda"      element={puede('ver_agenda')      ? <AgendaPage />      : <Navigate to={defaultRoute} replace />} />
           <Route path="/config"      element={<ConfigPage />} />
-          <Route path="/personal"    element={esDueno ? <PersonalPage /> : <Navigate to={defaultRoute} replace />} />
+          <Route path="/personal"    element={puedePersonal ? <PersonalPage /> : <Navigate to={defaultRoute} replace />} />
           <Route path="/casa"        element={esDueno ? <CasaPage /> : <Navigate to={defaultRoute} replace />} />
           <Route path="/casa/:casaId" element={esDueno ? <CasaPage /> : <Navigate to={defaultRoute} replace />} />
           <Route path="/solicitudes" element={<Navigate to="/config?tab=solicitudes" replace />} />
