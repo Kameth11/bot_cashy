@@ -11,6 +11,10 @@ let clientes = {};
 // ningún upsert: mandarla sin la columna haría fallar el alta de TODOS los perfiles.
 let soportaActivo = false;
 
+// ¿La tabla profiles tiene `google_sub` (migración 014)? Misma idea: sin la columna no
+// se manda en ningún upsert, y el login con Google queda deshabilitado.
+let soportaGoogle = false;
+
 // Serializa escrituras a clientes.json/Supabase para evitar que dos
 // registros concurrentes pisen el archivo con datos desactualizados.
 let writeQueue = Promise.resolve();
@@ -44,6 +48,8 @@ function buildProfileRow(userId, clienteData = {}, tenantId = null) {
   if (Array.isArray(clienteData.casas)) row.casas = clienteData.casas;
   // Un cliente que se (re)registra está activo: reactiva un perfil dado de baja lógica.
   if (soportaActivo) row.activo = true;
+  // Solo viaja si la persona vinculó Google (vincularGoogle exige que la columna exista).
+  if (clienteData.googleSub) row.google_sub = clienteData.googleSub;
   if (tenantId) row.tenant_id = tenantId;
   return row;
 }
@@ -71,6 +77,7 @@ async function cargarClientes() {
 
       clientes = {};
       soportaActivo = Object.prototype.hasOwnProperty.call(data[0], 'activo');
+      soportaGoogle = Object.prototype.hasOwnProperty.call(data[0], 'google_sub');
       for (const profile of data) {
         // Baja lógica: quien salió del consultorio pero tiene Personal conserva su
         // perfil (las tablas personales dependen de él) y NO figura como cliente.
@@ -84,6 +91,7 @@ async function cargarClientes() {
           permisos: profile.permisos || {},
           creadoEn: profile.created_at || new Date().toISOString(),
         };
+        if (profile.google_sub) clientes[userId].googleSub = profile.google_sub;
         // Solo si tiene casas: así los perfiles sin casas no mandan la columna.
         if (Array.isArray(profile.casas) && profile.casas.length > 0) {
           clientes[userId].casas = profile.casas;
@@ -248,6 +256,75 @@ async function setModoFullIA(ownerId, enabled) {
   return true;
 }
 
+// ── Login con Google ─────────────────────────────────────────────────────────
+
+// Con Supabase hace falta la columna google_sub (migración 014); con el archivo local
+// no hay nada que migrar.
+function googleSoportado() {
+  return !(USE_SUPABASE && isAvailable()) || soportaGoogle;
+}
+
+// userId (string) de la cuenta que vinculó ese `sub` de Google, o null.
+function buscarPorGoogleSub(sub) {
+  if (!sub) return null;
+  for (const [id, c] of Object.entries(clientes)) {
+    if (c && c.googleSub === sub) return id;
+  }
+  return null;
+}
+
+/**
+ * Vincula una cuenta de Google (`sub`) a la persona `userId`. Quien llama ya
+ * verificó que `userId` es quien tocó "Sí" en el bot.
+ * @returns {Promise<{ok:true} | {ok:false, motivo:'no_disponible'|'sin_perfil'|'sub_en_uso'|'ya_vinculada_otra'}>}
+ */
+async function vincularGoogle(userId, sub) {
+  const key = String(userId);
+  if (!sub || !googleSoportado()) return { ok: false, motivo: 'no_disponible' };
+
+  // Un invitado puede no tener fila propia todavía (se crea al cargar algo): se asegura.
+  if (!clientes[key] && USE_SUPABASE && isAvailable()) {
+    try {
+      await require('./db.service').ensureProfile(userId);
+      await cargarClientes();
+    } catch (e) {
+      console.error(`vincularGoogle ensureProfile error (userId=${key}):`, e.message);
+    }
+  }
+  if (!clientes[key]) return { ok: false, motivo: 'sin_perfil' };
+
+  const dueno = buscarPorGoogleSub(sub);
+  if (dueno && dueno !== key) return { ok: false, motivo: 'sub_en_uso' };
+  if (clientes[key].googleSub && clientes[key].googleSub !== sub) return { ok: false, motivo: 'ya_vinculada_otra' };
+
+  clientes[key] = { ...clientes[key], googleSub: sub };
+  await guardarClientes(clientes, key);
+  return { ok: true };
+}
+
+async function desvincularGoogle(userId) {
+  const key = String(userId);
+  const c = clientes[key];
+  if (!c || !c.googleSub) return false;
+
+  const { googleSub: _quitado, ...resto } = c; // eslint-disable-line no-unused-vars
+  clientes[key] = resto;
+  fs_guardarLocal();
+  if (USE_SUPABASE && isAvailable()) {
+    const { error } = await getSupabase().from('profiles').update({ google_sub: null }).eq('id', parseInt(key, 10));
+    if (error) console.error(`desvincularGoogle error (userId=${key}):`, error.message);
+  }
+  return true;
+}
+
+function fs_guardarLocal() {
+  try {
+    fs.writeFileSync(CLIENTES_FILE, JSON.stringify(clientes, null, 2));
+  } catch (error) {
+    console.error('Error al guardar clientes local:', error.message);
+  }
+}
+
 // Casas compartidas a las que pertenece una cuenta: [{ casaId, ownerId, nombre }].
 // `ownerId` es la cuenta en cuyo sheet viven los datos de la casa; sale de acá
 // (dato del servidor), nunca de un request. null = la cuenta no tiene perfil
@@ -398,6 +475,10 @@ module.exports = {
   setModoFullIA,
   getCasas,
   setCasas,
+  googleSoportado,
+  buscarPorGoogleSub,
+  vincularGoogle,
+  desvincularGoogle,
   getPermisos,
   setPermisos,
   buildProfileRow,

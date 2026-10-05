@@ -40,15 +40,16 @@ export function useLoginTelegram(onSesion) {
     ctrlRef.current = null
   }, [])
 
-  const iniciar = useCallback(async () => {
+  // `previo` ({id, secret, deepLink, expiraEnSeg}) permite esperar un pedido que ya creó
+  // otro endpoint (ej: "Entrar con Google" sin cuenta vinculada); sin él se crea uno.
+  const iniciar = useCallback(async (previo) => {
     detener()
     const ctrl = { cancelado: false, timer: null, despertar: null }
     ctrlRef.current = ctrl
 
     let datos
     try {
-      const res = await api.post('/api/auth/telegram/start')
-      datos = res.data
+      datos = previo && previo.id ? previo : (await api.post('/api/auth/telegram/start')).data
     } catch (err) {
       if (ctrl.cancelado) return
       setError(err?.response?.data?.error || 'No se pudo iniciar el ingreso con Telegram')

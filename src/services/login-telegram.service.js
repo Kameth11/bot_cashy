@@ -51,7 +51,7 @@ function resumirUserAgent(ua) {
   return sistema ? `${navegador} en ${sistema}` : navegador;
 }
 
-function crearSolicitud({ ip, userAgent } = {}) {
+function crearSolicitud({ ip, userAgent, google = null } = {}) {
   purgarVencidas();
   if (solicitudes.size >= MAX_PENDIENTES) throw new Error('demasiadas_solicitudes');
 
@@ -66,6 +66,9 @@ function crearSolicitud({ ip, userAgent } = {}) {
     ip: String(ip || ''),
     userAgent: String(userAgent || '').slice(0, 200),
     creadaEn: ahora,
+    // Si viene de "Entrar con Google" sin cuenta vinculada: qué cuenta de Google se
+    // vincularía al aprobar. Nunca sale al navegador (el `sub` queda solo en el servidor).
+    google: google && google.sub ? { sub: String(google.sub), email: String(google.email || ''), nombre: String(google.nombre || '') } : null,
   });
   return { id, secret, expiraEnSeg: Math.round(TTL_MS / 1000) };
 }
@@ -92,6 +95,7 @@ function obtenerParaAprobar(id) {
     userAgent: s.userAgent,
     navegador: resumirUserAgent(s.userAgent),
     creadaEn: s.creadaEn,
+    google: s.google ? { sub: s.google.sub, email: s.google.email, nombre: s.google.nombre } : null,
   };
 }
 

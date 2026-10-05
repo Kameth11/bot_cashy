@@ -47,6 +47,7 @@ const eventsService = require('../services/events.service');
 const loginTelegram = require('../services/login-telegram.service');
 const { puedeUsarPersonal } = require('../auth/personal-acceso');
 const { obtenerUsernameBot } = require('../lib/bot-info');
+const loginGoogle = require('../services/login-google.service');
 const state = require('../state');
 const logger = require('../lib/logger');
 const { createLimiter } = require('../lib/rate-limiter');
@@ -260,6 +261,7 @@ const verifyByUser      = createLimiter({ windowMs: 10 * 60 * 1000, max: 10 });
 const telegramStartByIp  = createLimiter({ windowMs: 10 * 60 * 1000, max: 20 });
 const telegramStatusByIp = createLimiter({ windowMs: 10 * 60 * 1000, max: 300 });
 const telegramStatusById = createLimiter({ windowMs: 10 * 60 * 1000, max: 200 });
+const googleByIp         = createLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
 
 function rateLimit(limiter, keyFn) {
   return (req, res, next) => {
@@ -476,6 +478,67 @@ app.post('/api/auth/telegram/status',
     return res.json({ estado: 'aprobada', ...armarSesion(r.userId) });
   }
   res.json({ estado: r.estado });
+});
+
+// ── Auth: entrar con Google ──
+// Qué métodos de ingreso ofrece el servidor (el dashboard muestra el botón de Google
+// solo si hay Client ID y la base soporta google_sub). El Client ID es público.
+app.get('/api/auth/config', (req, res) => {
+  const google = loginGoogle.configurado() && clienteService.googleSoportado();
+  res.json({ googleClientId: google ? loginGoogle.clientId() : null });
+});
+
+// Recibe el ID token de Google y lo verifica. Si esa cuenta de Google ya está vinculada
+// a una persona, entra directo. Si no, se abre un pedido de vínculo que se confirma en
+// el bot (el email NO identifica a nadie). Nunca responde 401 (ver más arriba).
+app.post('/api/auth/google',
+  rateLimit(googleByIp, req => req.ip),
+  async (req, res) => {
+  if (!loginGoogle.configurado() || !clienteService.googleSoportado()) {
+    return res.json({ estado: 'no_disponible' });
+  }
+
+  let g;
+  try {
+    g = await loginGoogle.verificarCredencial((req.body || {}).credential);
+  } catch (err) {
+    logger.audit('auth_google_credencial_rechazada', { motivo: err.message, ip: req.ip });
+    return res.json({ estado: err.message === 'google_email_no_verificado' ? 'email_no_verificado' : 'invalida' });
+  }
+
+  try {
+    const userId = clienteService.buscarPorGoogleSub(g.sub);
+    if (userId) {
+      if (!usuarioRegistrado(userId) && process.env.NODE_ENV !== 'development') {
+        logger.audit('auth_google_rechazado', { userId, motivo: 'usuario_no_registrado' });
+        return res.json({ estado: 'rechazada' });
+      }
+      logger.audit('auth_google_login', { userId, ip: req.ip });
+      return res.json({ estado: 'aprobada', ...armarSesion(userId) });
+    }
+
+    // Cuenta de Google sin vincular: se confirma en el bot.
+    const username = await obtenerUsernameBot().catch(() => null);
+    if (!username) {
+      return res.json({ estado: 'no_disponible' });
+    }
+    const s = loginTelegram.crearSolicitud({ ip: req.ip, userAgent: req.headers['user-agent'], google: g });
+    logger.audit('auth_google_vinculo_solicitado', { loginId: s.id, ip: req.ip });
+    res.json({
+      estado: 'vincular',
+      id: s.id,
+      secret: s.secret,
+      deepLink: `https://t.me/${username}?start=login_${s.id}`,
+      expiraEnSeg: s.expiraEnSeg,
+      email: g.email,
+    });
+  } catch (err) {
+    if (err.message === 'demasiadas_solicitudes') {
+      return res.status(429).json({ error: 'Demasiados intentos. Probá de nuevo en unos minutos.' });
+    }
+    logger.error('API', 'Error POST /api/auth/google', { err: err.message });
+    res.status(500).json({ error: 'No se pudo completar el ingreso con Google' });
+  }
 });
 
 app.post('/api/config/modo-ia', authMiddleware, ownerOnly, async (req, res) => {

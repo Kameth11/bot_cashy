@@ -68,6 +68,7 @@ require('./handlers/commands/accesos');
 require('./handlers/commands/personal');
 require('./handlers/commands/viaje');
 require('./handlers/commands/casa');
+require('./handlers/commands/google');
 
 // Load text handler (must be AFTER commands)
 require('./handlers/text');

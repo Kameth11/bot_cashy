@@ -462,6 +462,42 @@ preguntarse:
   Criterio general: **el estado (`pending*`) se setea recién después de que
   el envío del mensaje salga bien**, nunca antes.
 
+### Login con Google (etapa 1) y camino a cuentas sin Telegram
+
+**Qué hay hoy (etapa 1).** Botón "Entrar con Google" en el dashboard (Google Identity
+Services). El navegador manda el ID token; el servidor lo verifica con
+`google-auth-library` (firma + audiencia = `GOOGLE_CLIENT_ID`, email verificado) y de
+ahí solo usa el `sub`, el identificador estable de la cuenta de Google.
+- `sub` ya vinculado a una persona → entra directo (misma sesión/JWT de siempre).
+- `sub` sin vincular → `/api/auth/google` abre un pedido de vínculo (reutiliza el de
+  `login-telegram.service`, con los datos de Google guardados SOLO en el servidor) y el
+  navegador espera por `/api/auth/telegram/status`. En el bot la persona ve **qué email
+  de Google** se vincula (+ IP/navegador) y, al tocar "Sí", queda vinculado **a quien
+  tocó el botón** (`ctx.from.id`).
+- **El email no identifica a nadie.** Nunca se vincula por coincidencia de email: el
+  email de un perfil lo tipea la persona en `/start` sin verificarlo, así que usarlo
+  permitiría a quien lo "reservó" quedarse con la cuenta de otro.
+- Riesgo residual (el mismo que el login por Telegram): alguien arma un pedido con SU
+  Google y te manda el link. Defensa: la confirmación muestra el email y advierte
+  "solo si esa cuenta es tuya y el pedido lo hiciste vos ahora".
+- Datos: `profiles.google_sub` (migración 014, índice único parcial). Sin la columna o
+  sin `GOOGLE_CLIENT_ID`, `/api/auth/config` no lo ofrece y el botón no aparece.
+- Bot: `/google` (estado) y `/google desvincular`. Un `sub` ↔ una persona, y una persona
+  ↔ un `sub` (para cambiar de cuenta hay que desvincular antes).
+
+**Etapa 2 (NO implementada; a conversar antes de construir).** Meta: que nada dependa
+de Telegram y que el dashboard/una app tengan el chat. Hoy `profiles.id` ES el ID de
+Telegram y lo usan `user_id` de las tablas personales, casas, sheets y el bot. Puntos
+abiertos:
+1. ID interno propio: ¿ID negativo (no choca con Telegram, no migra lo existente) o
+   UUID/secuencia con migración de todas las FK?
+2. `profiles.telegram_id` y que el bot resuelva a la persona por ahí (cambio grande).
+3. Alta de cuentas desde la web (hoy el alta exige `/start` + `ALLOWED_EMAILS`).
+4. Vincular Telegram desde una cuenta creada con Google (enlace de un solo uso al bot).
+5. Fusión de dos cuentas (una de Telegram y otra de Google) que resultan ser la misma
+   persona: qué pasa con sus datos y con el Personal.
+6. Chat dentro del dashboard/app: mismo pipeline de texto/foto, otro canal.
+
 ### Pendiente — formalmente anotado, no implementado todavía
 
 1. **Sesión del dashboard.** *Parcial (2026-09-30):* el JWT dura 14 días

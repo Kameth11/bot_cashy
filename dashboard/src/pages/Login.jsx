@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { useAuth } from '../hooks/useAuth'
 import { useLoginTelegram } from '../hooks/useLoginTelegram'
+import { useGoogleLogin } from '../hooks/useGoogleLogin'
+import { api } from '../services/api'
 
 const ULTIMO_ID_KEY = 'cashy_last_id'
 
@@ -52,13 +54,13 @@ function esPantallaDeEscritorio() {
   try { return window.matchMedia('(min-width: 768px) and (pointer: fine)').matches } catch { return false }
 }
 
-function LoginTelegram({ onSesion, onUsarCodigo }) {
+function LoginTelegram({ onSesion, onUsarCodigo, previo = null, emailGoogle = null }) {
   const { estado, deepLink, restante, error, iniciar, consultarYa } = useLoginTelegram(onSesion)
   const [mostrarQr] = useState(esPantallaDeEscritorio)
 
   // La solicitud se crea al mostrar la pantalla: así el enlace ya está listo y el
   // toque de la persona abre Telegram sin que el navegador lo bloquee.
-  useEffect(() => { iniciar() }, [iniciar])
+  useEffect(() => { iniciar(previo) }, [iniciar, previo])
 
   if (estado === 'iniciando') {
     return <p style={{ textAlign: 'center', color: '#64748b' }}>Preparando el ingreso…</p>
@@ -83,6 +85,12 @@ function LoginTelegram({ onSesion, onUsarCodigo }) {
 
   return (
     <>
+      {emailGoogle && (
+        <p style={{ ...estilos.nota, marginTop: 0, marginBottom: '16px', color: '#374151' }}>
+          Es la primera vez que entrás con <strong>{emailGoogle}</strong>. Confirmá en Telegram que esa
+          cuenta de Google es tuya para vincularla a tu Cashy.
+        </p>
+      )}
       <a href={deepLink} target="_blank" rel="noopener noreferrer" style={estilos.boton}>
         📲 Abrir Telegram y confirmar
       </a>
@@ -103,10 +111,49 @@ function LoginTelegram({ onSesion, onUsarCodigo }) {
         <br />
         <button type="button" style={{ ...estilos.link, marginTop: '8px' }} onClick={consultarYa}>Ya confirmé</button>
       </p>
-      <p style={estilos.nota}>
-        <button type="button" style={estilos.link} onClick={onUsarCodigo}>Prefiero usar un código de 6 dígitos</button>
-      </p>
+      {onUsarCodigo && (
+        <p style={estilos.nota}>
+          <button type="button" style={estilos.link} onClick={onUsarCodigo}>Prefiero usar un código de 6 dígitos</button>
+        </p>
+      )}
     </>
+  )
+}
+
+// "Entrar con Google": el botón oficial de Google más el manejo de lo que responde el
+// servidor. Si la cuenta de Google ya está vinculada entra directo; si no, devuelve un
+// pedido de vínculo que se confirma en Telegram (`onVincular`).
+function BotonGoogle({ onSesion, onVincular }) {
+  const [error, setError] = useState('')
+  const contenedor = useRef(null)
+
+  const alCredencial = useCallback(async (credential) => {
+    setError('')
+    try {
+      const { data } = await api.post('/api/auth/google', { credential })
+      if (data.estado === 'aprobada') return await onSesion(data)
+      if (data.estado === 'vincular') return onVincular(data)
+      setError({
+        email_no_verificado: 'Esa cuenta de Google no tiene el email verificado.',
+        rechazada: 'Esa cuenta ya no tiene acceso a Cashy.',
+        no_disponible: 'El ingreso con Google no está disponible ahora.',
+      }[data.estado] || 'No se pudo validar tu cuenta de Google. Probá de nuevo.')
+    } catch (err) {
+      setError(err?.response?.data?.error || 'No se pudo completar el ingreso con Google.')
+    }
+  }, [onSesion, onVincular])
+
+  const { disponible, renderBoton } = useGoogleLogin(alCredencial)
+
+  useEffect(() => { if (disponible) renderBoton(contenedor.current) }, [disponible]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!disponible) return null
+  return (
+    <div style={{ marginTop: '20px' }}>
+      <p style={{ ...estilos.nota, margin: '0 0 12px' }}>o</p>
+      <div ref={contenedor} style={{ display: 'flex', justifyContent: 'center' }} />
+      {error && <div style={{ ...estilos.error, marginTop: '12px', marginBottom: 0 }}>{error}</div>}
+    </div>
   )
 }
 
@@ -230,6 +277,7 @@ function Login() {
   const navigate = useNavigate()
   const [modo, setModo] = useState('telegram')
   const [demo, setDemo] = useState(false)
+  const [vinculo, setVinculo] = useState(null) // pedido de vínculo de Google
 
   const irAlInicio = () => navigate('/', { replace: true })
 
@@ -279,15 +327,27 @@ function Login() {
 
         {demo ? (
           <p style={{ textAlign: 'center', color: '#10b981', fontWeight: 700 }}>Entrando en modo demo...</p>
-        ) : modo === 'telegram' ? (
-          <LoginTelegram onSesion={alAprobarse} onUsarCodigo={() => setModo('codigo')} />
+        ) : vinculo ? (
+          <>
+            <LoginTelegram onSesion={alAprobarse} previo={vinculo} emailGoogle={vinculo.email} />
+            <p style={estilos.nota}>
+              <button type="button" style={estilos.link} onClick={() => setVinculo(null)}>Cancelar</button>
+            </p>
+          </>
         ) : (
-          <LoginCodigo
-            login={login}
-            requestCode={requestCode}
-            onNavegar={irAlInicio}
-            onUsarTelegram={() => setModo('telegram')}
-          />
+          <>
+            {modo === 'telegram' ? (
+              <LoginTelegram onSesion={alAprobarse} onUsarCodigo={() => setModo('codigo')} />
+            ) : (
+              <LoginCodigo
+                login={login}
+                requestCode={requestCode}
+                onNavegar={irAlInicio}
+                onUsarTelegram={() => setModo('telegram')}
+              />
+            )}
+            <BotonGoogle onSesion={alAprobarse} onVincular={setVinculo} />
+          </>
         )}
 
         <button type="button" onClick={entrarDemo} style={{ ...estilos.botonSecundario, marginTop: '16px' }}>

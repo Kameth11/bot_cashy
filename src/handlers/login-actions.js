@@ -12,6 +12,7 @@ const { Markup } = require('telegraf');
 const { bot } = require('../lib/telegraf');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const loginTelegram = require('../services/login-telegram.service');
+const clienteService = require('../services/cliente.service');
 const { escapeMarkdown } = require('../utils/formatter');
 const logger = require('../lib/logger');
 
@@ -35,6 +36,7 @@ function horaLocal(ms) {
 }
 
 function mensajeConfirmacion(pedido, ahora = Date.now()) {
+  if (pedido.google) return mensajeVinculoGoogle(pedido, ahora);
   return (
     '🔐 *¿Querés entrar al dashboard de Cashy?*\n\n' +
     'Pedido hecho desde:\n' +
@@ -44,6 +46,28 @@ function mensajeConfirmacion(pedido, ahora = Date.now()) {
     'Aprobalo *solo si lo pediste vos ahora*. Si no reconocés este pedido, tocá *No fui yo*.'
   );
 }
+
+// Entrar con Google desde una cuenta de Google que todavía no está vinculada: la
+// persona confirma acá que ESA cuenta de Google es suya. Es la defensa contra
+// alguien que arma un pedido con SU Google y te manda el link: se muestra el email.
+function mensajeVinculoGoogle(pedido, ahora = Date.now()) {
+  return (
+    '🔗 *¿Vincular esta cuenta de Google a tu Cashy?*\n\n' +
+    `• 📧 Cuenta de Google: *${escapeMarkdown(pedido.google.email || 'desconocida')}*\n` +
+    `• 💻 Pedido desde: ${escapeMarkdown(pedido.navegador)}\n` +
+    `• 🌐 IP ${escapeMarkdown(pedido.ip || 'desconocida')}\n` +
+    `• 🕒 ${horaLocal(pedido.creadaEn)} (${haceCuanto(pedido.creadaEn, ahora)})\n\n` +
+    'Quien entre con esa cuenta de Google va a poder ver *todo lo tuyo* en el dashboard. ' +
+    'Aprobalo *solo si esa cuenta es tuya y el pedido lo hiciste vos ahora*. Si no, tocá *No fui yo*.'
+  );
+}
+
+const MOTIVOS_VINCULO = {
+  sub_en_uso: '⚠️ Esa cuenta de Google ya está vinculada a otra persona de Cashy.',
+  ya_vinculada_otra: '⚠️ Tu cuenta de Cashy ya tiene otra cuenta de Google vinculada. Usá /google desvincular y volvé a intentar.',
+  sin_perfil: '⚠️ No pude preparar tu perfil. Cargá un movimiento y probá de nuevo.',
+  no_disponible: '⚠️ El ingreso con Google no está disponible ahora.',
+};
 
 /**
  * Se llama desde /start cuando el payload es login_<id>. NO toca el estado del
@@ -84,9 +108,26 @@ async function handleLoginDecision(ctx) {
   }
 
   if (decision === 'ok') {
+    // Si el pedido trae una cuenta de Google sin vincular, aprobar = vincularla a
+    // quien toca el botón (ctx.from.id), nunca a una identidad que venga del link.
+    const pedido = loginTelegram.ID_REGEX.test(String(id || '')) ? loginTelegram.obtenerParaAprobar(id) : null;
+    if (!pedido) return ctx.editMessageText(MENSAJE_VENCIDO.replace(/\*/g, ''));
+    if (pedido.google) {
+      const v = await clienteService.vincularGoogle(userId, pedido.google.sub);
+      if (!v.ok) {
+        loginTelegram.rechazar(id);
+        logger.audit('auth_google_vinculo_rechazado', { loginId: id, userId, motivo: v.motivo });
+        return ctx.editMessageText(MOTIVOS_VINCULO[v.motivo] || MOTIVOS_VINCULO.no_disponible);
+      }
+      logger.audit('auth_google_vinculado', { loginId: id, userId });
+    }
+
     // La identidad es la de quien toca el botón, no la del callback.
     const aprobado = loginTelegram.aprobar(id, userId);
-    if (!aprobado) return ctx.editMessageText(MENSAJE_VENCIDO.replace(/\*/g, ''));
+    if (!aprobado) {
+      if (pedido.google) await clienteService.desvincularGoogle(userId);
+      return ctx.editMessageText(MENSAJE_VENCIDO.replace(/\*/g, ''));
+    }
     logger.audit('auth_telegram_login_aprobado', { loginId: id, userId });
     return ctx.editMessageText('✅ Listo, ya podés volver al navegador: va a entrar solo.\n\nSi no fuiste vos, avisá al administrador.');
   }
@@ -99,4 +140,4 @@ async function handleLoginDecision(ctx) {
 
 bot.action(/^login_(ok|no):([A-Za-z0-9_-]{22})$/, handleLoginDecision);
 
-module.exports = { iniciarAprobacionLogin, handleLoginDecision, mensajeConfirmacion, haceCuanto };
+module.exports = { iniciarAprobacionLogin, handleLoginDecision, mensajeConfirmacion, mensajeVinculoGoogle, haceCuanto };

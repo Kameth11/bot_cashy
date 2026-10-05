@@ -36,7 +36,9 @@ reportes, etc.), ver `ROADMAP_CASHY_CLINICA.md`.
 
 El dashboard se sirve desde el mismo proceso/servicio que el bot (Express
 sirve el build estático de `dashboard/dist`). Tiene su propia API (`src/api/`)
-montada en el mismo `src/index.js`. Auth del dashboard: **"Entrar con Telegram"**
+montada en el mismo `src/index.js`. Auth del dashboard: **"Entrar con Google"** (opcional,
+`GOOGLE_CLIENT_ID` + migración 014; se vincula la primera vez desde el bot, nunca por
+email), **"Entrar con Telegram"**
 (deep link/QR + confirmación en el bot, `login-telegram.service.js`; ver
 `ARCHITECTURE.md` sección 4) o, como alternativa, código de Telegram +
 JWT de 14 días con renovación deslizante y tope absoluto de 90 días (ver
@@ -163,6 +165,7 @@ Plan completo, fases y decisiones en `PLAN_COMPROBANTES.md`.
 | `/ayuda` | Todos los comandos |
 | `/personal` | Resumen del mes de finanzas personales |
 | `/viaje` | Ver / abrir / cerrar un viaje (agrupa gastos personales) |
+| `/google` | Ver / quitar la cuenta de Google vinculada para entrar al dashboard |
 | `/casa` | Gastos compartidos: resumen, saldos, invitar, saldar (ver sección Casas) |
 
 ---
