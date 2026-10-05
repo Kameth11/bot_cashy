@@ -17,6 +17,7 @@ const { SCOPED_TABLES } = require('../src/lib/tenant-db');
 const SRC_DIR = path.join(__dirname, '..', 'src');
 const ALLOWED_FILES = new Set([
   path.join(SRC_DIR, 'lib', 'tenant-db.js'),
+  path.join(SRC_DIR, 'lib', 'persona-db.js'),
   path.join(SRC_DIR, 'lib', 'supabase.js'),
   path.join(SRC_DIR, 'services', 'tenant.service.js'),
 ]);
@@ -33,6 +34,19 @@ const ALLOWED_FILES = new Set([
 //    activarlas hay que sumarles tenant_id y pasarlas a SCOPED_TABLES.
 const GLOBAL_TABLES = new Set(['profiles', 'tenants', 'tenant_requests', 'auth_codes']);
 const DRAFT_TABLES = new Set(['movimientos_v2', 'movimiento_eventos_v2']);
+
+// Las tablas del ámbito PERSONAL son de cada persona (no del consultorio): además de
+// forTenant() tienen que filtrar por user_id, y eso solo lo garantiza forPersona()
+// (src/lib/persona-db.js). personal.service.js usa forTenant() directo SOLO para el
+// espejo del modo PERSONAL_STORE=sheets (que filtra por user_id a mano) y es el único
+// archivo con esa excepción.
+const PERSONA_TABLES = new Set([
+  'movimientos_personales',
+  'viajes_personales',
+  'presupuestos_personales',
+  'preferencias_ambito_personales',
+]);
+const PERSONA_LEGACY_FILES = new Set([path.join(SRC_DIR, 'services', 'personal.service.js')]);
 
 const FROM_LITERAL = /\.from\(\s*['"`]([a-z_0-9]+)['"`]\s*\)/g;
 const FROM_ANY = /\.from\(/;
@@ -51,9 +65,11 @@ function listJsFiles(dir) {
 
 // Analiza el contenido de un archivo y devuelve la lista de problemas. Pura
 // (sin I/O) para poder testearla.
-function analizarContenido(content, { scoped = SCOPED_TABLES } = {}) {
+function analizarContenido(content, { scoped = SCOPED_TABLES, personaLegacy = false } = {}) {
   const problemas = [];
   const lines = content.split('\n');
+  const importaPersona = /require\([^)]*persona-db[^)]*\)/.test(content);
+  const usaForTenant = /forTenant\(/.test(content);
 
   lines.forEach((line, idx) => {
     if (RPC.test(line)) {
@@ -78,6 +94,16 @@ function analizarContenido(content, { scoped = SCOPED_TABLES } = {}) {
     }
 
     for (const tabla of literales) {
+      if (PERSONA_TABLES.has(tabla) && !personaLegacy && !ignorada) {
+        // Válido: forPersona( en la ventana, o un archivo que importa persona-db y
+        // NO usa forTenant (el cliente sale de una variable, p.from(...)). Mezclar
+        // forTenant y tablas personales en un mismo archivo sigue prohibido.
+        const viaPersona = ventana.includes('forPersona(') || (importaPersona && !usaForTenant);
+        if (!viaPersona) {
+          problemas.push({ linea: idx + 1, texto: line.trim(), motivo: `'${tabla}' es personal: usar forPersona(tenantId, userId).from() (filtra por persona)` });
+        }
+        continue;
+      }
       if (scoped.has(tabla)) {
         if (!ventana.includes('forTenant(') && !ignorada) {
           problemas.push({ linea: idx + 1, texto: line.trim(), motivo: `'${tabla}' es de negocio: usar forTenant(tenantId).from()` });
@@ -99,7 +125,7 @@ function main() {
   for (const file of listJsFiles(SRC_DIR)) {
     if (ALLOWED_FILES.has(file)) continue;
     const content = fs.readFileSync(file, 'utf8');
-    for (const p of analizarContenido(content)) {
+    for (const p of analizarContenido(content, { personaLegacy: PERSONA_LEGACY_FILES.has(file) })) {
       offenders.push(`${path.relative(process.cwd(), file)}:${p.linea}: ${p.texto}\n      -> ${p.motivo}`);
     }
   }
@@ -115,4 +141,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { analizarContenido, GLOBAL_TABLES, DRAFT_TABLES };
+module.exports = { analizarContenido, GLOBAL_TABLES, DRAFT_TABLES, PERSONA_TABLES };

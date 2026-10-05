@@ -65,6 +65,7 @@ describe('lib/tenant-db forTenant', () => {
       'comprobantes',
       'movimientos',
       'movimientos_personales',
+      'preferencias_ambito_personales',
       'presupuestos_personales',
       'profesionales',
       'viajes_personales',

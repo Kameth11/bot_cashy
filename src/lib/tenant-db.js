@@ -18,6 +18,9 @@ const SCOPED_TABLES = new Set([
   'movimientos_personales',
   'viajes_personales',
   'presupuestos_personales',
+  // Memoria de correcciones de ámbito (sql/migrations/013). Como el resto de las
+  // personales, solo se consulta con forPersona() (lib/persona-db.js).
+  'preferencias_ambito_personales',
   // Comprobantes leídos de fotos/PDFs (sql/migrations/011). El código sondea
   // si la tabla existe antes de usarla (comprobante-archivo.service.js).
   'comprobantes',
