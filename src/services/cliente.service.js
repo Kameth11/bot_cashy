@@ -6,6 +6,11 @@ const { resolveOrCreateTenantId } = require('./tenant-provisioning.service');
 
 let clientes = {};
 
+// ¿La tabla profiles tiene la columna `activo` (migración 013)? Se detecta al cargar los
+// perfiles (select '*' devuelve todas las columnas). Mientras no exista no se manda en
+// ningún upsert: mandarla sin la columna haría fallar el alta de TODOS los perfiles.
+let soportaActivo = false;
+
 // Serializa escrituras a clientes.json/Supabase para evitar que dos
 // registros concurrentes pisen el archivo con datos desactualizados.
 let writeQueue = Promise.resolve();
@@ -37,6 +42,8 @@ function buildProfileRow(userId, clienteData = {}, tenantId = null) {
   // upsert de cualquier usuario, incluso de los que no usan casas. Un array
   // vacío SÍ se manda: es como se borra la última casa de un perfil.
   if (Array.isArray(clienteData.casas)) row.casas = clienteData.casas;
+  // Un cliente que se (re)registra está activo: reactiva un perfil dado de baja lógica.
+  if (soportaActivo) row.activo = true;
   if (tenantId) row.tenant_id = tenantId;
   return row;
 }
@@ -63,7 +70,11 @@ async function cargarClientes() {
       }
 
       clientes = {};
+      soportaActivo = Object.prototype.hasOwnProperty.call(data[0], 'activo');
       for (const profile of data) {
+        // Baja lógica: quien salió del consultorio pero tiene Personal conserva su
+        // perfil (las tablas personales dependen de él) y NO figura como cliente.
+        if (profile.activo === false) continue;
         const userId = String(profile.id);
         clientes[userId] = {
           sheetId: profile.sheet_id || null,
@@ -190,7 +201,20 @@ async function eliminarCliente(userId) {
       try {
         const supabase = getSupabase();
         const { error: deleteError } = await supabase.from('profiles').delete().eq('id', parseInt(key, 10));
-        if (deleteError) {
+        if (deleteError && deleteError.code === '23503') {
+          // Violación de clave foránea: la persona tiene datos personales (las tablas
+          // apuntan al perfil con ON DELETE RESTRICT, migración 013). Su Personal es
+          // SUYO: se conserva y el perfil pasa a baja lógica en vez de borrarse.
+          const { error: bajaError } = await supabase
+            .from('profiles')
+            .update({ activo: false, usuarios: [] })
+            .eq('id', parseInt(key, 10));
+          if (bajaError) {
+            console.error(`Supabase eliminarCliente baja lógica error (userId=${key}):`, bajaError.message);
+          } else {
+            console.log(`eliminarCliente: userId=${key} tiene Personal; se dio de baja lógica en vez de borrar el perfil`);
+          }
+        } else if (deleteError) {
           console.error(`Supabase eliminarCliente delete error (userId=${key}):`, deleteError.message);
         }
         for (const ownerId of ownersActualizados) {

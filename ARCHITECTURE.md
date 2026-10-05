@@ -150,6 +150,53 @@ catastrófico, no para vender al segundo/tercer cliente.
   definir antes de cobrarle a un cliente externo real. No bloquea el
   trabajo técnico de las fases 1-3.
 
+### Personal por persona en Supabase (`PERSONAL_STORE`)
+
+Hasta ahora lo personal vivía en pestañas del Google Sheet **del dueño**, así que un
+agregado (que comparte ese sheet) no podía usarlo sin leer/escribir el del dueño: la
+restricción a dueño/admin del 2026-09-23. Con `PERSONAL_STORE=supabase` cada persona
+tiene **su** Personal, guardado en tablas por `user_id` y sin Sheet.
+
+- **Interruptor `PERSONAL_STORE=sheets|supabase`** (default `sheets` = comportamiento de
+  siempre; `supabase` exige `USE_SUPABASE=true`, si no se ignora). Se despliega dormido y
+  se activa a mano después de migrar e importar (guía abajo). `src/lib/personal-store.js`.
+- **Quién puede usarlo** (`src/auth/personal-acceso.js`, un único criterio para bot, API y
+  dashboard): modo `sheets`, dueño/admin; modo `supabase`, **cualquier usuario registrado**.
+  `/api/auth/me` devuelve `puedePersonal` y el dashboard muestra la sección según eso.
+- **Aislamiento por persona** (`src/lib/persona-db.js`, `forPersona(tenantId, userId)`):
+  dentro de un tenant conviven dueño, odontólogos y secretaria; `forTenant` solo aísla por
+  consultorio. `forPersona` **fuerza `user_id`** en select/update/delete y en insert/upsert
+  (ignora el que venga, y no deja mover una fila a otra persona). `check:tenant` exige que
+  las tablas personales se consulten solo con `forPersona` (único archivo con excepción:
+  `personal.service.js`, por el espejo del modo `sheets`).
+- **La API usa siempre la identidad del token**: un `userId`/`de` en el request se ignora.
+- **Sin Sheet ni espejo en modo `supabase`**: lo personal de un agregado nunca se escribe
+  en el sheet del dueño. Los errores de la base **se propagan** (el usuario ve el error, no
+  un falso "registrado"); solo son tolerantes los avisos decorativos (alerta de presupuesto,
+  preferencias, viaje activo al clasificar).
+- **`created_by`**: cada fila registra quién la cargó (distinto del dueño del Personal);
+  prepara el compartir.
+- **Salir / reiniciar no destruye el Personal**: las FK a `profiles` son `RESTRICT`
+  (migración 013) y `eliminarCliente` pasa a baja lógica (`profiles.activo=false`) si el
+  borrado choca; `cargarClientes` ignora los perfiles inactivos y re-registrarse los reactiva.
+- **Límite**: los comprobantes (foto/PDF) personales de un agregado **siguen yendo a
+  consultorio**, porque el registro de comprobantes vive en el sheet del consultorio.
+- **Pendiente (proyecto siguiente): compartir.** `personal_accesos(owner, grantee, nivel
+  ver|cargar)`, helper único `resolverPersonaObjetivo`, `/personal compartir`, selector
+  "Personal de <persona>" y SSE al dueño de los datos; cada persona decide a quién le da
+  acceso y con qué nivel (caso: la secretaria maneja los gastos personales de los odontólogos).
+
+**Guía de activación** (los pasos 1, 2 y 4 los ejecuta el dueño):
+1. Correr `sql/migrations/008_movimientos_personales.sql` y después `013_personal_por_persona.sql`
+   en el SQL editor de Supabase (idempotentes; copiar el archivo crudo desde GitHub).
+2. `node scripts/importar-personal-a-supabase.js` (simulacro: no escribe), revisar el informe
+   y recién entonces `--aplicar`. Es idempotente y lee siempre del Sheet.
+3. Verificar en Supabase que `movimientos_personales` tiene las filas.
+4. En Railway: `PERSONAL_STORE=supabase` y redeploy.
+5. Probar con un agregado: "pasaje a Puerto Madryn 500 dólares" sale personal, lo ve solo él.
+6. Verificar que el deploy quedó vivo (`gh api repos/<repo>/deployments/<id>/statuses`).
+Para volver atrás basta quitar `PERSONAL_STORE` (vuelve a `sheets`); los datos de Supabase quedan.
+
 ### Espacios compartidos (CASA): compartir datos entre cuentas
 
 Hasta ahora un usuario pertenecía a **un solo espacio** (su consultorio, como
@@ -248,7 +295,10 @@ preguntarse:
   Mismo criterio y misma fuente (`resolverPermisos`) en ambos lados; el
   detalle del mapeo comando/intent → permiso vive en el skill
   `bot-cashy-arquitectura`.
-- **Finanzas personales restringidas a dueño/admin** en las cuatro
+- **Personal por persona en Supabase (`PERSONAL_STORE`)** — reemplaza, con
+  condiciones, la restricción a dueño/admin de abajo (que sigue vigente en
+  modo `sheets`). Ver la sección "Personal por persona" más adelante.
+- **Finanzas personales restringidas a dueño/admin** (modo `sheets`, el default) en las cuatro
   superficies donde se podían tocar: `/api/personal/*` (`ownerOnly`),
   `/personal` y `/viaje` del bot (`requiereDuenoBot`), la detección
   automática de ámbito y el botón "Es personal" de la confirmación NLP, y
@@ -639,3 +689,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-10-03 | Las fotos de comprobantes no van a CASA; un ingreso nunca va a CASA | El registro del comprobante colapsa el ámbito a consultorio/personal; CASA es solo para gastos compartidos |
 | 2026-10-03 | Un pago a una empresa de servicios (luz, gas, agua, telefonía, combustible) es gasto de `servicios` aunque venga de Mercado Pago/homebanking; catálogo en `src/utils/proveedores-servicios.js`, y una "transferencia" que no lo es se reintenta como factura | La captura de un pago a Edenor se parecía a una transferencia y se rechazaba; el nombre del emisor es más confiable que la interpretación del modelo |
 | 2026-10-05 | Login del dashboard "Entrar con Telegram" por deep link con confirmación en el bot; estado en memoria (TTL 5 min), `id` público + `secret` del navegador (hasheado), sesión de un solo uso, identidad = `ctx.from.id`; el código de 6 dígitos queda como alternativa | El login pedía el ID numérico de Telegram (casi nadie lo conoce) y copiar un código. Sin SQL nuevo; la confirmación con IP/navegador cubre el phishing de links ajenos. Limitaciones: una sola instancia y un login en curso se pierde en un redeploy |
+| 2026-10-05 | Personal por persona en Supabase detrás de `PERSONAL_STORE` (default `sheets`): tablas por `user_id`, acceso solo vía `forPersona`, abierto a todo usuario registrado en modo `supabase`; **reemplaza con condiciones** la restricción a dueño/admin del 2026-09-23 | Un agregado (la secretaria, los odontólogos) no podía tener Personal porque compartía el sheet del dueño. Con datos por persona en la base la fuga desaparece. Condiciones: `forPersona` obligatorio (`check:tenant`), identidad siempre del token, sin espejo al Sheet, errores propagados, FK en RESTRICT + baja lógica. Los comprobantes personales de agregados quedan fuera (viven en el sheet del consultorio) |

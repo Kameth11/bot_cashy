@@ -320,6 +320,13 @@ excedidos en el dashboard.
 **Superficies**: comandos `/personal` y `/viaje`; vista Personal en el
 dashboard con switch de ámbito en el header; 9 endpoints bajo `/api/personal`.
 
+**Actualización (2026-10-05): Personal por persona en Supabase.** Con `PERSONAL_STORE=supabase`
+(`ARCHITECTURE.md` "Personal por persona") cada usuario registrado —incluidos los agregados
+de un consultorio— tiene su Personal privado en tablas por `user_id`, sin Sheet. Detrás de un
+interruptor, con migración 013 e importación idempotente desde el Sheet. **Próximo**: compartir
+el Personal de una persona con otra (ver/cargar), pedido para que la secretaria maneje los
+gastos personales de los odontólogos; y comprobantes personales de agregados.
+
 **Pendiente**: validación manual extremo a extremo con el Sheet real (las
 pestañas se auto-crean pero no se probó contra credenciales productivas), y el
 resumen periódico por Telegram (hoy el aviso es sólo al momento de cargar).

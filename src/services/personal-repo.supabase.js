@@ -162,14 +162,22 @@ async function obtenerViajeActivo(userId) {
   return filas.length ? rowToViaje(filas[0]) : null;
 }
 
-async function crearViaje(userId, { idViaje, nombre, fechaInicio, fechaFin, presupuesto = null, moneda = 'Pesos' }, { createdBy } = {}) {
+// Todos los viajes de la persona (activos y cerrados): lo usa la importación para no
+// duplicar. No se usa en el flujo normal.
+async function listarViajes(userId) {
+  const p = await db(userId);
+  const filas = datos(await p.from('viajes_personales').select('*'), 'listar viajes') || [];
+  return filas.map(r => ({ ...rowToViaje(r), estado: r.estado }));
+}
+
+async function crearViaje(userId, { idViaje, nombre, fechaInicio, fechaFin, presupuesto = null, moneda = 'Pesos' }, { createdBy, estado = 'activo' } = {}) {
   const p = await db(userId);
   const respuesta = await p.from('viajes_personales').insert({
     legacy_id: idViaje,
     nombre,
     fecha_inicio: fechaStrAIso(fechaInicio),
     fecha_fin: fechaStrAIso(fechaFin),
-    estado: 'activo',
+    estado, // 'activo' en el uso normal; la importación también trae viajes ya cerrados
     presupuesto: presupuesto ?? null,
     moneda,
     created_by: createdBy ?? userId,
@@ -244,6 +252,7 @@ module.exports = {
   insertarMovimiento,
   eliminarMovimiento,
   obtenerViajeActivo,
+  listarViajes,
   crearViaje,
   cerrarViaje,
   listarPresupuestos,

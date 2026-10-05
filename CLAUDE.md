@@ -182,12 +182,13 @@ Además del cashflow del consultorio, el bot registra **finanzas personales**
   Siempre corregible con un botón en la confirmación.
 - **Categorías propias y cerradas** (18 egreso + 4 ingreso), distintas de las
   del consultorio.
-- **Solo para el dueño o admin**: son las finanzas personales del dueño de la
-  cuenta (viven en pestañas de su mismo sheet, no hay una copia por invitado).
-  `/personal`, `/viaje`, todo `/api/personal/*` y el botón "Es personal" de la
-  confirmación NLP están restringidos a dueño/admin
-  (`requiereDuenoBot`/`ownerOnly`); para un invitado, la detección automática
-  de ámbito se fuerza siempre a `consultorio`.
+- **Quién lo usa**: depende de `PERSONAL_STORE` (`src/lib/personal-store.js`).
+  `sheets` (default): solo dueño/admin, en pestañas del sheet del dueño; un invitado
+  queda forzado a `consultorio`. `supabase`: **cada usuario registrado tiene el suyo**,
+  privado, en tablas por `user_id` y sin Sheet (acceso solo con `forPersona`, ver
+  `ARCHITECTURE.md` "Personal por persona"). Un único criterio en
+  `src/auth/personal-acceso.js` (`puedeUsarPersonal`) para bot, API y dashboard.
+  Los comprobantes personales de un agregado siguen yendo a consultorio.
 
 Detalle completo en `ROADMAP_CASHY_CLINICA.md` sección 5.b.
 
