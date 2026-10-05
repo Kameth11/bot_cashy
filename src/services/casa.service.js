@@ -22,7 +22,7 @@ const { obtenerClientePorUserId } = require('../auth');
 const clienteService = require('./cliente.service');
 const { convertirAPesos } = require('./movimiento.service');
 const { calcularSaldos } = require('../lib/casa-saldos');
-const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina, fechaStrAIso } = require('../utils/date');
+const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina, fechaStrAIso, esFechaValidaDdmmaaaa } = require('../utils/date');
 const { emitMovimientosUpdated } = require('./events.service');
 const logger = require('../lib/logger');
 
@@ -491,6 +491,81 @@ async function listarMovimientos(userId, casaId, { mes } = {}) {
   return filtrados.sort((a, b) => `${fechaStrAIso(b.fecha) || ''} ${b.hora}`.localeCompare(`${fechaStrAIso(a.fecha) || ''} ${a.hora}`));
 }
 
+// Puede editar quien lo cargó o quien creó la casa (mismo criterio que borrar). Solo gastos:
+// una liquidación ya movió saldos entre personas, para corregirla se borra y se vuelve a cargar.
+// Solo se validan y escriben los campos que realmente cambian: el monto en pesos conserva la
+// cotización del día original salvo que cambie el monto o la moneda.
+async function editarMovimiento(userId, casaId, idMov, cambios = {}) {
+  const ctx = await obtenerCasaParaMiembro(userId, casaId);
+  const sheet = await tab(ctx.ownerId, TAB_MOVIMIENTOS);
+
+  return withOwnerWriteLock(ctx.ownerId, async () => {
+    const fila = (await sheet.getRows()).find((r) => String(r.get('ID_Casa') || '') === casaId && String(r.get('ID_Mov') || '') === String(idMov));
+    if (!fila) return null;
+
+    const actual = rowToMovimiento(fila);
+    if (!ctx.esCreador && actual.idOrigen !== String(userId)) {
+      throw new CasaError('sin_permiso', 'Solo quien lo cargó o quien creó la casa puede editarlo');
+    }
+    if (actual.tipo !== 'gasto') throw new CasaError('no_editable', 'Un pago entre miembros no se edita: borralo y volvé a cargarlo');
+
+    const nuevo = {};
+    if (cambios.descripcion !== undefined) {
+      const d = String(cambios.descripcion || '').trim();
+      if (d.length < 2) throw new CasaError('descripcion_invalida', 'Descripción inválida');
+      nuevo.descripcion = d;
+    }
+    if (cambios.monto !== undefined) nuevo.monto = validarMonto(cambios.monto);
+    if (cambios.moneda !== undefined) nuevo.moneda = validarMoneda(cambios.moneda);
+    if (cambios.fecha !== undefined) {
+      if (!esFechaValidaDdmmaaaa(cambios.fecha)) throw new CasaError('fecha_invalida', 'Fecha inválida');
+      nuevo.fecha = String(cambios.fecha);
+    }
+    if (cambios.categoria !== undefined) nuevo.categoria = String(cambios.categoria || '');
+    if (cambios.metodoPago !== undefined) nuevo.metodoPago = String(cambios.metodoPago || '');
+    if (cambios.notas !== undefined) nuevo.notas = String(cambios.notas || '');
+
+    // Quien pagó / entre quiénes: tienen que ser miembros activos, o ya figurar en este gasto
+    // (alguien que se fue de la casa después no impide corregir el resto).
+    const vigentes = new Set([...activos(ctx.miembros).map((m) => m.id), actual.pagoPor, ...actual.repartoEntre]);
+    const validarMiembro = (id, campo) => {
+      if (!vigentes.has(String(id))) throw new CasaError(`${campo}_invalido`, 'Ese miembro no pertenece a la casa');
+      return String(id);
+    };
+    if (cambios.pagoPor !== undefined) nuevo.pagoPor = validarMiembro(cambios.pagoPor, 'pagador');
+    if (cambios.repartoEntre !== undefined) {
+      if (!Array.isArray(cambios.repartoEntre) || cambios.repartoEntre.length === 0) throw new CasaError('reparto_invalido', 'El reparto no puede quedar vacío');
+      nuevo.repartoEntre = [...new Set(cambios.repartoEntre.map((id) => validarMiembro(id, 'reparto')))];
+    }
+
+    // Lo que viene igual a lo que ya está no es un cambio.
+    for (const campo of Object.keys(nuevo)) {
+      const igual = campo === 'repartoEntre'
+        ? [...nuevo.repartoEntre].sort().join(',') === [...actual.repartoEntre].sort().join(',')
+        : campo === 'monto' ? Number(nuevo.monto) === Number(actual.monto) : nuevo[campo] === actual[campo];
+      if (igual) delete nuevo[campo];
+    }
+    if (Object.keys(nuevo).length === 0) return actual;
+
+    if ('monto' in nuevo || 'moneda' in nuevo) {
+      nuevo.montoPesos = convertirAPesos(nuevo.monto ?? actual.monto, nuevo.moneda ?? actual.moneda);
+    }
+
+    const columnas = {
+      descripcion: 'Descripcion', monto: 'Monto', moneda: 'Moneda', montoPesos: 'MontoPesos', fecha: 'Fecha',
+      categoria: 'Categoria', metodoPago: 'MetodoPago', pagoPor: 'PagoPor', notas: 'Notas',
+    };
+    for (const [campo, valor] of Object.entries(nuevo)) {
+      if (campo === 'repartoEntre') fila.set('RepartoEntre', valor.join(','));
+      else fila.set(columnas[campo], valor);
+    }
+    await fila.save();
+    notificarMiembros(ctx.miembros);
+    logger.audit('casa_movimiento_editado', { userId, casaId, idMov, campos: Object.keys(nuevo).filter((k) => k !== 'montoPesos') });
+    return { ...actual, ...nuevo };
+  });
+}
+
 // Puede borrar quien lo cargó o quien creó la casa.
 async function eliminarMovimiento(userId, casaId, idMov) {
   const ctx = await obtenerCasaParaMiembro(userId, casaId);
@@ -585,6 +660,7 @@ module.exports = {
   registrarGasto,
   registrarLiquidacion,
   listarMovimientos,
+  editarMovimiento,
   eliminarMovimiento,
   calcularSaldosCasa,
   calcularResumenCasa,

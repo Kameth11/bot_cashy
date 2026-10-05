@@ -158,7 +158,18 @@ function fechaStrAIso(fecha) {
   return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
 }
 
+// ¿Es una fecha real del calendario en formato DD/MM/AAAA? (rechaza 31/02, 00/10, año 1800)
+function esFechaValidaDdmmaaaa(fecha) {
+  const m = String(fecha || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return false;
+  const d = Number(m[1]); const mes = Number(m[2]); const a = Number(m[3]);
+  if (a < 1990 || a > 2100) return false;
+  const f = new Date(Date.UTC(a, mes - 1, d));
+  return f.getUTCFullYear() === a && f.getUTCMonth() === mes - 1 && f.getUTCDate() === d;
+}
+
 module.exports = {
+  esFechaValidaDdmmaaaa,
   normalizarFecha,
   esHoy,
   esEstaSemana,

@@ -454,6 +454,9 @@ bot.on('text', async (ctx) => {
 
   if (text.startsWith('/')) return;
 
+  // /eliminar y /editar de Personal y Casa: el mensaje es el valor nuevo (o hay un botón pendiente).
+  if (state.pendingGestion.has(userId) && await require('./gestion-gastos').procesarTextoGestion(ctx, text)) return;
+
   // Confirmación de /salir
   const { procesarConfirmacionSalir } = require('./commands/salir');
   if (state.pendingReinicios.has(`salir_${userId}`)) {

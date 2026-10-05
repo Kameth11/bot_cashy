@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import BarraCategoria from '../components/BarraCategoria'
+import NuevoCasaModal from '../components/NuevoCasaModal'
 import DatePickerButton from '../components/DatePickerButton'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
@@ -124,6 +125,9 @@ export default function CasaPage() {
   const [estado, setEstado] = useState({ clave: null, resumen: null, error: null })
   const [error, setError] = useState(null)
   const [reload, setReload] = useState(0)
+  const [editando, setEditando] = useState(null)   // gasto que se está corrigiendo
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+  const [edicionError, setEdicionError] = useState(null)
   const [mostrarOtra, setMostrarOtra] = useState(false)
   const [nuevoMiembro, setNuevoMiembro] = useState('')
   const [invitacion, setInvitacion] = useState(null)
@@ -207,6 +211,20 @@ export default function CasaPage() {
     accion(() => api.post(`/api/casa/${casaId}/liquidaciones`, { de: t.de, para: t.para, monto: t.monto, moneda }), 'No se pudo registrar el pago')
   }
 
+  const guardarEdicion = async (cambios) => {
+    setEdicionError(null)
+    setGuardandoEdicion(true)
+    try {
+      await api.put(`/api/casa/${casaId}/movimientos/${editando.idMov}`, cambios)
+      setEditando(null)
+      refrescar()
+    } catch (err) {
+      setEdicionError(mensajeDe(err, 'No se pudo guardar el cambio'))
+    } finally {
+      setGuardandoEdicion(false)
+    }
+  }
+
   const borrar = (m) => {
     if (!window.confirm(`¿Borrar "${m.descripcion}"? Los saldos se recalculan.`)) return
     accion(() => api.delete(`/api/casa/${casaId}/movimientos/${m.idMov}`), 'No se pudo borrar el movimiento')
@@ -251,6 +269,16 @@ export default function CasaPage() {
 
   return (
     <div className="page">
+      {editando && (
+        <NuevoCasaModal
+          casaId={casaId}
+          inicial={editando}
+          guardando={guardandoEdicion}
+          error={edicionError}
+          onGuardar={guardarEdicion}
+          onCerrar={() => { setEditando(null); setEdicionError(null) }}
+        />
+      )}
       <div className="page-header">
         <div>
           <h1 className="page-title">🏡 {resumen?.casa.nombre || casas.find(c => c.casaId === casaId)?.nombre}</h1>
@@ -391,6 +419,7 @@ export default function CasaPage() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="casa-saldo-monto">{formatMontoConMoneda(m.monto, m.moneda)}</span>
+                      {m.puedoBorrar && m.tipo === 'gasto' && <button className="action-btn" title="Editar" onClick={() => { setEdicionError(null); setEditando(m) }}>✏️</button>}
                       {m.puedoBorrar && <button className="action-btn" title="Borrar" onClick={() => borrar(m)}>🗑</button>}
                     </div>
                   </div>

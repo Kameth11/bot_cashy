@@ -32,6 +32,7 @@ jest.mock('../src/services/personal.service', () => ({
   obtenerMovimientosPersonales: jest.fn(async () => []),
   registrarMovimientoPersonal: jest.fn(async () => ({ movimiento: { idMov: 'pers_1' } })),
   eliminarMovimientoPersonal: jest.fn(async () => true),
+  actualizarMovimientoPersonal: jest.fn(async () => ({ idMov: 'pers_1', descripcion: 'Editado' })),
   obtenerPresupuestos: jest.fn(async () => []),
   guardarPresupuesto: jest.fn(async () => ({})),
   obtenerViajeActivo: jest.fn(async () => null),
@@ -127,5 +128,52 @@ describe('/api/auth/me: puedePersonal le dice al dashboard si mostrar la secció
     expect(await me(2222)).toBe(true);
     expect(await me(3333)).toBe(true);
     expect(await me(4444)).toBe(true);
+  });
+});
+
+
+describe('PUT /api/personal/movimientos/:id (editar)', () => {
+  beforeEach(() => { config.PERSONAL_STORE = 'supabase'; });
+
+  test('edita con la identidad del token, aunque el request traiga otro userId', async () => {
+    const r = await req('PUT', '/api/personal/movimientos/pers_1?userId=2222', 3333, { descripcion: 'Super Coto', monto: 1500, userId: 2222, user_id: 2222 });
+    expect(r.status).toBe(200);
+    expect(personal.actualizarMovimientoPersonal).toHaveBeenCalledWith('3333', 'pers_1', { descripcion: 'Super Coto', monto: 1500 });
+  });
+
+  test('solo pasa los campos editables que vinieron (nada de tipo, id, user_id)', async () => {
+    await req('PUT', '/api/personal/movimientos/pers_1', 3333, { categoria: 'supermercado', moneda: 'Dolares', metodoPago: 'tarjeta', tipo: 'Ingreso', idMov: 'x', fecha: '03/10/2026' });
+    expect(personal.actualizarMovimientoPersonal).toHaveBeenCalledWith('3333', 'pers_1', { categoria: 'supermercado', moneda: 'Dólares', metodoPago: 'tarjeta', fecha: '03/10/2026' });
+  });
+
+  test.each([
+    ['monto cero', { monto: 0 }],
+    ['monto no numérico', { monto: 'abc' }],
+    ['descripción vacía', { descripcion: '  ' }],
+    ['moneda inválida', { moneda: 'Bitcoin' }],
+    ['fecha inválida', { fecha: '2026-10-03' }],
+    ['fecha imposible', { fecha: '31/02/2026' }],
+  ])('400 con %s y no toca el servicio', async (_n, body) => {
+    const r = await req('PUT', '/api/personal/movimientos/pers_1', 3333, body);
+    expect(r.status).toBe(400);
+    expect(personal.actualizarMovimientoPersonal).not.toHaveBeenCalled();
+  });
+
+  test('404 si no existe o es de otra persona (el servicio devuelve null)', async () => {
+    personal.actualizarMovimientoPersonal.mockResolvedValueOnce(null);
+    expect((await req('PUT', '/api/personal/movimientos/pers_ajeno', 3333, { monto: 10 })).status).toBe(404);
+  });
+
+  test('los errores de validación del servicio salen como 400 con mensaje', async () => {
+    personal.actualizarMovimientoPersonal.mockRejectedValueOnce(new Error('categoria_invalida'));
+    const r = await req('PUT', '/api/personal/movimientos/pers_1', 3333, { categoria: 'sueldo' });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/categoría/);
+  });
+
+  test("en modo 'sheets' un agregado sigue sin acceso", async () => {
+    config.PERSONAL_STORE = 'sheets';
+    expect((await req('PUT', '/api/personal/movimientos/pers_1', 3333, { monto: 10 })).status).toBe(403);
+    expect(personal.actualizarMovimientoPersonal).not.toHaveBeenCalled();
   });
 });

@@ -237,6 +237,55 @@ function registrarRutasCasa(app, { authMiddleware, obtenerCotizacionDolar }) {
     }
   });
 
+  // Corrige un gasto (quien lo cargó o quien creó la casa). Solo viajan los campos que llegan.
+  app.put('/api/casa/:casaId/movimientos/:idMov', authMiddleware, ids, async (req, res) => {
+    try {
+      if (!ID_REGEX.test(String(req.params.idMov || ''))) return res.status(400).json({ error: 'Movimiento inválido' });
+      const body = req.body || {};
+      const cambios = {};
+
+      if (body.descripcion !== undefined) {
+        const d = normalizarDescripcion(body.descripcion);
+        if (!d.ok) return res.status(400).json({ error: 'La descripción es inválida' });
+        cambios.descripcion = d.valor;
+      }
+      if (body.monto !== undefined) {
+        const m = validarMonto(body.monto);
+        if (!m.ok) return res.status(400).json({ error: 'El monto es inválido' });
+        cambios.monto = Math.abs(m.valor);
+      }
+      if (body.moneda !== undefined) cambios.moneda = normalizarMoneda(body.moneda);
+      if (body.categoria !== undefined) {
+        const c = normalizarCategoriaPersonal(body.categoria);
+        if (!c) return res.status(400).json({ error: 'La categoría no es válida' });
+        cambios.categoria = c;
+      }
+      if (body.fecha !== undefined) {
+        const f = fechaParaSheet(body.fecha);
+        if (!f) return res.status(400).json({ error: 'La fecha es inválida' });
+        cambios.fecha = f;
+      }
+      if (body.metodoPago !== undefined) cambios.metodoPago = METODOS.includes(body.metodoPago) ? body.metodoPago : '';
+      if (body.notas !== undefined) cambios.notas = sanitizarInput(body.notas, 200) || '';
+      if (body.pagoPor !== undefined) cambios.pagoPor = String(body.pagoPor);
+      if (body.repartoEntre !== undefined) {
+        if (!Array.isArray(body.repartoEntre) || body.repartoEntre.length > 50) return res.status(400).json({ error: 'El reparto es inválido' });
+        cambios.repartoEntre = body.repartoEntre.map(String).filter(Boolean);
+      }
+      if (Object.keys(cambios).length === 0) return res.status(400).json({ error: 'No hay nada para cambiar' });
+
+      if ((cambios.moneda === 'Dólares' && !state.cotizacionDolar) || (cambios.moneda === 'Euros' && !state.cotizacionEuro)) {
+        await obtenerCotizacionDolar();
+      }
+
+      const movimiento = await casaService.editarMovimiento(uid(req), req.params.casaId, req.params.idMov, cambios);
+      if (!movimiento) return res.status(404).json({ error: 'Movimiento no encontrado' });
+      res.json({ movimiento: { idMov: movimiento.idMov } });
+    } catch (err) {
+      responderError(res, err, 'PUT /api/casa/:id/movimientos');
+    }
+  });
+
   app.delete('/api/casa/:casaId/movimientos/:idMov', authMiddleware, ids, async (req, res) => {
     try {
       if (!ID_REGEX.test(String(req.params.idMov || ''))) return res.status(400).json({ error: 'Movimiento inválido' });

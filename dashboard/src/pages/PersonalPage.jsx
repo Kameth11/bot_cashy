@@ -3,6 +3,7 @@ import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import { MontoCell } from '../components/Money'
 import PresupuestosModal from '../components/PresupuestosModal'
+import NuevoPersonalModal from '../components/NuevoPersonalModal'
 import ComprobanteModal from '../components/ComprobanteModal'
 import SubirComprobanteModal from '../components/SubirComprobanteModal'
 import DatePickerButton from '../components/DatePickerButton'
@@ -31,6 +32,10 @@ export default function PersonalPage() {
   const [viendoComp, setViendoComp] = useState(null)
   const [subiendo, setSubiendo] = useState(false)
   const [reload,  setReload]  = useState(0)
+  const [editando, setEditando] = useState(null)   // movimiento que se está corrigiendo
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+  const [edicionError, setEdicionError] = useState(null)
+  const [accionError, setAccionError] = useState(null)
 
   const [categorias,     setCategorias]     = useState(null)
   const [showPresu,      setShowPresu]      = useState(false)
@@ -72,6 +77,31 @@ export default function PersonalPage() {
     }
   }, [])
 
+  const guardarEdicion = useCallback(async (cambios) => {
+    setEdicionError(null)
+    setGuardandoEdicion(true)
+    try {
+      await api.put(`/api/personal/movimientos/${encodeURIComponent(editando.idMov)}`, cambios)
+      setEditando(null)
+      setReload(r => r + 1)
+    } catch (err) {
+      setEdicionError(err?.response?.data?.error || 'No se pudo guardar el cambio')
+    } finally {
+      setGuardandoEdicion(false)
+    }
+  }, [editando])
+
+  const borrar = useCallback(async (m) => {
+    if (!window.confirm(`¿Borrar "${m.descripcion}"? No se puede deshacer.`)) return
+    setAccionError(null)
+    try {
+      await api.delete(`/api/personal/movimientos/${encodeURIComponent(m.idMov)}`)
+      setReload(r => r + 1)
+    } catch (err) {
+      setAccionError(err?.response?.data?.error || 'No se pudo borrar el movimiento')
+    }
+  }, [])
+
   useEffect(() => {
     let active = true
     setLoading(true)
@@ -101,6 +131,16 @@ export default function PersonalPage() {
 
   return (
     <div className="page">
+      {editando && (
+        <NuevoPersonalModal
+          inicial={editando}
+          categorias={categorias}
+          guardando={guardandoEdicion}
+          error={edicionError}
+          onGuardar={guardarEdicion}
+          onCerrar={() => { setEditando(null); setEdicionError(null) }}
+        />
+      )}
       {viendoComp && <ComprobanteModal comprobante={viendoComp} onCerrar={() => setViendoComp(null)} />}
       {subiendo && (
         <SubirComprobanteModal
@@ -262,6 +302,7 @@ export default function PersonalPage() {
             <div className="card-header">
               <span>Movimientos del mes ({resumen.cantidad})</span>
             </div>
+            {accionError && <div className="error-box" style={{ margin: '0 16px 12px' }}>{accionError}</div>}
             {resumen.movimientos.length === 0 ? (
               <div className="empty-state">
                 Sin movimientos personales este mes.<br />
@@ -285,6 +326,8 @@ export default function PersonalPage() {
                         <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantes.find(c => c.idMovimiento === m.idMov))}>📎</button>
                       )}
                       <MontoCell mov={m} />
+                      <button className="action-btn" title="Editar" onClick={() => { setEdicionError(null); setEditando(m) }}>✏️</button>
+                      <button className="action-btn" title="Borrar" onClick={() => borrar(m)}>🗑</button>
                     </div>
                   </div>
                 ))}

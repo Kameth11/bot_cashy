@@ -295,6 +295,97 @@ describe('eliminarMovimiento', () => {
   });
 });
 
+describe('editarMovimiento', () => {
+  async function conGasto() {
+    const c = await casaConDos();
+    const ana = await idMiembro(1, c.casaId, 'Ana');
+    const beto = await idMiembro(1, c.casaId, 'Beto');
+    const deBeto = (await svc.registrarGasto(2, c.casaId, { descripcion: 'Super', monto: 100, categoria: 'supermercado', fecha: '05/10/2026' })).movimiento.idMov;
+    return { c, ana, beto, deBeto };
+  }
+  const fila = (id) => filas('1', 'CasaMovimientos').find((f) => f.ID_Mov === id);
+
+  test('corrige descripción, monto, categoría, fecha y notas; los saldos se recalculan', async () => {
+    const { c, deBeto } = await conGasto();
+    const antes = await svc.calcularSaldosCasa(1, c.casaId);
+    const r = await svc.editarMovimiento(2, c.casaId, deBeto, { descripcion: 'Super Coto', monto: 300, categoria: 'otros', fecha: '03/10/2026', notas: 'con tarjeta' });
+    expect(r).toMatchObject({ descripcion: 'Super Coto', monto: 300 });
+    expect(fila(deBeto)).toMatchObject({ Descripcion: 'Super Coto', Monto: 300, MontoPesos: 300, Categoria: 'otros', Fecha: '03/10/2026', Notas: 'con tarjeta' });
+    const despues = await svc.calcularSaldosCasa(1, c.casaId);
+    expect(JSON.stringify(despues)).not.toBe(JSON.stringify(antes)); // 100 -> 300: la deuda cambió
+  });
+
+  test('cambiar quién pagó y entre quiénes se reparte', async () => {
+    const { c, ana, beto, deBeto } = await conGasto();
+    await svc.editarMovimiento(2, c.casaId, deBeto, { pagoPor: ana, repartoEntre: [beto] });
+    expect(fila(deBeto)).toMatchObject({ PagoPor: ana, RepartoEntre: beto });
+  });
+
+  test('permisos: un miembro edita lo suyo, no lo de otro; el creador edita cualquiera', async () => {
+    const { c, deBeto } = await conGasto();
+    const deAna = (await svc.registrarGasto(1, c.casaId, { descripcion: 'de Ana', monto: 10 })).movimiento.idMov;
+    expect(await code(svc.editarMovimiento(2, c.casaId, deAna, { monto: 1 }))).toBe('sin_permiso');
+    expect(fila(deAna).Monto).toBe(10);
+    expect(await svc.editarMovimiento(1, c.casaId, deBeto, { monto: 55 })).toMatchObject({ monto: 55 }); // el creador
+    expect(await svc.editarMovimiento(2, c.casaId, deBeto, { monto: 66 })).toMatchObject({ monto: 66 }); // quien lo cargó
+  });
+
+  test('un no miembro no puede editar', async () => {
+    const { c, deBeto } = await conGasto();
+    mockPerfiles['5'] = [];
+    mockCuentas['5'] = { isOwner: true, ownerId: '5' };
+    expect(await code(svc.editarMovimiento(5, c.casaId, deBeto, { monto: 1 }))).toBe('no_miembro');
+    expect(fila(deBeto).Monto).toBe(100);
+  });
+
+  test('una liquidación no se edita', async () => {
+    const c = await casaConDos();
+    const ana = await idMiembro(1, c.casaId, 'Ana');
+    const liq = (await svc.registrarLiquidacion(2, c.casaId, { para: ana, monto: 10 })).movimiento.idMov;
+    expect(await code(svc.editarMovimiento(2, c.casaId, liq, { monto: 99 }))).toBe('no_editable');
+  });
+
+  test('validaciones: monto, descripción, moneda, fecha real, miembros ajenos y reparto vacío', async () => {
+    const { c, deBeto } = await conGasto();
+    expect(await code(svc.editarMovimiento(2, c.casaId, deBeto, { monto: 0 }))).toBe('monto_invalido');
+    expect(await code(svc.editarMovimiento(2, c.casaId, deBeto, { descripcion: 'x' }))).toBe('descripcion_invalida');
+    expect(await code(svc.editarMovimiento(2, c.casaId, deBeto, { moneda: 'Oro' }))).toBe('moneda_invalida');
+    expect(await code(svc.editarMovimiento(2, c.casaId, deBeto, { fecha: '31/02/2026' }))).toBe('fecha_invalida');
+    expect(await code(svc.editarMovimiento(2, c.casaId, deBeto, { pagoPor: 'mb_ajeno' }))).toBe('pagador_invalido');
+    expect(await code(svc.editarMovimiento(2, c.casaId, deBeto, { repartoEntre: ['mb_ajeno'] }))).toBe('reparto_invalido');
+    expect(await code(svc.editarMovimiento(2, c.casaId, deBeto, { repartoEntre: [] }))).toBe('reparto_invalido');
+    expect(fila(deBeto)).toMatchObject({ Descripcion: 'Super', Monto: 100 });
+  });
+
+  test('el monto en pesos conserva la cotización original si solo cambia otra cosa', async () => {
+    const c = await casaConDos();
+    const id = (await svc.registrarGasto(2, c.casaId, { descripcion: 'Hotel', monto: 10, moneda: 'Dólares' })).movimiento.idMov;
+    fila(id).MontoPesos = 9500; // cotización de aquel día (hoy daría 10000)
+    await svc.editarMovimiento(2, c.casaId, id, { descripcion: 'Hotel Rosario', monto: 10, moneda: 'Dólares' });
+    expect(fila(id)).toMatchObject({ Descripcion: 'Hotel Rosario', MontoPesos: 9500 });
+    await svc.editarMovimiento(2, c.casaId, id, { monto: 20 });
+    expect(fila(id)).toMatchObject({ Monto: 20, MontoPesos: 20000 });
+  });
+
+  test('inexistente o de otra casa → null; no toca nada', async () => {
+    const a = await svc.crearCasa(1, 'Casa A');
+    const b = await svc.crearCasa(1, 'Casa B');
+    const idB = (await svc.registrarGasto(1, b.casaId, { descripcion: 'en B', monto: 5 })).movimiento.idMov;
+    expect(await svc.editarMovimiento(1, a.casaId, 'nada', { monto: 1 })).toBeNull();
+    expect(await svc.editarMovimiento(1, a.casaId, idB, { monto: 1 })).toBeNull();
+    expect(fila(idB).Monto).toBe(5);
+  });
+
+  test('quien ya se fue de la casa no impide corregir el resto del gasto', async () => {
+    const c = await casaConDos();
+    const beto = await idMiembro(1, c.casaId, 'Beto');
+    const id = (await svc.registrarGasto(1, c.casaId, { descripcion: 'Cena', monto: 90 })).movimiento.idMov;
+    await svc.quitarMiembro(1, c.casaId, beto).catch(() => {}); // puede exigir saldo en cero; no es lo que se prueba
+    const r = await svc.editarMovimiento(1, c.casaId, id, { descripcion: 'Cena de cumple' });
+    expect(r.descripcion).toBe('Cena de cumple');
+  });
+});
+
 describe('quitarMiembro', () => {
   test('solo el creador quita a otros; no se puede quitar al creador', async () => {
     const c = await casaConDos();

@@ -6,6 +6,7 @@ bot.command('cancelar', (ctx) => {
   state.pendingRegistros.delete(userId);
   state.pendingDeletes.delete(userId);
   state.pendingEdits.delete(userId);
+  state.pendingGestion.delete(userId);
   state.pendingCotizaciones.delete(userId);
   state.pendingIntentosEmail.delete(userId);
   state.pendingReinicios.delete(userId);

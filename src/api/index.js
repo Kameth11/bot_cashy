@@ -42,6 +42,7 @@ const {
 } = require('../services/personal-nlp.service');
 const { sanitizarInput } = require('../utils/formatter');
 const { normalizarDescripcion, validarMonto } = require('../utils/validation');
+const { esFechaValidaDdmmaaaa } = require('../utils/date');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const eventsService = require('../services/events.service');
 const loginTelegram = require('../services/login-telegram.service');
@@ -1516,6 +1517,63 @@ app.post('/api/personal/movimientos', authMiddleware, personalAccess, async (req
     if (err.message === 'descripcion_invalida') return res.status(400).json({ error: 'La descripción es inválida' });
     logger.error('API', 'Error POST /api/personal/movimientos', { err: err.message });
     res.status(500).json({ error: 'Error al guardar el movimiento personal' });
+  }
+});
+
+// Corrige un movimiento propio. El dueño sale SIEMPRE de la sesión (req.user.userId): no
+// hay forma de editar el Personal de otra persona desde acá.
+app.put('/api/personal/movimientos/:idMov', authMiddleware, personalAccess, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const cambios = {};
+
+    if (body.descripcion !== undefined) {
+      const d = normalizarDescripcion(body.descripcion);
+      if (!d.ok) return res.status(400).json({ error: 'La descripción es inválida' });
+      cambios.descripcion = d.valor;
+    }
+    if (body.monto !== undefined) {
+      const m = validarMonto(body.monto);
+      if (!m.ok) return res.status(400).json({ error: 'El monto es inválido' });
+      cambios.monto = Math.abs(m.valor);
+    }
+    if (body.moneda !== undefined) {
+      cambios.moneda = ['Dolares', 'Dólares'].includes(body.moneda) ? 'Dólares'
+        : body.moneda === 'Euros' ? 'Euros' : body.moneda === 'Pesos' ? 'Pesos' : null;
+      if (!cambios.moneda) return res.status(400).json({ error: 'La moneda es inválida' });
+    }
+    if (body.categoria !== undefined) cambios.categoria = body.categoria;
+    if (body.metodoPago !== undefined) cambios.metodoPago = body.metodoPago || null;
+    if (body.fecha !== undefined) {
+      if (!esFechaValidaDdmmaaaa(body.fecha)) {
+        return res.status(400).json({ error: 'La fecha es inválida (DD/MM/AAAA)' });
+      }
+      cambios.fecha = String(body.fecha);
+    }
+    if (body.comercio !== undefined) cambios.comercio = sanitizarInput(body.comercio, 100) || null;
+    if (body.notas !== undefined) cambios.notas = sanitizarInput(body.notas, 200) || null;
+
+    const monedaFinal = cambios.moneda;
+    if ((monedaFinal === 'Dólares' && !state.cotizacionDolar) || (monedaFinal === 'Euros' && !state.cotizacionEuro)) {
+      await obtenerCotizacionDolar();
+    }
+
+    const movimiento = await personalService.actualizarMovimientoPersonal(req.user.userId, req.params.idMov, cambios);
+    if (!movimiento) return res.status(404).json({ error: 'Movimiento no encontrado' });
+    res.json({ movimiento });
+  } catch (err) {
+    const mensajes = {
+      monto_invalido: 'El monto es inválido',
+      descripcion_invalida: 'La descripción es inválida',
+      categoria_invalida: 'La categoría no es válida para este movimiento',
+      moneda_invalida: 'La moneda es inválida',
+      metodo_invalido: 'El método de pago es inválido',
+      fecha_invalida: 'La fecha es inválida (DD/MM/AAAA)',
+      sin_cambios: 'No hay nada para cambiar',
+    };
+    if (mensajes[err.message]) return res.status(400).json({ error: mensajes[err.message] });
+    logger.error('API', 'Error PUT /api/personal/movimientos', { err: err.message });
+    res.status(500).json({ error: 'Error al editar el movimiento personal' });
   }
 });
 
