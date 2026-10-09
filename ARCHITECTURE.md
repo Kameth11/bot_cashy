@@ -498,6 +498,9 @@ abiertos:
    persona: qué pasa con sus datos y con el Personal.
 6. Chat dentro del dashboard/app: mismo pipeline de texto/foto, otro canal.
 
+Contexto de la charla sobre esto (chat web, ID propio, notificaciones): ver
+`NOTAS_2026-10-09_WEB_IDENTIDAD_NOTIFICACIONES.md`.
+
 ### Pendiente — formalmente anotado, no implementado todavía
 
 1. **Sesión del dashboard.** *Parcial (2026-09-30):* el JWT dura 14 días
