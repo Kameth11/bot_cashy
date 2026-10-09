@@ -65,6 +65,7 @@ const pendingIntentosEmail  = new TTLMap();
 const pendingIntentosCodigo = new TTLMap();
 const pendingDeletes        = new TTLMap();
 const pendingEdits          = new TTLMap();
+const pendingGestion        = new TTLMap(); // /eliminar y /editar de Personal y Casa
 const pendingCobros         = new TTLMap(5 * 60 * 1000);
 const pendingCotizaciones   = new TTLMap();
 const pendingLimpiezas      = new TTLMap();
@@ -116,6 +117,7 @@ module.exports = {
   pendingIntentosCodigo,
   pendingDeletes,
   pendingEdits,
+  pendingGestion,
   pendingCobros,
   pendingCotizaciones,
   pendingLimpiezas,

@@ -175,3 +175,100 @@ describe('errores de la base', () => {
     expect(await svc.leerPreferencias(ANA)).toEqual({});
   });
 });
+
+
+describe('editar un movimiento', () => {
+  async function cargar(persona, extra = {}) {
+    const { movimiento } = await svc.registrarMovimientoPersonal(persona, {
+      descripcion: 'Super', monto: 100, tipo: 'gasto', categoria: 'supermercado', fecha: '05/10/2026', metodoPago: 'efectivo', ...extra,
+    });
+    return movimiento.idMov;
+  }
+  const fila = (id) => fake.tablas.movimientos_personales.find(f => f.legacy_id === id);
+
+  test('corrige descripción, categoría, método y fecha sin tocar el monto en pesos', async () => {
+    const id = await cargar(ANA, { moneda: 'Dólares', monto: 10 }); // 10 USD = 10000 pesos (cotización del día)
+    const r = await svc.actualizarMovimientoPersonal(ANA, id, { descripcion: 'Super Coto', categoria: 'salud', metodoPago: 'tarjeta', fecha: '01/10/2026' });
+    expect(r).toMatchObject({ descripcion: 'Super Coto', categoria: 'salud', metodoPago: 'tarjeta' });
+    expect(fila(id)).toMatchObject({ descripcion: 'Super Coto', categoria: 'salud', metodo_pago: 'tarjeta', fecha: '2026-10-01', monto_original: 10, monto_pesos: 10000, user_id: ANA });
+  });
+
+  test('si cambia el monto o la moneda se recalcula el monto en pesos', async () => {
+    const id = await cargar(ANA);
+    await svc.actualizarMovimientoPersonal(ANA, id, { monto: 20, moneda: 'Dólares' });
+    expect(fila(id)).toMatchObject({ monto_original: 20, moneda: 'Dólares', monto_pesos: 20000 });
+    await svc.actualizarMovimientoPersonal(ANA, id, { monto: 3 });
+    expect(fila(id)).toMatchObject({ monto_original: 3, monto_pesos: 3000 }); // conserva la moneda
+  });
+
+  test('el monto se guarda siempre positivo', async () => {
+    const id = await cargar(ANA);
+    await svc.actualizarMovimientoPersonal(ANA, id, { monto: -50 });
+    expect(fila(id).monto_original).toBe(50);
+  });
+
+  test('NO se puede editar el movimiento de otra persona: devuelve null y no cambia nada', async () => {
+    const id = await cargar(ANA);
+    expect(await svc.actualizarMovimientoPersonal(BETO, id, { monto: 1, descripcion: 'Hackeado' })).toBeNull();
+    expect(fila(id)).toMatchObject({ descripcion: 'Super', monto_original: 100, user_id: ANA });
+  });
+
+  test('un movimiento inexistente devuelve null', async () => {
+    expect(await svc.actualizarMovimientoPersonal(ANA, 'pers_nada', { monto: 5 })).toBeNull();
+  });
+
+  test('user_id, tenant_id, tipo y el id no se pueden cambiar por esta vía', async () => {
+    const id = await cargar(ANA);
+    await svc.actualizarMovimientoPersonal(ANA, id, { descripcion: 'Otro nombre', user_id: BETO, tenant_id: 'tX', tipo: 'Ingreso', idMov: 'otro', viajeId: 'v9' });
+    expect(fila(id)).toMatchObject({ user_id: ANA, tenant_id: 't1', tipo_movimiento: 'egreso', legacy_id: id, descripcion: 'Otro nombre' });
+    expect(fila(id).viaje_id).toBeFalsy();
+  });
+
+  test('validaciones: monto, descripción, moneda, método y categoría del tipo correcto', async () => {
+    const id = await cargar(ANA);
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { monto: 0 })).rejects.toThrow('monto_invalido');
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { descripcion: 'x' })).rejects.toThrow('descripcion_invalida');
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { moneda: 'Oro' })).rejects.toThrow('moneda_invalida');
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { metodoPago: 'cheque' })).rejects.toThrow('metodo_invalido');
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { fecha: '31/02/2026' })).rejects.toThrow('fecha_invalida');
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { categoria: 'inventada' })).rejects.toThrow('categoria_invalida');
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { categoria: 'sueldo' })).rejects.toThrow('categoria_invalida'); // de ingreso, y esto es un egreso
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, {})).rejects.toThrow('sin_cambios');
+    expect(fila(id)).toMatchObject({ descripcion: 'Super', monto_original: 100, categoria: 'supermercado' });
+  });
+
+  test('en un ingreso solo valen categorías de ingreso', async () => {
+    const id = await cargar(ANA, { tipo: 'ingreso', categoria: 'sueldo', descripcion: 'Sueldo' });
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { categoria: 'supermercado' })).rejects.toThrow('categoria_invalida');
+  });
+
+  test('emite el evento para que el dashboard se refresque y queda auditado', async () => {
+    const logger = require('../src/lib/logger');
+    const id = await cargar(ANA);
+    await svc.actualizarMovimientoPersonal(ANA, id, { monto: 7 });
+    expect(logger.audit).toHaveBeenCalledWith('personal_movimiento_editado', expect.objectContaining({ userId: ANA, idMov: id, campos: ['monto'], store: 'supabase' }));
+  });
+});
+
+describe('editar sin cambios reales', () => {
+  test('reenviar los mismos valores no escribe nada ni recalcula el monto en pesos con la cotización de hoy', async () => {
+    const { movimiento } = await svc.registrarMovimientoPersonal(ANA, { descripcion: 'Hotel', monto: 100, moneda: 'Dólares', categoria: 'viajes', fecha: '05/10/2026' });
+    const f = fake.tablas.movimientos_personales.find(x => x.legacy_id === movimiento.idMov);
+    f.monto_pesos = 95000; // cotización de aquel día, distinta de la de hoy (100 USD = 100000)
+    const logger = require('../src/lib/logger');
+    logger.audit.mockClear();
+
+    const r = await svc.actualizarMovimientoPersonal(ANA, movimiento.idMov, { monto: 100, moneda: 'Dólares', descripcion: 'Hotel' });
+    expect(r.descripcion).toBe('Hotel');
+    expect(f.monto_pesos).toBe(95000);
+    expect(logger.audit).not.toHaveBeenCalledWith('personal_movimiento_editado', expect.anything());
+  });
+
+  test('cambiar solo la descripción conserva el monto en pesos histórico', async () => {
+    const { movimiento } = await svc.registrarMovimientoPersonal(ANA, { descripcion: 'Hotel', monto: 100, moneda: 'Dólares', categoria: 'viajes', fecha: '05/10/2026' });
+    const f = fake.tablas.movimientos_personales.find(x => x.legacy_id === movimiento.idMov);
+    f.monto_pesos = 95000;
+    await svc.actualizarMovimientoPersonal(ANA, movimiento.idMov, { monto: 100, moneda: 'Dólares', descripcion: 'Hotel Rosario' });
+    expect(f).toMatchObject({ descripcion: 'Hotel Rosario', monto_pesos: 95000 });
+  });
+});

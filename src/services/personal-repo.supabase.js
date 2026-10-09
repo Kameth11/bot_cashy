@@ -130,6 +130,43 @@ async function insertarMovimiento(userId, movimiento, { createdBy } = {}) {
   datos(await p.from('movimientos_personales').insert(movimientoToRow(movimiento, { createdBy: createdBy ?? userId })), 'insertar movimiento');
 }
 
+async function obtenerMovimiento(userId, idMov) {
+  const p = await db(userId);
+  const campo = UUID_RE.test(String(idMov)) ? 'id' : 'legacy_id';
+  const filas = datos(
+    await p.from('movimientos_personales').select('*').eq(campo, String(idMov)).limit(1),
+    'obtener movimiento'
+  ) || [];
+  return filas.length ? rowToMovimiento(filas[0]) : null;
+}
+
+// Solo estos campos se pueden cambiar; el dueño (user_id), el tenant y el id los fija
+// forPersona y nunca vienen del llamador. Devuelve false si no existe (o es de otra persona).
+async function actualizarMovimiento(userId, idMov, cambios = {}) {
+  const p = await db(userId);
+  const campo = UUID_RE.test(String(idMov)) ? 'id' : 'legacy_id';
+  const patch = {};
+  if ('descripcion' in cambios) patch.descripcion = cambios.descripcion;
+  if ('monto' in cambios) patch.monto_original = cambios.monto;
+  if ('montoPesos' in cambios) patch.monto_pesos = cambios.montoPesos;
+  if ('moneda' in cambios) patch.moneda = cambios.moneda;
+  if ('categoria' in cambios) patch.categoria = cambios.categoria;
+  if ('metodoPago' in cambios) patch.metodo_pago = normalizarMetodo(cambios.metodoPago);
+  if ('comercio' in cambios) patch.comercio = cambios.comercio || null;
+  if ('notas' in cambios) patch.notas = cambios.notas || null;
+  if ('fecha' in cambios) {
+    const iso = fechaStrAIso(cambios.fecha);
+    if (iso) patch.fecha = iso;
+  }
+  if (Object.keys(patch).length === 0) return (await obtenerMovimiento(userId, idMov)) !== null;
+
+  const filas = datos(
+    await p.from('movimientos_personales').update(patch).eq(campo, String(idMov)).select('id'),
+    'actualizar movimiento'
+  );
+  return Array.isArray(filas) && filas.length > 0;
+}
+
 async function eliminarMovimiento(userId, idMov) {
   const p = await db(userId);
   const campo = UUID_RE.test(String(idMov)) ? 'id' : 'legacy_id';
@@ -250,6 +287,8 @@ module.exports = {
   PersonalRepoError,
   listarMovimientos,
   insertarMovimiento,
+  obtenerMovimiento,
+  actualizarMovimiento,
   eliminarMovimiento,
   obtenerViajeActivo,
   listarViajes,

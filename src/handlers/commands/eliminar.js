@@ -17,10 +17,10 @@ function rowToItem(fila) {
   };
 }
 
-bot.command('eliminar', async (ctx) => {
+// Flujo del consultorio. Lo usa /eliminar y, desde gestion-gastos, la opción "Consultorio".
+async function ejecutarEliminar(ctx, query) {
   if (!requierePermisoBot(ctx, 'editar_movimientos', '/eliminar')) return;
   const userId = ctx.from.id;
-  const query = ctx.message.text.replace(/^\/eliminar(@\w+)?/i, '').trim();
 
   try {
     const filas = await db.getRows(userId);
@@ -67,6 +67,13 @@ bot.command('eliminar', async (ctx) => {
     console.error('Error /eliminar:', err.message);
     ctx.reply('❌ Error al cargar movimientos.').catch(() => {});
   }
+}
+
+bot.command('eliminar', async (ctx) => {
+  const query = ctx.message.text.replace(/^\/eliminar(@\w+)?/i, '').trim();
+  // Sin argumento y con Personal o Casa: primero se pregunta de dónde.
+  if (!query && await require('../gestion-gastos').ofrecerAmbito(ctx, 'eliminar')) return;
+  return ejecutarEliminar(ctx, query);
 });
 
-module.exports = {};
+module.exports = { ejecutarEliminar };

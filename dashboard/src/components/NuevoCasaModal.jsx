@@ -19,13 +19,32 @@ const initialState = {
   fecha: '',
 }
 
+// DD/MM/AAAA (lo que entrega la API) -> AAAA-MM-DD (lo que usa <input type="date">)
+const aInputFecha = (f) => {
+  const m = String(f || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
+}
+
+function formularioDesde(m) {
+  if (!m) return initialState
+  return {
+    descripcion: m.descripcion || '',
+    monto: m.monto != null ? String(m.monto) : '',
+    moneda: m.moneda || 'Pesos',
+    categoria: m.categoria || '',
+    metodoPago: m.metodoPago || '',
+    fecha: aInputFecha(m.fecha),
+  }
+}
+
 /**
- * Alta de un gasto compartido. Por defecto paga quien lo carga y se reparte
+ * Alta de un gasto compartido, o su edición si llega `inicial` (un gasto existente). Por defecto paga quien lo carga y se reparte
  * entre todos los miembros; los dos se pueden cambiar. Los miembros y las
  * categorías se piden acá mismo para que el modal sea autosuficiente.
  */
-export default function NuevoCasaModal({ casaId, guardando, error, onGuardar, onCerrar }) {
-  const [form, setForm] = useState(initialState)
+export default function NuevoCasaModal({ casaId, guardando, error, onGuardar, onCerrar, inicial = null }) {
+  const editando = Boolean(inicial)
+  const [form, setForm] = useState(() => formularioDesde(inicial))
   const [miembros, setMiembros] = useState(null)
   const [categorias, setCategorias] = useState([])
   const [pagoPor, setPagoPor] = useState('')
@@ -42,13 +61,19 @@ export default function NuevoCasaModal({ casaId, guardando, error, onGuardar, on
       .then(([m, c]) => {
         if (!active) return
         setMiembros(m.data.miembros)
-        setPagoPor(m.data.yo?.id || m.data.miembros[0]?.id || '')
+        setPagoPor(inicial?.pagoPor || m.data.yo?.id || m.data.miembros[0]?.id || '')
+        // Editando: quedan tildados solo los que participaban de ese gasto.
+        if (inicial) {
+          const participan = new Set(inicial.repartoEntre || [])
+          setExcluidos(new Set(m.data.miembros.filter(x => !participan.has(x.id)).map(x => x.id)))
+        }
         setCategorias(c.data.egreso || [])
       })
       .catch(err => {
         if (active) setCargaError(err?.response?.data?.error || 'No se pudo cargar la casa')
       })
     return () => { active = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [casaId])
 
   const opciones = useMemo(
@@ -92,6 +117,24 @@ export default function NuevoCasaModal({ casaId, guardando, error, onGuardar, on
       return
     }
 
+    if (editando) {
+      // En edición solo viajan los campos que el usuario cambió.
+      const orig = formularioDesde(inicial)
+      const cambios = {}
+      if (descripcion !== orig.descripcion) cambios.descripcion = descripcion
+      if (montoNum !== Number(orig.monto)) cambios.monto = montoNum
+      if (form.moneda !== orig.moneda) cambios.moneda = form.moneda
+      if (form.categoria && form.categoria !== orig.categoria) cambios.categoria = form.categoria
+      if (form.metodoPago !== orig.metodoPago) cambios.metodoPago = form.metodoPago
+      if (form.fecha && form.fecha !== orig.fecha) cambios.fecha = form.fecha
+      if (pagoPor && pagoPor !== inicial.pagoPor) cambios.pagoPor = pagoPor
+      const antes = [...(inicial.repartoEntre || [])].sort().join(',')
+      if ([...participantes].sort().join(',') !== antes) cambios.repartoEntre = participantes
+      if (Object.keys(cambios).length === 0) { onCerrar(); return }
+      onGuardar(cambios)
+      return
+    }
+
     onGuardar({
       descripcion,
       monto: montoNum,
@@ -111,7 +154,7 @@ export default function NuevoCasaModal({ casaId, guardando, error, onGuardar, on
   return (
     <div className="overlay" onClick={onCerrar}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-title">🏡 Nuevo gasto de la casa</h2>
+        <h2 className="modal-title">{editando ? '✏️ Editar gasto de la casa' : '🏡 Nuevo gasto de la casa'}</h2>
 
         <form onSubmit={handleSubmit} className="modal-form">
           <div>

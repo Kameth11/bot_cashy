@@ -44,6 +44,7 @@ jest.mock('../src/services/casa.service', () => {
     registrarLiquidacion: jest.fn(),
     listarMovimientos: jest.fn(),
     eliminarMovimiento: jest.fn(),
+    editarMovimiento: jest.fn(),
     calcularSaldosCasa: jest.fn(),
     calcularResumenCasa: jest.fn(),
   };
@@ -349,5 +350,41 @@ describe('miembros e invitaciones', () => {
     const r = await call('POST', '/api/casa/unir', 4444, { codigo: 'ABC234', alias: 'Ana' });
     expect(r.status).toBe(409);
     expect(state.pendingInvitacionesCasa.has('ABC234')).toBe(true);
+  });
+});
+
+
+describe('PUT movimiento (editar)', () => {
+  test('pasa solo los campos editables y la identidad del token', async () => {
+    casaService.editarMovimiento.mockResolvedValue({ idMov: 'cmov_1' });
+    const r = await call('PUT', '/api/casa/casa_1/movimientos/cmov_1?userId=9999', 2222, { descripcion: 'Super Coto', monto: 500, categoria: 'supermercado', pagoPor: 'm1', repartoEntre: ['m1', 'm2'], idMov: 'x', idOrigen: '9999', tipo: 'liquidacion' });
+    expect(r.status).toBe(200);
+    expect(casaService.editarMovimiento).toHaveBeenCalledWith('2222', 'casa_1', 'cmov_1', {
+      descripcion: 'Super Coto', monto: 500, categoria: 'supermercado', pagoPor: 'm1', repartoEntre: ['m1', 'm2'],
+    });
+  });
+
+  test.each([
+    ['monto cero', { monto: 0 }],
+    ['descripción vacía', { descripcion: ' ' }],
+    ['categoría inventada', { categoria: 'inventada' }],
+    ['fecha ilegible', { fecha: 'ayer' }],
+    ['reparto que no es lista', { repartoEntre: 'm1' }],
+    ['sin nada para cambiar', {}],
+  ])('400 con %s y no toca el servicio', async (_n, body) => {
+    casaService.editarMovimiento.mockClear();
+    expect((await call('PUT', '/api/casa/casa_1/movimientos/cmov_1', 2222, body)).status).toBe(400);
+    expect(casaService.editarMovimiento).not.toHaveBeenCalled();
+  });
+
+  test('404 si no existe, 403 sin permiso o no miembro, 400 si el servicio lo rechaza', async () => {
+    casaService.editarMovimiento.mockResolvedValue(null);
+    expect((await call('PUT', '/api/casa/casa_1/movimientos/cmov_9', 2222, { monto: 5 })).status).toBe(404);
+    casaService.editarMovimiento.mockRejectedValue(new CasaError('sin_permiso'));
+    expect((await call('PUT', '/api/casa/casa_1/movimientos/cmov_1', 4444, { monto: 5 })).status).toBe(403);
+    casaService.editarMovimiento.mockRejectedValue(new CasaError('no_miembro'));
+    expect((await call('PUT', '/api/casa/casa_1/movimientos/cmov_1', 4444, { monto: 5 })).status).toBe(403);
+    casaService.editarMovimiento.mockRejectedValue(new CasaError('no_editable'));
+    expect((await call('PUT', '/api/casa/casa_1/movimientos/cmov_1', 2222, { monto: 5 })).status).toBe(400);
   });
 });

@@ -10,6 +10,7 @@ function Seg({ active, onClick, children }) {
 }
 
 const initialState = {
+  fecha: '',
   tipo: 'Egreso',
   descripcion: '',
   monto: '',
@@ -19,13 +20,38 @@ const initialState = {
   comercio: '',
 }
 
+// DD/MM/AAAA (lo que entrega la API) <-> AAAA-MM-DD (lo que usa <input type="date">)
+const aInputFecha = (f) => {
+  const m = String(f || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
+}
+const deInputFecha = (iso) => {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : ''
+}
+
+function formularioDesde(m) {
+  if (!m) return initialState
+  return {
+    tipo: m.tipo === 'Ingreso' ? 'Ingreso' : 'Egreso',
+    descripcion: m.descripcion || '',
+    monto: m.monto != null ? String(m.monto) : '',
+    moneda: m.moneda || 'Pesos',
+    metodoPago: m.metodoPago || '',
+    categoria: m.categoria || '',
+    comercio: m.comercio || '',
+    fecha: aInputFecha(m.fecha),
+  }
+}
+
 /**
- * Alta de un movimiento personal. Es un formulario propio y más corto que el
+ * Alta de un movimiento personal, o su edición si llega `inicial`. Es un formulario propio y más corto que el
  * del consultorio: acá no hay paciente, profesional, estado ni fechas de
  * prestación/vencimiento.
  */
-export default function NuevoPersonalModal({ categorias, guardando, error, onGuardar, onCerrar }) {
-  const [form, setForm] = useState(initialState)
+export default function NuevoPersonalModal({ categorias, guardando, error, onGuardar, onCerrar, inicial = null }) {
+  const editando = Boolean(inicial)
+  const [form, setForm] = useState(() => formularioDesde(inicial))
   const [validationError, setValidationError] = useState(null)
 
   const opciones = useMemo(() => {
@@ -65,6 +91,22 @@ export default function NuevoPersonalModal({ categorias, guardando, error, onGua
       return
     }
 
+    if (editando) {
+      // En edición solo viajan los campos que el usuario cambió; el tipo no se cambia.
+      const orig = formularioDesde(inicial)
+      const cambios = {}
+      if (descripcion !== orig.descripcion) cambios.descripcion = descripcion
+      if (montoNum !== Number(orig.monto)) cambios.monto = montoNum
+      if (form.moneda !== orig.moneda) cambios.moneda = form.moneda
+      if (form.categoria !== orig.categoria) cambios.categoria = form.categoria
+      if (form.metodoPago !== orig.metodoPago) cambios.metodoPago = form.metodoPago
+      if (form.comercio.trim() !== orig.comercio) cambios.comercio = form.comercio.trim()
+      if (form.fecha && form.fecha !== orig.fecha) cambios.fecha = deInputFecha(form.fecha)
+      if (Object.keys(cambios).length === 0) { onCerrar(); return }
+      onGuardar(cambios)
+      return
+    }
+
     onGuardar({
       tipo: form.tipo,
       descripcion,
@@ -81,16 +123,18 @@ export default function NuevoPersonalModal({ categorias, guardando, error, onGua
   return (
     <div className="overlay" onClick={onCerrar}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-title">🏠 Nuevo movimiento personal</h2>
+        <h2 className="modal-title">{editando ? '✏️ Editar movimiento personal' : '🏠 Nuevo movimiento personal'}</h2>
 
         <form onSubmit={handleSubmit} className="modal-form">
-          <div>
-            <label className="form-label">Tipo</label>
-            <div className="seg-group">
-              <Seg active={form.tipo === 'Egreso'}  onClick={() => cambiarTipo('Egreso')}>↓ Gasto</Seg>
-              <Seg active={form.tipo === 'Ingreso'} onClick={() => cambiarTipo('Ingreso')}>↑ Ingreso</Seg>
+          {!editando && (
+            <div>
+              <label className="form-label">Tipo</label>
+              <div className="seg-group">
+                <Seg active={form.tipo === 'Egreso'}  onClick={() => cambiarTipo('Egreso')}>↓ Gasto</Seg>
+                <Seg active={form.tipo === 'Ingreso'} onClick={() => cambiarTipo('Ingreso')}>↑ Ingreso</Seg>
+              </div>
             </div>
-          </div>
+          )}
 
           <div>
             <label className="form-label">Descripción *</label>
@@ -150,6 +194,13 @@ export default function NuevoPersonalModal({ categorias, guardando, error, onGua
               </select>
             </div>
           </div>
+
+          {editando && (
+            <div>
+              <label className="form-label">Fecha</label>
+              <input className="form-input" type="date" value={form.fecha} onChange={update('fecha')} />
+            </div>
+          )}
 
           <div>
             <label className="form-label">Comercio</label>

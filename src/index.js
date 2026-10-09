@@ -78,6 +78,7 @@ require('./handlers/voice');
 // Load callback action handlers (for inline buttons)
 require('./handlers/actions');
 require('./handlers/login-actions');
+require('./handlers/gestion-gastos');
 require('./handlers/nlp-confirm');
 require('./handlers/cobrar-confirm');
 require('./handlers/comprobante');

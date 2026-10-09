@@ -25,7 +25,8 @@ const { convertirAPesos } = require('./movimiento.service');
 const logger = require('../lib/logger');
 const { personalEnSupabase } = require('../lib/personal-store');
 const repoSupabase = require('./personal-repo.supabase');
-const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina, fechaStrAIso } = require('../utils/date');
+const { normalizarCategoriaPersonal, CATEGORIAS_EGRESO_PERSONAL, CATEGORIAS_INGRESO_PERSONAL } = require('./personal-nlp.service');
+const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina, fechaStrAIso, esFechaValidaDdmmaaaa } = require('../utils/date');
 
 const TAB_MOVIMIENTOS = 'Personal';
 const TAB_VIAJES = 'Viajes';
@@ -541,6 +542,133 @@ async function registrarMovimientoPersonal(userId, datos) {
   return { movimiento, viaje: viajeId ? viajeActivo : null };
 }
 
+// Campos que se pueden corregir de un movimiento personal. El tipo (ingreso/egreso), el
+// viaje y el id no se cambian: para eso se borra y se vuelve a cargar.
+const CAMPOS_EDITABLES = ['descripcion', 'monto', 'moneda', 'fecha', 'categoria', 'metodoPago', 'comercio', 'notas'];
+const METODOS_VALIDOS = ['efectivo', 'transferencia', 'tarjeta', 'debito'];
+const MONEDAS_VALIDAS = ['Pesos', 'Dólares', 'Euros'];
+
+async function obtenerMovimientoPersonal(userId, idMov) {
+  if (personalEnSupabase()) return repoSupabase.obtenerMovimiento(userId, idMov);
+  const todos = await obtenerMovimientosPersonales(userId);
+  return todos.find(m => String(m.idMov) === String(idMov)) || null;
+}
+
+/**
+ * Corrige un movimiento personal. Valida igual que al cargarlo; si cambia el monto o la
+ * moneda recalcula el monto en pesos, y si solo cambia otra cosa lo conserva (la
+ * cotización de ese día no se reescribe).
+ * @returns {Promise<object|null>} el movimiento actualizado, o null si no existe.
+ * @throws {Error} monto_invalido | descripcion_invalida | categoria_invalida | moneda_invalida | metodo_invalido | fecha_invalida | sin_cambios
+ */
+async function actualizarMovimientoPersonal(userId, idMov, cambios = {}) {
+  const actual = await obtenerMovimientoPersonal(userId, idMov);
+  if (!actual) return null;
+
+  const nuevo = {};
+  for (const campo of CAMPOS_EDITABLES) {
+    if (Object.prototype.hasOwnProperty.call(cambios, campo) && cambios[campo] !== undefined) nuevo[campo] = cambios[campo];
+  }
+  if (Object.keys(nuevo).length === 0) throw new Error('sin_cambios');
+
+  if ('descripcion' in nuevo) {
+    const d = String(nuevo.descripcion || '').trim();
+    if (d.length < 2) throw new Error('descripcion_invalida');
+    nuevo.descripcion = d;
+  }
+  if ('monto' in nuevo) {
+    const m = Math.abs(parseFloat(nuevo.monto));
+    if (!Number.isFinite(m) || m <= 0) throw new Error('monto_invalido');
+    nuevo.monto = m;
+  }
+  if ('moneda' in nuevo) {
+    if (!MONEDAS_VALIDAS.includes(nuevo.moneda)) throw new Error('moneda_invalida');
+  }
+  if ('categoria' in nuevo) {
+    const c = normalizarCategoriaPersonal(nuevo.categoria);
+    const lista = String(actual.tipo).toLowerCase() === 'ingreso' ? CATEGORIAS_INGRESO_PERSONAL : CATEGORIAS_EGRESO_PERSONAL;
+    if (!c || !lista.includes(c)) throw new Error('categoria_invalida');
+    nuevo.categoria = c;
+  }
+  if ('fecha' in nuevo && !esFechaValidaDdmmaaaa(nuevo.fecha)) throw new Error('fecha_invalida');
+  if ('metodoPago' in nuevo) {
+    if (nuevo.metodoPago && !METODOS_VALIDOS.includes(nuevo.metodoPago)) throw new Error('metodo_invalido');
+    nuevo.metodoPago = nuevo.metodoPago || null;
+  }
+
+  // Lo que viene igual a lo que ya está no es un cambio. Importa para el monto en pesos:
+  // reenviar el mismo monto y moneda NO debe recalcularlo con la cotización de hoy.
+  const igual = (campo) => (campo === 'monto' ? Number(nuevo.monto) === Number(actual.monto)
+    : campo === 'metodoPago' ? (nuevo.metodoPago || null) === (actual.metodoPago || null)
+    : campo === 'comercio' || campo === 'notas' ? (nuevo[campo] || null) === (actual[campo] || null)
+    : nuevo[campo] === actual[campo]);
+  for (const campo of Object.keys(nuevo)) if (igual(campo)) delete nuevo[campo];
+  if (Object.keys(nuevo).length === 0) return actual; // nada que guardar
+
+  if ('monto' in nuevo || 'moneda' in nuevo) {
+    nuevo.montoPesos = convertirAPesos(nuevo.monto ?? actual.monto, nuevo.moneda ?? actual.moneda);
+  }
+
+  let ok;
+  if (personalEnSupabase()) {
+    ok = await repoSupabase.actualizarMovimiento(userId, idMov, nuevo);
+  } else {
+    ok = await actualizarEnSheet(userId, idMov, nuevo);
+  }
+  if (!ok) return null;
+
+  emitMovimientosUpdated(userId);
+  logger.audit('personal_movimiento_editado', {
+    userId, idMov, campos: Object.keys(nuevo).filter(k => k !== 'montoPesos'), store: personalEnSupabase() ? 'supabase' : 'sheets',
+  });
+  return { ...actual, ...nuevo };
+}
+
+async function actualizarEnSheet(userId, idMov, nuevo) {
+  const sheet = await getTabConReintento(userId, TAB_MOVIMIENTOS);
+  if (!sheet) throw new Error('sin_sheet');
+
+  const rows = await sheet.getRows();
+  const fila = rows.find(r => String(r.get('ID_Mov') || '') === String(idMov));
+  if (!fila) return false;
+
+  const columnas = {
+    descripcion: 'Descripcion', monto: 'Monto', moneda: 'Moneda', montoPesos: 'MontoPesos',
+    fecha: 'Fecha', categoria: 'Categoria', metodoPago: 'MetodoPago', comercio: 'Comercio', notas: 'Notas',
+  };
+  for (const [campo, valor] of Object.entries(nuevo)) {
+    if (columnas[campo]) fila.set(columnas[campo], valor == null ? '' : valor);
+  }
+  await withUserWriteLock(userId, () => fila.save());
+  invalidateCache(userId);
+
+  // Espejo opcional en Supabase (solo existe en el modo Sheets con la tabla creada).
+  const caps = await resolvePersonalCapabilities();
+  if (caps.movimientos) {
+    const tenantId = await resolveTenantId(userId);
+    if (tenantId) {
+      const patch = {};
+      if ('descripcion' in nuevo) patch.descripcion = nuevo.descripcion;
+      if ('monto' in nuevo) patch.monto_original = nuevo.monto;
+      if ('montoPesos' in nuevo) patch.monto_pesos = nuevo.montoPesos;
+      if ('moneda' in nuevo) patch.moneda = nuevo.moneda;
+      if ('categoria' in nuevo) patch.categoria = nuevo.categoria;
+      if ('comercio' in nuevo) patch.comercio = nuevo.comercio || null;
+      if ('notas' in nuevo) patch.notas = nuevo.notas || null;
+      if ('fecha' in nuevo) { const iso = fechaStrAIso(nuevo.fecha); if (iso) patch.fecha = iso; }
+      if (Object.keys(patch).length) {
+        const { error } = await forTenant(tenantId)
+          .from('movimientos_personales')
+          .update(patch)
+          .eq('legacy_id', String(idMov))
+          .eq('user_id', userId);
+        if (error) console.error('Supabase movimientos_personales update error:', error.message);
+      }
+    }
+  }
+  return true;
+}
+
 async function eliminarMovimientoPersonal(userId, idMov) {
   if (personalEnSupabase()) {
     const eliminado = await repoSupabase.eliminarMovimiento(userId, idMov);
@@ -737,6 +865,8 @@ function esEgresoMov(m) {
 module.exports = {
   registrarMovimientoPersonal,
   obtenerMovimientosPersonales,
+  obtenerMovimientoPersonal,
+  actualizarMovimientoPersonal,
   eliminarMovimientoPersonal,
   guardarPresupuesto,
   calcularResumenPersonal,
