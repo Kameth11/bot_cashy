@@ -16,6 +16,7 @@ const { obtenerDatosSheet, getSheetId } = require('../services/sheet.service');
 const { ejecutarBalance, ejecutarHoy, ejecutarSemana, ejecutarMes } = require('../services/command.service');
 const {
   guardarMovimiento,
+  restaurarMovimiento,
   calcularMontoPesos,
 } = require('../services/movimiento.service');
 const {
@@ -773,6 +774,75 @@ app.post('/api/movimientos/eliminar-lote', authMiddleware, requierePermiso('edit
   invalidarCacheMovimientos(req.user.userId);
   logger.audit('movimientos_deleted_lote', { userId: req.user.userId, eliminados, fallidos: fallidos.length });
   res.json({ ok: true, eliminados, fallidos });
+});
+
+// ── Movimientos: restaurar (deshacer un borrado) ──
+// Recibe los movimientos tal como los devolvió GET /api/movimientos y los vuelve a
+// cargar con su ID y fecha originales. Si un ID ya existe, se saltea (no duplica).
+const TIPOS_MOV = ['Ingreso', 'Egreso'];
+const MONEDAS_MOV = ['Pesos', 'Dólares', 'Euros'];
+function limpiarMovimientoRestaurar(m) {
+  if (!m || typeof m !== 'object') return null;
+  const idUnico = sanitizarInput(m.idUnico, 60);
+  const descripcion = normalizarDescripcion(m.descripcion);
+  const monto = validarMonto(m.monto);
+  const tipo = TIPOS_MOV.includes(m.tipo) ? m.tipo : null;
+  const moneda = MONEDAS_MOV.includes(m.moneda) ? m.moneda : null;
+  const fecha = sanitizarInput(m.fecha, 20);
+  if (!idUnico || !descripcion.ok || !monto.ok || !tipo || !moneda || !fecha) return null;
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    idUnico, fecha, tipo, moneda,
+    hora: sanitizarInput(m.hora, 20),
+    descripcion: descripcion.valor,
+    monto: monto.valor,
+    montoPesos: Number.isFinite(Number(m.montoPesos)) && Number(m.montoPesos) !== 0 ? Number(m.montoPesos) : monto.valor,
+    estado: m.estado === 'Pendiente' ? 'Pendiente' : 'Cobrado',
+    metodoPago: ['efectivo', 'transferencia', 'tarjeta'].includes(m.metodoPago) ? m.metodoPago : '',
+    categoria: sanitizarInput(m.categoria, 40),
+    paciente: sanitizarInput(m.paciente, 100),
+    pagador: sanitizarInput(m.pagador, 100),
+    profesional: sanitizarInput(m.profesional, 100),
+    tratamiento: sanitizarInput(m.tratamiento, 100),
+    proveedor: sanitizarInput(m.proveedor, 100),
+    fechaPrestacion: sanitizarInput(m.fechaPrestacion, 20),
+    fechaVencimiento: sanitizarInput(m.fechaVencimiento, 20),
+    fechaCobro: sanitizarInput(m.fechaCobro, 20),
+    saldoPendiente: num(m.saldoPendiente),
+    referenciaId: sanitizarInput(m.referenciaId, 80),
+  };
+}
+
+app.post('/api/movimientos/restaurar', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
+  const lista = Array.isArray(req.body?.movimientos) ? req.body.movimientos : [];
+  if (lista.length === 0) return res.status(400).json({ error: 'movimientos es requerido' });
+  if (lista.length > MAX_BORRADO_LOTE) {
+    return res.status(400).json({ error: `Máximo ${MAX_BORRADO_LOTE} movimientos por vez` });
+  }
+  const movs = lista.map(limpiarMovimientoRestaurar);
+  if (movs.some(m => !m)) return res.status(400).json({ error: 'Algún movimiento es inválido' });
+
+  try {
+    const existentes = new Set((await obtenerDatosSheet(req.user.userId)).map(d => d.idUnico));
+    let restaurados = 0;
+    const fallidos = [];
+    for (const mov of movs) {
+      if (existentes.has(mov.idUnico)) { restaurados += 1; continue; }
+      try {
+        await restaurarMovimiento(req.user.userId, mov);
+        restaurados += 1;
+      } catch (err) {
+        logger.error('API', 'Error restaurando movimiento', { err: err.message, idUnico: mov.idUnico });
+        fallidos.push(mov.idUnico);
+      }
+    }
+    invalidarCacheMovimientos(req.user.userId);
+    logger.audit('movimientos_restored', { userId: req.user.userId, restaurados, fallidos: fallidos.length });
+    res.json({ ok: true, restaurados, fallidos });
+  } catch (err) {
+    logger.error('API', 'Error POST /api/movimientos/restaurar', { err: err.message });
+    res.status(500).json({ error: 'No se pudo deshacer' });
+  }
 });
 
 // ── Movimientos: delete por clave compuesta (filas sin ID_Unico) ──

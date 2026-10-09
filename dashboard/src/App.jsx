@@ -17,9 +17,10 @@ import ConfigPage from './pages/ConfigPage'
 import PersonalPage from './pages/PersonalPage'
 import CasaPage from './pages/CasaPage'
 import { api } from './services/api'
+import { deshacerAlta } from './services/deshacer'
 
 function LayoutWithModal() {
-  const { showNuevo, closeNuevo, nuevoError, setNuevoError, creando, setCreando, triggerReload } = useApp()
+  const { showNuevo, closeNuevo, nuevoError, setNuevoError, creando, setCreando, triggerReload, mostrarToast } = useApp()
   const { puede, esDueno, puedePersonal } = useAuth()
   const location = useLocation()
 
@@ -61,16 +62,19 @@ function LayoutWithModal() {
       const ruta = casaId
         ? `/api/casa/${casaId}/movimientos`
         : enPersonal ? '/api/personal/movimientos' : '/api/movimientos'
-      await api.post(ruta, payload)
+      const { data } = await api.post(ruta, payload)
       closeNuevo()
       triggerReload()
+      // Solo los movimientos del consultorio tienen deshacer por ahora.
+      const esConsultorio = !casaId && !enPersonal
+      mostrarToast('Movimiento guardado', esConsultorio ? deshacerAlta(data?.movimiento?.idUnico) : null)
     } catch (err) {
       const msg = err?.response?.data?.error || err?.message || 'Error al guardar el movimiento'
       setNuevoError(msg)
     } finally {
       setCreando(false)
     }
-  }, [closeNuevo, triggerReload, setNuevoError, setCreando, enPersonal, casaId])
+  }, [closeNuevo, triggerReload, setNuevoError, setCreando, enPersonal, casaId, mostrarToast])
 
   return (
     <div className="app-layout">

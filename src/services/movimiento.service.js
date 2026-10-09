@@ -216,7 +216,58 @@ async function guardarMovimiento(userId, {
   };
 }
 
+// Vuelve a cargar un movimiento que se borró (deshacer): conserva el ID único y la
+// fecha/hora originales para que quede exactamente como estaba. `mov` ya viene
+// validado por quien llama (ver POST /api/movimientos/restaurar).
+async function restaurarMovimiento(userId, mov) {
+  const cliente = obtenerClientePorUserId(userId);
+  const idOrigen = cliente ? (cliente.email || cliente.telegramUserId || userId) : userId;
+  const rowData = construirRowData({
+    fechaStr: mov.fecha,
+    horaStr: mov.hora,
+    descripcion: mov.descripcion,
+    monto: mov.monto,
+    tipo: mov.tipo,
+    moneda: mov.moneda,
+    metodoPago: mov.metodoPago,
+    idUnico: mov.idUnico,
+    montoPesos: mov.montoPesos,
+    idOrigen,
+    estado: mov.estado,
+    categoria: mov.categoria,
+    paciente: mov.paciente,
+    pagador: mov.pagador,
+    profesional: mov.profesional,
+    tratamiento: mov.tratamiento,
+    proveedor: mov.proveedor,
+    fechaPrestacion: mov.fechaPrestacion,
+    fechaVencimiento: mov.fechaVencimiento,
+    saldoPendiente: mov.saldoPendiente,
+    referenciaId: mov.referenciaId,
+  });
+  if (mov.fechaCobro) rowData.FechaCobro = mov.fechaCobro;
+
+  const savedRow = await db.addRow(userId, rowData, {
+    movimientoV2Data: {
+      categoria: mov.categoria || null,
+      pacienteNombre: mov.paciente || null,
+      pagadorNombre: mov.pagador || null,
+      profesionalNombre: mov.profesional || null,
+      proveedorNombre: mov.proveedor || null,
+      tratamientoNombre: mov.tratamiento || null,
+      fechaPrestacion: mov.fechaPrestacion || null,
+      fechaVencimiento: mov.fechaVencimiento || null,
+      referenciaId: mov.referenciaId || null,
+      origenCarga: 'deshacer',
+      metodoPago: mov.metodoPago,
+    },
+  });
+  if (!savedRow) throw new Error('sheet_no_configurado');
+  return mov.idUnico;
+}
+
 module.exports = {
+  restaurarMovimiento,
   generarIDUnico,
   convertirAPesos,
   crearTimestampMovimiento,

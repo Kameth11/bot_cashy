@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { api } from '../services/api'
+import { deshacerBorrado, deshacerEdicion } from '../services/deshacer'
 import { CurrencyBadge, StatusBadge, MontoCell } from '../components/Money'
 import { formatFecha as fmtFecha } from '../utils/format'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
@@ -37,7 +38,7 @@ function FechaCobroNote({ mov }) {
 // ── Main ───────────────────────────────────────────────────
 
 export default function MovimientosPage() {
-  const { reloadSignal } = useApp()
+  const { reloadSignal, mostrarToast } = useApp()
   const { puede } = useAuth()
   const [subiendo, setSubiendo] = useState(false)
 
@@ -122,13 +123,15 @@ export default function MovimientosPage() {
     if (!idUnico) { setModalError('Sin ID único — editalo en el Sheet.'); return }
     setGuardando(true)
     try {
+      const antes = editando?.idUnico === idUnico ? editando : movimientos.find(m => m.idUnico === idUnico)
       await api.put(`/api/movimientos/${idUnico}`, updates)
       setEditando(null)
       setReload(r => r + 1)
+      mostrarToast('Movimiento actualizado', deshacerEdicion(antes, updates))
     } catch (err) {
       setModalError(err?.response?.data?.error || 'Error al guardar')
     } finally { setGuardando(false) }
-  }, [])
+  }, [editando, movimientos, mostrarToast])
 
   const handleBorrar = useCallback(async (idUnico, mov) => {
     setModalError(null)
@@ -138,10 +141,11 @@ export default function MovimientosPage() {
       else await api.delete('/api/movimientos-by-key', { data: { descripcion: mov.descripcion, monto: mov.monto, fecha: mov.fecha } })
       setConfirmDelete(null)
       setReload(r => r + 1)
+      mostrarToast('Movimiento eliminado', deshacerBorrado([mov]))
     } catch (err) {
       setModalError(err?.response?.data?.error || 'Error al eliminar')
     } finally { setBorrando(false) }
-  }, [])
+  }, [mostrarToast])
 
   const alternarSeleccion = useCallback((id) => {
     setSeleccion(prev => {
@@ -164,12 +168,17 @@ export default function MovimientosPage() {
     try {
       const { data } = await api.post('/api/movimientos/eliminar-lote', { ids })
       if (data?.fallidos?.length) setError(`No se pudieron eliminar ${data.fallidos.length} movimiento(s).`)
+      const fallidos = new Set(data?.fallidos || [])
+      const borrados = movimientos.filter(m => seleccion.has(m.idUnico) && !fallidos.has(m.idUnico))
       setSeleccion(new Set())
       setReload(r => r + 1)
+      if (borrados.length) {
+        mostrarToast(`${borrados.length} movimiento${borrados.length !== 1 ? 's' : ''} eliminado${borrados.length !== 1 ? 's' : ''}`, deshacerBorrado(borrados))
+      }
     } catch (err) {
       setError(err?.response?.data?.error || 'Error al eliminar los movimientos')
     } finally { setBorrandoLote(false) }
-  }, [seleccion])
+  }, [seleccion, movimientos, mostrarToast])
 
   // Comprobante (foto/PDF) de cada movimiento: por el ID del movimiento o, si
   // el vínculo todavía no se completó, por ReferenciaId "comp:<id>".

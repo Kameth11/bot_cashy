@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
+import { deshacerBorrado, deshacerEdicion } from '../services/deshacer'
 import MetricCard from '../components/MetricCard'
 import { CurrencyBadge, StatusBadge, MontoCell } from '../components/Money'
 import { formatFecha as fmtFecha } from '../utils/format'
@@ -18,7 +19,7 @@ const formatFecha = (v) => fmtFecha(v, 'dd/MM')
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { reloadSignal } = useApp()
+  const { reloadSignal, mostrarToast } = useApp()
 
   const [period,      setPeriod]      = useState('este-mes')
   const [movimientos, setMovimientos] = useState([])
@@ -128,13 +129,15 @@ export default function Dashboard() {
     if (!idUnico) { setModalError('Sin ID único — editalo en el Google Sheet.'); return }
     setGuardando(true)
     try {
+      const antes = editando?.idUnico === idUnico ? editando : movimientos.find(m => m.idUnico === idUnico)
       await api.put(`/api/movimientos/${idUnico}`, updates)
       setEditando(null)
       setReload(r => r + 1)
+      mostrarToast('Movimiento actualizado', deshacerEdicion(antes, updates))
     } catch (err) {
       setModalError(err?.response?.data?.error || err?.message || 'Error al guardar')
     } finally { setGuardando(false) }
-  }, [])
+  }, [editando, movimientos, mostrarToast])
 
   const handleBorrar = useCallback(async (idUnico, mov) => {
     setModalError(null)
@@ -149,10 +152,11 @@ export default function Dashboard() {
       }
       setConfirmDelete(null)
       setReload(r => r + 1)
+      mostrarToast('Movimiento eliminado', deshacerBorrado([mov]))
     } catch (err) {
       setModalError(err?.response?.data?.error || err?.message || 'Error al eliminar')
     } finally { setBorrando(false) }
-  }, [])
+  }, [mostrarToast])
 
   // Preview: last 6 movements
   const preview = ordenarPorFechaDesc(movimientos).slice(0, 6)
