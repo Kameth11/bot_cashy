@@ -113,6 +113,7 @@ export default function AgendaPage() {
   const [creando, setCreando] = useState(false)
   const [fecha, setFecha] = useState(hoyMedianoche)
   const [dropdownAbierto, setDropdownAbierto] = useState(null)
+  const [sheetTurno, setSheetTurno] = useState(null) // hoja de acciones (celular)
   const [aviso, setAviso] = useState(null)
 
   function shiftFecha(deltaDias) {
@@ -194,6 +195,24 @@ export default function AgendaPage() {
     } finally {
       setEliminando(false)
     }
+  }
+
+  function abrirCobrar(turno) {
+    setModalTurno(turno); setMontoTotal(''); setPagos([{ metodoPago: 'efectivo', monto: '' }])
+  }
+
+  // Celular: Cobrar + ⋮ (abre la hoja con el resto de las acciones). En compu no se ve.
+  function accionesMobile(turno, puedeAccion) {
+    return (
+      <div className="agenda-actions-mobile">
+        {puedeAccion && (
+          <button className="btn-agenda primary" disabled={accionando === turno.idTurno} onClick={() => abrirCobrar(turno)}>
+            Cobrar
+          </button>
+        )}
+        <button className="action-btn agenda-more-btn" aria-label="Más acciones" title="Más acciones" onClick={() => setSheetTurno(turno)}>⋮</button>
+      </div>
+    )
   }
 
   function abrirEditar(turno) {
@@ -385,7 +404,7 @@ export default function AgendaPage() {
                           <div className="agenda-patient">{turno.cliente || 'Sin nombre'}</div>
                           {turno.servicio && <div className="agenda-treat">{turno.servicio}</div>}
                         </div>
-                        <div className="agenda-card-actions">
+                        <div className="agenda-card-actions agenda-actions-desktop">
                           <button className="action-btn" title="Editar" onClick={() => abrirEditar(turno)}>
                             <Pencil size={13} />
                           </button>
@@ -441,6 +460,7 @@ export default function AgendaPage() {
                             </>
                           )}
                         </div>
+                        {accionesMobile(turno, puedeAccion)}
                       </div>
                     )
                   })}
@@ -469,7 +489,7 @@ export default function AgendaPage() {
                   {turno.servicio && <div className="agenda-treat">{turno.servicio}</div>}
                 </div>
                 <span className="agenda-badge" style={{ background: e.bg, color: e.color, marginRight: 8 }}>{e.label}</span>
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <div className="agenda-actions-desktop" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <button className="action-btn" title="Editar" onClick={() => abrirEditar(turno)}><Pencil size={14} /></button>
                   <button className="action-btn" title="Eliminar" style={{ color: 'var(--red)' }} onClick={() => setConfirmandoEliminar(turno)}><Trash2 size={14} /></button>
                   {puedeAccion && (
@@ -486,11 +506,33 @@ export default function AgendaPage() {
                     </>
                   )}
                 </div>
+                {accionesMobile(turno, puedeAccion)}
               </div>
             )
           })}
         </div>
       )}
+
+      {/* Hoja de acciones (celular) */}
+      {sheetTurno && (() => {
+        const t = sheetTurno
+        const puedeAccion = t.estado !== 'Cobrado' && t.estado !== 'Cancelado' && t.estado !== 'No vino'
+        const cerrar = () => setSheetTurno(null)
+        const hacer = (fn) => () => { cerrar(); fn(t) }
+        return (
+          <div className="sheet-overlay" onClick={cerrar}>
+            <div className="sheet" role="dialog" aria-label="Acciones del turno" onClick={e => e.stopPropagation()}>
+              <div className="sheet-title">{t.hora || '–'} · {t.cliente || 'Sin nombre'}</div>
+              {puedeAccion && t.estado !== 'Llegó' && <button className="sheet-btn" onClick={hacer(handleLlego)}>Llegó</button>}
+              {puedeAccion && <button className="sheet-btn" onClick={hacer(handleCancelar)}>Canceló</button>}
+              {puedeAccion && <button className="sheet-btn" onClick={hacer(handleNoVino)}>No vino</button>}
+              <button className="sheet-btn" onClick={hacer(abrirEditar)}>Editar</button>
+              <button className="sheet-btn sheet-btn-danger" onClick={hacer(setConfirmandoEliminar)}>Eliminar</button>
+              <button className="sheet-btn sheet-btn-cancel" onClick={cerrar}>Cerrar</button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Eliminar modal */}
       {confirmandoEliminar && (
