@@ -746,6 +746,34 @@ app.delete('/api/movimientos/:idUnico', authMiddleware, requierePermiso('editar_
   }
 });
 
+// ── Movimientos: delete en lote (limpiar pruebas viejas) ──
+// Uno por uno por el mismo camino que el borrado individual (Sheets + Supabase).
+// Tope por pedido para no tener la conexión abierta minutos con el write-lock.
+const MAX_BORRADO_LOTE = 200;
+app.post('/api/movimientos/eliminar-lote', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.map(String).filter(Boolean))] : [];
+  if (ids.length === 0) return res.status(400).json({ error: 'ids es requerido' });
+  if (ids.length > MAX_BORRADO_LOTE) {
+    return res.status(400).json({ error: `Máximo ${MAX_BORRADO_LOTE} movimientos por vez` });
+  }
+  let eliminados = 0;
+  const fallidos = [];
+  for (const idUnico of ids) {
+    try {
+      await deleteMovimiento(req.user.userId, idUnico);
+      eliminados += 1;
+    } catch (err) {
+      if (err.message !== 'movimiento_no_encontrado') {
+        logger.error('API', 'Error DELETE lote /api/movimientos', { err: err.message, idUnico });
+      }
+      fallidos.push(idUnico);
+    }
+  }
+  invalidarCacheMovimientos(req.user.userId);
+  logger.audit('movimientos_deleted_lote', { userId: req.user.userId, eliminados, fallidos: fallidos.length });
+  res.json({ ok: true, eliminados, fallidos });
+});
+
 // ── Movimientos: delete por clave compuesta (filas sin ID_Unico) ──
 app.delete('/api/movimientos-by-key', authMiddleware, requierePermiso('editar_movimientos'), async (req, res) => {
   try {

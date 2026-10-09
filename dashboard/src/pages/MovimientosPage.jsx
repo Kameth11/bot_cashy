@@ -57,6 +57,8 @@ export default function MovimientosPage() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [borrando,      setBorrando]      = useState(false)
   const [modalError,    setModalError]    = useState(null)
+  const [seleccion,     setSeleccion]     = useState(() => new Set())
+  const [borrandoLote,  setBorrandoLote]  = useState(false)
   const [comprobantes,  setComprobantes]  = useState([])
   const [viendoComp,    setViendoComp]    = useState(null)
 
@@ -141,6 +143,34 @@ export default function MovimientosPage() {
     } finally { setBorrando(false) }
   }, [])
 
+  const alternarSeleccion = useCallback((id) => {
+    setSeleccion(prev => {
+      const sig = new Set(prev)
+      if (sig.has(id)) sig.delete(id); else sig.add(id)
+      return sig
+    })
+  }, [])
+
+  // Solo se pueden seleccionar los que tienen ID único (los viejos sin ID se borran de a uno).
+  const idsSeleccionables = useMemo(() => filtered.map(m => m.idUnico).filter(Boolean), [filtered])
+  const todosMarcados = idsSeleccionables.length > 0 && idsSeleccionables.every(id => seleccion.has(id))
+
+  const handleBorrarLote = useCallback(async () => {
+    const ids = [...seleccion]
+    if (ids.length === 0) return
+    if (!window.confirm(`¿Eliminar ${ids.length} movimiento${ids.length !== 1 ? 's' : ''}? No se puede deshacer.`)) return
+    setBorrandoLote(true)
+    setError(null)
+    try {
+      const { data } = await api.post('/api/movimientos/eliminar-lote', { ids })
+      if (data?.fallidos?.length) setError(`No se pudieron eliminar ${data.fallidos.length} movimiento(s).`)
+      setSeleccion(new Set())
+      setReload(r => r + 1)
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Error al eliminar los movimientos')
+    } finally { setBorrandoLote(false) }
+  }, [seleccion])
+
   // Comprobante (foto/PDF) de cada movimiento: por el ID del movimiento o, si
   // el vínculo todavía no se completó, por ReferenciaId "comp:<id>".
   const comprobantePorMov = useMemo(() => {
@@ -194,6 +224,18 @@ export default function MovimientosPage() {
       </div>
 
       {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}
+
+      {seleccion.size > 0 && puede('editar_movimientos') && (
+        <div className="filter-bar" style={{ marginBottom: 12, justifyContent: 'space-between' }}>
+          <span>{seleccion.size} seleccionado{seleccion.size !== 1 ? 's' : ''}</span>
+          <span style={{ display: 'flex', gap: 8 }}>
+            <button className="btn-secondary" onClick={() => setSeleccion(new Set())} disabled={borrandoLote}>Cancelar</button>
+            <button className="btn-danger" onClick={handleBorrarLote} disabled={borrandoLote}>
+              {borrandoLote ? 'Eliminando…' : `🗑️ Eliminar ${seleccion.size}`}
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="filter-bar">
@@ -249,6 +291,15 @@ export default function MovimientosPage() {
             <table className="mv-table">
               <thead>
                 <tr>
+                  {puede('editar_movimientos') && (
+                    <th style={{ width: 32 }}>
+                      <input
+                        type="checkbox" title="Seleccionar todos los filtrados"
+                        checked={todosMarcados}
+                        onChange={() => setSeleccion(todosMarcados ? new Set() : new Set(idsSeleccionables))}
+                      />
+                    </th>
+                  )}
                   <th>Descripción</th>
                   <th>Paciente / Proveedor</th>
                   <th>Fecha</th>
@@ -263,6 +314,15 @@ export default function MovimientosPage() {
                   const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
                   return (
                     <tr key={mov.idUnico ?? mov.id ?? i}>
+                      {puede('editar_movimientos') && (
+                        <td>
+                          <input
+                            type="checkbox" disabled={!mov.idUnico}
+                            checked={!!mov.idUnico && seleccion.has(mov.idUnico)}
+                            onChange={() => alternarSeleccion(mov.idUnico)}
+                          />
+                        </td>
+                      )}
                       <td>
                         <div className="mv-desc">
                           <span className="mv-dot" style={{ background: esEgreso ? 'var(--red)' : 'var(--green)' }} />
