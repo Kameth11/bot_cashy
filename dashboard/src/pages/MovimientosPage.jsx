@@ -226,7 +226,7 @@ export default function MovimientosPage() {
       {error && <div className="error-box" style={{ marginBottom: 16 }}>{error}</div>}
 
       {seleccion.size > 0 && puede('editar_movimientos') && (
-        <div className="filter-bar" style={{ marginBottom: 12, justifyContent: 'space-between' }}>
+        <div className="filter-bar" style={{ marginBottom: 12, justifyContent: 'space-between', position: 'sticky', top: 64, zIndex: 20 }}>
           <span>{seleccion.size} seleccionado{seleccion.size !== 1 ? 's' : ''}</span>
           <span style={{ display: 'flex', gap: 8 }}>
             <button className="btn-secondary" onClick={() => setSeleccion(new Set())} disabled={borrandoLote}>Cancelar</button>
@@ -359,7 +359,18 @@ export default function MovimientosPage() {
               {filtered.map((mov, i) => (
                 <div key={mov.idUnico ?? i} className="mov-card-mobile">
                   <div className="mov-card-top">
-                    <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 700 }}>{formatFecha(mov.fecha)}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {puede('editar_movimientos') && (
+                        <input
+                          type="checkbox" aria-label="Seleccionar movimiento"
+                          disabled={!mov.idUnico}
+                          checked={!!mov.idUnico && seleccion.has(mov.idUnico)}
+                          onChange={() => alternarSeleccion(mov.idUnico)}
+                          style={{ width: 20, height: 20, margin: 0 }}
+                        />
+                      )}
+                      <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 700 }}>{formatFecha(mov.fecha)}</span>
+                    </span>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                       <StatusBadge estado={mov.estado} />
                       <FechaCobroNote mov={mov} />
