@@ -21,6 +21,7 @@ const PERSONA_TABLES = new Set([
   'viajes_personales',
   'presupuestos_personales',
   'preferencias_ambito_personales',
+  'chat_historial',
 ]);
 
 function sinIdentidad(payload) {

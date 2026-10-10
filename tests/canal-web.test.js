@@ -11,6 +11,12 @@ jest.mock('../src/services/events.service', () => ({
   emitChatUpdated: jest.fn(),
 }));
 
+// La persistencia tiene sus propios tests (canal-web.historial.test.js).
+jest.mock('../src/services/chat-historial.service', () => ({
+  cargar: jest.fn().mockResolvedValue(null),
+  guardar: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('../src/services/gemini.service', () => ({
   transcribirAudio: jest.fn().mockResolvedValue('consulta Juan 15000 efectivo'),
 }));
@@ -85,7 +91,7 @@ describe('canal web', () => {
       expect.objectContaining({ de: 'yo', texto: '/balance' }),
       expect.objectContaining({ de: 'bot', texto: '*Balance* del mes', formato: 'Markdown', botones: [] }),
     ]);
-    expect(eventsService.emitChatUpdated).toHaveBeenCalledWith(String(USER), expect.any(Number));
+    expect(eventsService.emitChatUpdated).toHaveBeenCalledWith(String(USER), expect.any(Number), canalWeb.EPOCA);
   });
 
   test('los botones inline llegan a la web y apretarlos corre la acción del bot', async () => {
@@ -159,13 +165,13 @@ describe('canal web', () => {
     for (let i = 0; i < canalWeb.MAX_MENSAJES; i++) {
       await canalWeb.enviarTexto(USER, '/balance');
     }
-    const { mensajes } = canalWeb.obtenerConversacion(USER);
+    const { mensajes } = await canalWeb.obtenerConversacion(USER);
     expect(mensajes).toHaveLength(canalWeb.MAX_MENSAJES);
     expect(mensajes[mensajes.length - 1].texto).toBe('*Balance* del mes');
   });
 
   test('cada usuario tiene su propia conversación', async () => {
     await canalWeb.enviarTexto(USER, '/balance');
-    expect(canalWeb.obtenerConversacion(9999).mensajes).toEqual([]);
+    expect((await canalWeb.obtenerConversacion(9999)).mensajes).toEqual([]);
   });
 });

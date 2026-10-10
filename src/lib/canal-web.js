@@ -10,8 +10,11 @@
 // sigue saliendo por Telegram de verdad, igual que antes.
 //
 // Límites conocidos:
-//  - El historial vive en memoria del proceso (se pierde en cada deploy). Los
-//    movimientos no: se guardan como siempre en Sheets/Supabase.
+//  - El historial vive en memoria y se persiste en Supabase (tabla
+//    chat_historial, best-effort: sin la tabla se pierde en cada deploy, como
+//    antes). Los movimientos no dependen de esto: se guardan como siempre en
+//    Sheets/Supabase. Al restaurar se sacan los botones: sus confirmaciones
+//    pendientes vivían en la memoria del proceso anterior.
 //  - Los estados conversacionales (confirmaciones pendientes, ediciones) son
 //    los del bot, por userId: si el mismo usuario usa Telegram y la web a la
 //    vez, comparten la conversación en curso — igual que dos dispositivos con
@@ -23,28 +26,102 @@ const { bot } = require('./telegraf');
 const logger = require('./logger');
 const eventsService = require('../services/events.service');
 const { PREFIJO_ARCHIVO_WEB } = require('./archivo-web');
+const historial = require('../services/chat-historial.service');
 
 const MAX_MENSAJES = 150;              // por usuario, los más viejos se descartan
+const MAX_EDAD_MS = 30 * 24 * 60 * 60 * 1000; // al restaurar se descartan los de más de 30 días
+const GUARDAR_DESPUES_MS = 1500;       // junta ráfagas de mensajes en un solo guardado
 const HANDLER_TIMEOUT_MS = 120 * 1000; // audio + Gemini puede tardar
 const BOT_INFO_FALLBACK = { id: 0, is_bot: true, first_name: 'Cashy', username: 'cashy_web' };
 
-// userId (string) -> { mensajes: [], ultimoId, rev, cola: Promise }
+// Identifica esta "vida" del proceso: si el servidor se reinicia (deploy), los
+// clientes lo notan por el cambio de época y vuelven a pedir la conversación en
+// vez de comparar números de revisión de dos procesos distintos.
+const EPOCA = crypto.randomUUID();
+
+// userId (string) -> { mensajes, ultimoId, rev, cola, cargando, timerGuardado,
+//                      guardando, revGuardada }
 const conversaciones = new Map();
+const guardadosEnCurso = new Set();
 
 function conversacionDe(userId) {
   const key = String(userId);
   let conv = conversaciones.get(key);
   if (!conv) {
-    conv = { mensajes: [], ultimoId: 0, rev: 0, cola: Promise.resolve() };
+    conv = {
+      mensajes: [], ultimoId: 0, rev: 0, cola: Promise.resolve(),
+      cargando: null, timerGuardado: null, guardando: Promise.resolve(), revGuardada: 0,
+    };
     conversaciones.set(key, conv);
   }
   return conv;
 }
 
+// Restaura el historial guardado, una sola vez por proceso y persona. Todo lo
+// que lee o escribe la conversación espera a esto primero.
+function asegurarCargada(userId) {
+  const conv = conversacionDe(userId);
+  if (!conv.cargando) {
+    conv.cargando = historial.cargar(userId).then((guardado) => {
+      if (!guardado) return;
+      const limite = Date.now() - MAX_EDAD_MS;
+      conv.mensajes = guardado.mensajes
+        .filter(m => m && Number.isFinite(m.id) && Number(m.ts) >= limite)
+        // Sus botones ya no sirven: las confirmaciones pendientes estaban en la
+        // memoria del proceso anterior.
+        .map(m => ({ ...m, botones: [] }))
+        .slice(-MAX_MENSAJES);
+      conv.ultimoId = Math.max(guardado.ultimoId, ...conv.mensajes.map(m => m.id), 0);
+      conv.rev = guardado.rev;
+      conv.revGuardada = guardado.rev;
+    }).catch(() => {});
+  }
+  return conv.cargando;
+}
+
+// Guarda el estado actual (serializado por persona: nunca dos guardados a la vez).
+function guardarAhora(userId, conv) {
+  clearTimeout(conv.timerGuardado);
+  conv.timerGuardado = null;
+  if (conv.rev === conv.revGuardada) return conv.guardando;
+  const revAGuardar = conv.rev;
+  const foto = {
+    mensajes: conv.mensajes.map(m => ({ ...m, botones: [] })),
+    ultimoId: conv.ultimoId,
+    rev: revAGuardar,
+  };
+  const tarea = conv.guardando.then(() => historial.guardar(userId, foto)).then((ok) => {
+    if (ok && revAGuardar > conv.revGuardada) conv.revGuardada = revAGuardar;
+  }).catch(() => {});
+  conv.guardando = tarea;
+  guardadosEnCurso.add(tarea);
+  tarea.then(() => guardadosEnCurso.delete(tarea));
+  return tarea;
+}
+
+function programarGuardado(userId, conv) {
+  if (conv.timerGuardado) return; // ya hay uno en camino: junta esta ráfaga
+  conv.timerGuardado = setTimeout(() => guardarAhora(userId, conv), GUARDAR_DESPUES_MS);
+  if (conv.timerGuardado.unref) conv.timerGuardado.unref();
+}
+
+// Para el apagado ordenado: guarda ya lo que esté esperando el temporizador y
+// espera (con tope) a los guardados en curso.
+async function vaciarGuardados(timeoutMs = 5000) {
+  for (const [userId, conv] of conversaciones) {
+    if (conv.timerGuardado || conv.rev !== conv.revGuardada) guardarAhora(userId, conv);
+  }
+  let timer;
+  const tope = new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); });
+  await Promise.race([Promise.all([...guardadosEnCurso]), tope]);
+  clearTimeout(timer);
+}
+
 function huboCambio(userId, conv) {
   conv.rev += 1;
   if (conv.mensajes.length > MAX_MENSAJES) conv.mensajes.splice(0, conv.mensajes.length - MAX_MENSAJES);
-  eventsService.emitChatUpdated(userId, conv.rev);
+  programarGuardado(userId, conv);
+  eventsService.emitChatUpdated(userId, conv.rev, EPOCA);
 }
 
 // Botones inline de Telegram -> forma simple para la web. Solo se conservan los
@@ -218,10 +295,11 @@ function enCola(userId, fn) {
 
 function snapshot(userId, avisos = []) {
   const conv = conversacionDe(userId);
-  return { rev: conv.rev, mensajes: conv.mensajes.map(m => ({ ...m, botones: m.botones.map(f => f.slice()) })), avisos };
+  return { epoca: EPOCA, rev: conv.rev, mensajes: conv.mensajes.map(m => ({ ...m, botones: m.botones.map(f => f.slice()) })), avisos };
 }
 
-function obtenerConversacion(userId) {
+async function obtenerConversacion(userId) {
+  await asegurarCargada(userId);
   return snapshot(userId);
 }
 
@@ -234,6 +312,7 @@ function entidadesDeComando(texto) {
 async function enviarTexto(userId, texto, { nombre } = {}) {
   const limpio = String(texto || '').trim();
   return enCola(userId, async () => {
+    await asegurarCargada(userId);
     const avisos = [];
     const telegram = new TelegramWeb(userId, avisos);
     const conv = conversacionDe(userId);
@@ -254,6 +333,7 @@ async function enviarTexto(userId, texto, { nombre } = {}) {
 
 async function enviarAudio(userId, { buffer, mimeType, duracion }, { nombre } = {}) {
   return enCola(userId, async () => {
+    await asegurarCargada(userId);
     const avisos = [];
     const telegram = new TelegramWeb(userId, avisos);
     const fileId = `web-${crypto.randomUUID()}`;
@@ -284,6 +364,7 @@ async function enviarAudio(userId, { buffer, mimeType, duracion }, { nombre } = 
 // escribió junto al archivo viaja como `caption`, que photo.js usa como pista.
 async function enviarArchivo(userId, { buffer, mimeType, nombre, caption }, { nombre: nombreUsuario } = {}) {
   return enCola(userId, async () => {
+    await asegurarCargada(userId);
     const avisos = [];
     const telegram = new TelegramWeb(userId, avisos);
     const fileId = `${PREFIJO_ARCHIVO_WEB}${crypto.randomUUID()}`;
@@ -321,6 +402,7 @@ async function enviarArchivo(userId, { buffer, mimeType, nombre, caption }, { no
 // real, y los handlers confían en eso.
 async function apretarBoton(userId, mensajeId, data, { nombre } = {}) {
   return enCola(userId, async () => {
+    await asegurarCargada(userId);
     const conv = conversacionDe(userId);
     const mensaje = buscarMensaje(conv, mensajeId);
     const valido = mensaje && mensaje.de === 'bot' &&
@@ -346,7 +428,9 @@ async function apretarBoton(userId, mensajeId, data, { nombre } = {}) {
 }
 
 function _resetParaTests() {
+  for (const conv of conversaciones.values()) clearTimeout(conv.timerGuardado);
   conversaciones.clear();
+  guardadosEnCurso.clear();
 }
 
 module.exports = {
@@ -355,6 +439,8 @@ module.exports = {
   enviarAudio,
   enviarArchivo,
   apretarBoton,
+  vaciarGuardados,
+  EPOCA,
   MAX_MENSAJES,
   _resetParaTests,
 };

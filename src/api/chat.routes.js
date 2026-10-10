@@ -26,8 +26,13 @@ const MAX_NOMBRE = 80;
 function registrarRutasChat(app, { authMiddleware }) {
   const canalWeb = require('../lib/canal-web');
 
-  app.get('/api/chat', authMiddleware, (req, res) => {
-    res.json(canalWeb.obtenerConversacion(req.user.userId));
+  app.get('/api/chat', authMiddleware, async (req, res) => {
+    try {
+      res.json(await canalWeb.obtenerConversacion(req.user.userId));
+    } catch (err) {
+      logger.error('CHAT_WEB', 'Error GET /api/chat', { err: err.message });
+      res.status(500).json({ error: 'No se pudo leer el chat' });
+    }
   });
 
   app.post('/api/chat/mensaje', authMiddleware, async (req, res) => {

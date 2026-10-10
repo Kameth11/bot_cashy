@@ -24,6 +24,9 @@ const SCOPED_TABLES = new Set([
   // Comprobantes leídos de fotos/PDFs (sql/migrations/011). El código sondea
   // si la tabla existe antes de usarla (comprobante-archivo.service.js).
   'comprobantes',
+  // Historial del chat web (sql/migrations/015). Una fila por persona: solo se
+  // consulta con forPersona() (lib/persona-db.js).
+  'chat_historial',
 ]);
 
 function wrapBuilder(builder, tenantId) {

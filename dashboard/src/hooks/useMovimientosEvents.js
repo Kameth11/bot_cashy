@@ -8,14 +8,23 @@ const RECONNECT_DELAY_MS = 3000
 // EventSource). Llama a onEvento(data) cada vez que el backend manda el evento
 // pedido ('movimientos_updated' cuando cambian los movimientos del usuario, por
 // el bot o por el propio dashboard; 'chat_updated' cuando cambia el chat web).
-export function useServerEvent(nombreEvento, onEvento) {
+//
+// `onReconexion` se llama cuando la conexión vuelve después de haberse cortado
+// (por ejemplo, el servidor se reinició con un deploy): se pudieron perder
+// eventos y conviene volver a pedir el estado.
+export function useServerEvent(nombreEvento, onEvento, onReconexion) {
   const onEventoRef = useRef(onEvento)
-  useEffect(() => { onEventoRef.current = onEvento })
+  const onReconexionRef = useRef(onReconexion)
+  useEffect(() => {
+    onEventoRef.current = onEvento
+    onReconexionRef.current = onReconexion
+  })
 
   useEffect(() => {
     let stopped = false
     let abortController = null
     let reconnectTimer = null
+    let yaSeConecto = false
 
     async function connect() {
       const token = localStorage.getItem('cashy_token')
@@ -31,6 +40,8 @@ export function useServerEvent(nombreEvento, onEvento) {
         // token para siempre, solo generaria ruido en los logs del backend.
         if (response.status === 401) return
         if (!response.ok || !response.body) throw new Error('SSE no disponible')
+        if (yaSeConecto) onReconexionRef.current?.()
+        yaSeConecto = true
 
         const reader = response.body.getReader()
         const decoder = new TextDecoder()

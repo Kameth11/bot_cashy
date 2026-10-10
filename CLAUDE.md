@@ -205,7 +205,15 @@ dueño, al profesional) sigue saliendo por Telegram.
   `file_id` con prefijo `web-` (`src/lib/archivo-web.js`): no se guarda
   referencia `tg:` falsa y, sin Storage de Supabase, `comprobante-registro`
   los respalda por Telegram. También entran en la cola sin conexión.
-- **Límites**: el historial se pierde en cada deploy (los movimientos no).
+- **Historial**: se persiste en Supabase (`chat_historial`, una fila por persona
+  con los últimos 150 mensajes de hasta 30 días; `sql/migrations/015`, **hay que
+  correrla a mano**). Es best-effort (`chat-historial.service.js`): sin Supabase
+  o sin la tabla el chat anda igual y el historial se pierde en cada deploy.
+  Se guarda con 1,5 s de espera (junta ráfagas) y se vacía en el apagado
+  ordenado (`vaciarGuardados` en `index.js`). Al restaurar se sacan los botones
+  (sus confirmaciones vivían en la memoria del proceso anterior). Cada deploy
+  tiene una `EPOCA`: el navegador, al verla cambiar o al reconectar el SSE,
+  vuelve a pedir la conversación.
 - Si cambiás un handler del bot, el chat web lo hereda solo. Si agregás un
   método de Telegram nuevo dirigido al propio usuario (ej. `sendLocation`),
   sumalo en `TelegramWeb.callApi` o la web no lo va a mostrar.

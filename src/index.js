@@ -135,6 +135,10 @@ async function apagar(signal) {
     if (apiServer.closeIdleConnections) apiServer.closeIdleConnections();
   }
 
+  // El historial del chat web se guarda con una pequeña espera: en el apagado
+  // se guarda ya, para que un deploy no se lleve los últimos mensajes.
+  try { await require('./lib/canal-web').vaciarGuardados(SHUTDOWN_DRAIN_MS / 2); } catch (_) {}
+
   const vacio = await esperarPendientes(SHUTDOWN_DRAIN_MS);
   if (!vacio) logger.warn('PROCESS', 'Apagado con escrituras sin terminar', { escrituras_pendientes: pendientes() });
   if (apiServer && apiServer.closeAllConnections) apiServer.closeAllConnections();

@@ -99,9 +99,9 @@ describe('protecciones', () => {
     expect(forPersona('t1', 7)).toBeNull();
   });
 
-  test('las cuatro tablas personales están cubiertas', () => {
+  test('las tablas por persona están cubiertas', () => {
     expect([...PERSONA_TABLES].sort()).toEqual([
-      'movimientos_personales', 'preferencias_ambito_personales', 'presupuestos_personales', 'viajes_personales',
+      'chat_historial', 'movimientos_personales', 'preferencias_ambito_personales', 'presupuestos_personales', 'viajes_personales',
     ]);
   });
 });

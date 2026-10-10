@@ -169,7 +169,11 @@ en este orden recomendado:
    `CLAUDE.md`). Verificado con el pipeline real de `photo.js`, foto de 8,9 MB
    achicada a 1 MB, PDF, sin conexión. Falta probar en producción la lectura
    real con Gemini de una factura y de una transferencia.
-4. **Historial que sobreviva a los deploys** (hoy vive en memoria del proceso).
+4. ~~**Historial que sobreviva a los deploys**~~ — hecho 2026-10-10, **falta
+   correr `sql/migrations/015_chat_historial.sql` en Supabase** (sin eso sigue
+   como antes: se pierde en cada deploy; el log avisa una vez). Probado con un
+   Supabase falso: la conversación sobrevive a un deploy simulado y otra persona
+   no la ve.
 5. **App en las tiendas** con Capacitor sobre la misma PWA (push y micrófono
    nativos); una app 100% nativa solo si hace falta después.
 

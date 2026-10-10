@@ -94,8 +94,8 @@ describe('emitChatUpdated', () => {
     const ajeno = { write: jest.fn() };
     svc.subscribe('chat-1', propio);
     svc.subscribe('chat-2', ajeno);
-    svc.emitChatUpdated('chat-1', 9);
-    expect(propio.write).toHaveBeenCalledWith('event: chat_updated\ndata: {"rev":9}\n\n');
+    svc.emitChatUpdated('chat-1', 9, 'epoca-1');
+    expect(propio.write).toHaveBeenCalledWith('event: chat_updated\ndata: {"rev":9,"epoca":"epoca-1"}\n\n');
     expect(ajeno.write).not.toHaveBeenCalled();
     svc.unsubscribe('chat-1', propio);
     svc.unsubscribe('chat-2', ajeno);

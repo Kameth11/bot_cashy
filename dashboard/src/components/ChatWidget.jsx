@@ -82,6 +82,7 @@ export default function ChatWidget() {
   const [grabando, setGrabando] = useState(null) // { inicio, segundos }
 
   const revRef = useRef(0)
+  const epocaRef = useRef(null) // "vida" del servidor: cambia con cada deploy
   const abiertoRef = useRef(abierto)
   useEffect(() => { abiertoRef.current = abierto }, [abierto])
   const listaRef = useRef(null)
@@ -100,6 +101,7 @@ export default function ChatWidget() {
   const aplicar = useCallback((snap) => {
     if (!snap || !Array.isArray(snap.mensajes)) return
     revRef.current = snap.rev
+    epocaRef.current = snap.epoca ?? null
     setMensajes(prev => {
       const nuevosBot = snap.mensajes.filter(m => m.de === 'bot' && !prev.some(p => p.id === m.id)).length
       if (nuevosBot && !abiertoRef.current && prev.length) setNoLeidos(n => n + nuevosBot)
@@ -210,11 +212,14 @@ export default function ChatWidget() {
   // Mientras esta pestaña espera su propia respuesta no hace falta pedir nada:
   // la respuesta trae la conversación completa. Los avisos seguidos se agrupan.
   const sseTimer = useRef(null)
+  // Si el servidor se reinició (otra época), sus números de revisión no se pueden
+  // comparar con los que ya tenemos: se vuelve a pedir la conversación.
   useServerEvent('chat_updated', (data) => {
-    if (enVueloRef.current || (data?.rev && data.rev <= revRef.current)) return
+    const mismaVida = Boolean(data?.epoca) && data.epoca === epocaRef.current
+    if (enVueloRef.current || (mismaVida && data.rev <= revRef.current)) return
     clearTimeout(sseTimer.current)
     sseTimer.current = setTimeout(cargar, 400)
-  })
+  }, cargar)
 
   useEffect(() => {
     const el = listaRef.current
