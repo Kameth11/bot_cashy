@@ -161,9 +161,10 @@ en este orden recomendado:
      Gemini no tenía `thinkingBudget: 0` y se cortaba por `maxOutputTokens`;
      la grabadora tenía una carrera (dos grabaciones a la vez) y la cola no se
      volvía a leer. Falta confirmar en producción que el audio sale completo.
-2. **Que el chat vea todo (Personal y Casa)**: mostrarlo también en esas
-   pantallas y probar los casos de Casa (quién pagó, entre quiénes). El bot ya
-   decide el ámbito con sus reglas.
+2. ~~**Que el chat vea todo (Personal y Casa)**~~ — hecho 2026-10-10. Probado
+   por el canal web con los handlers reales: gasto de Casa ("gasto super 45000
+   casa pagó Ana entre Ana y Beto" → tarjeta con casa, quién pagó y reparto →
+   Guardar → `registrarGasto` con los datos correctos) y gasto personal.
 3. **Fotos y PDFs por el chat** (facturas, tickets, transferencias). Hoy: "Subir
    comprobante".
 4. **Historial que sobreviva a los deploys** (hoy vive en memoria del proceso).

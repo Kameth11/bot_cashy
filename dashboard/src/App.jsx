@@ -77,12 +77,13 @@ function LayoutWithModal() {
     }
   }, [closeNuevo, triggerReload, setNuevoError, setCreando, enPersonal, casaId, mostrarToast])
 
-  // Chat con Cashy: por ahora solo para el consultorio. En Personal y Casa no
-  // se muestra (el bot igual decide el ámbito con sus propias reglas).
-  const conChat = !enPersonal && !enSeccionCasa
-
+  // Chat con Cashy: el mismo bot en las tres secciones (consultorio, Personal y
+  // Casa). El ámbito de cada mensaje lo decide el bot con sus reglas de siempre
+  // ("luz de casa", la palabra "casa", memoria de correcciones...), no la
+  // pantalla en la que estés; y las tres pantallas ya se refrescan solas cuando
+  // el bot guarda algo.
   return (
-    <div className={`app-layout${conChat ? ' con-chat' : ''}`}>
+    <div className="app-layout con-chat">
       <NavBar />
       <main className="app-main">
         <Routes>
@@ -99,7 +100,7 @@ function LayoutWithModal() {
         </Routes>
       </main>
       <BottomNav />
-      {conChat && <ChatWidget />}
+      <ChatWidget />
       {showNuevo && casaId && (
         <NuevoCasaModal
           casaId={casaId}

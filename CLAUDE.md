@@ -186,8 +186,11 @@ dueño, al profesional) sigue saliendo por Telegram.
   llega a Gemini tal cual),
   `POST /api/chat/boton` (solo `callback_data` de un botón real de ese
   mensaje). Evento SSE `chat_updated`. Rutas en `src/api/chat.routes.js`.
-- **Front**: `dashboard/src/components/ChatWidget.jsx`. Se muestra solo en las
-  vistas del consultorio (no en Personal ni Casa, por ahora).
+- **Front**: `dashboard/src/components/ChatWidget.jsx`. Se muestra en todas las
+  pantallas (consultorio, Personal y Casa): el ámbito de cada mensaje lo decide
+  el bot con sus reglas de siempre, no la pantalla en la que estés. Las tres
+  pantallas ya se refrescan solas cuando el bot guarda (SSE
+  `movimientos_updated`).
 - **Grabación**: `dashboard/src/services/grabadora.js` tiene un único punto de
   cierre (enviar, descartar, máximo, error, app en segundo plano o micrófono
   tomado por otra app); siempre suelta el micrófono y avisa una sola vez.
