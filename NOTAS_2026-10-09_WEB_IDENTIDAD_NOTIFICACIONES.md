@@ -175,7 +175,32 @@ en este orden recomendado:
    Supabase falso: la conversación sobrevive a un deploy simulado y otra persona
    no la ve.
 5. **App en las tiendas** con Capacitor sobre la misma PWA (push y micrófono
-   nativos); una app 100% nativa solo si hace falta después.
+   nativos); una app 100% nativa solo si hace falta después. **No se empezó** a
+   propósito (2026-10-10), por tres razones:
+   - Hoy la PWA instalada ya cubre la necesidad (abre desde el celu, micrófono,
+     cámara, cola sin conexión). La app nativa recién suma push confiable y
+     presencia en las tiendas.
+   - Desde el entorno de desarrollo no se puede construir ni probar (sin SDK de
+     Android; iOS exige una Mac con Xcode): agregar código nativo sin probar en un
+     dispositivo es riesgo sin beneficio.
+   - Depende de decisiones y cuentas propias: Apple Developer (US$ 99/año) y
+     Google Play (US$ 25 una vez), qué plataforma primero, firma de la app, íconos
+     y fichas de tienda.
+
+   Cuando se decida, el camino recomendado: **Android primero** (más simple y sin
+   la regla 4.2 de Apple, que rechaza apps que son solo una web envuelta).
+   Puntos técnicos ya identificados:
+   - Capacitor con el build de `dashboard/dist` y la API en `VITE_API_URL`; hay que
+     sumar a `DASHBOARD_ORIGINS` los orígenes de la app (`https://localhost` en
+     Android, `capacitor://localhost` en iOS), si no el CORS bloquea todo.
+   - El service worker de la PWA no corre dentro de la app: la cola sin conexión
+     (IndexedDB) sí, pero las actualizaciones pasan a depender de publicar la app
+     (o de cargar la web remota con `server.url`, con la contrapartida de la 4.2).
+   - Micrófono y cámara: permisos nativos en el manifiesto (`RECORD_AUDIO`,
+     `CAMERA`; en iOS `NSMicrophoneUsageDescription`).
+   - Push: hoy no hay (solo avisos por Telegram); en la app sería FCM/APNs con
+     tabla de dispositivos por persona. Se resuelve junto con Web Push (sección 5
+     de estas notas), no por separado.
 
 Decisión: no se tocan los tests por ahora (1447; corren en ~15 s). Si se quiere
 revisar, hacer una auditoría de tests frágiles (que leen código como texto) y
