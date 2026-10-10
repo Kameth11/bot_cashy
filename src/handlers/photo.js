@@ -13,6 +13,7 @@ const { geminiMediaSemaphore } = require('../lib/semaphore');
 const aiQuota = require('../lib/ai-quota');
 const { requierePermisoBot, tienePermisoBot } = require('../auth/bot-permisos');
 const { escapeMarkdown } = require('../utils/formatter');
+const { esArchivoWeb } = require('../lib/archivo-web');
 
 // ── Entrada común: foto o archivo (PDF / imagen sin comprimir) ───────────────
 
@@ -82,7 +83,11 @@ async function procesarArchivoRecibido(ctx, { fileId, fileSize, mimeType, captio
     }
 
     const buffer = await descargarArchivo(ctx, fileId, MAX_PHOTO_SIZE_BYTES);
-    const archivo = { buffer, mimeType, fileId };
+    // Un archivo del chat web no tiene file_id de Telegram: sin él, el comprobante
+    // no guarda una referencia falsa y el archivo se respalda por otro camino.
+    const archivo = esArchivoWeb(fileId)
+      ? { buffer, mimeType, fileId: null, origen: 'web' }
+      : { buffer, mimeType, fileId };
 
     // Solo agenda: se mantiene el flujo de siempre, sin clasificar.
     if (!puedeComprobante) return await procesarAgenda(ctx, archivo);

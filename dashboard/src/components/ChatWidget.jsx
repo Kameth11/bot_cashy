@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MessageCircle, Mic, Send, Minimize2, Square, Trash2, Clock, WifiOff } from 'lucide-react'
+import { MessageCircle, Mic, Send, Minimize2, Square, Trash2, Clock, WifiOff, Paperclip } from 'lucide-react'
 import { api } from '../services/api'
 import { useServerEvent } from '../hooks/useMovimientosEvents'
 import { encolar, listarPendientes, quitar } from '../services/chatCola'
 import { renderTelegramMarkdown } from '../utils/telegramMarkdown'
 import { crearGrabacion, soportaGrabacion } from '../services/grabadora'
 import { blobAWav } from '../utils/audioWav'
+import { prepararArchivo, ArchivoNoSoportado } from '../utils/imagen'
 
 // Chat con Cashy dentro del dashboard: es el MISMO bot que Telegram (mismas
 // reglas, comandos, confirmaciones y permisos), servido por /api/chat. Sin
@@ -85,6 +86,7 @@ export default function ChatWidget() {
   useEffect(() => { abiertoRef.current = abierto }, [abierto])
   const listaRef = useRef(null)
   const grabacionRef = useRef(null)
+  const archivoRef = useRef(null)
   const vaciandoRef = useRef(false)
   const enVueloRef = useRef(false) // hay un POST al bot esperando respuesta
   const avisoTimer = useRef(null)
@@ -123,12 +125,22 @@ export default function ChatWidget() {
   const mandar = useCallback(async (item) => {
     enVueloRef.current = true
     try {
-      const { data } = item.tipo === 'audio'
-        ? await api.post(`/api/chat/audio?duracion=${item.duracion || 0}`, item.blob, {
+      let respuesta
+      if (item.tipo === 'audio') {
+        respuesta = await api.post(`/api/chat/audio?duracion=${item.duracion || 0}`, item.blob, {
           headers: { 'Content-Type': item.mime || item.blob.type },
           timeout: 150000,
         })
-        : await api.post('/api/chat/mensaje', { texto: item.texto }, { timeout: 150000 })
+      } else if (item.tipo === 'archivo') {
+        const query = new URLSearchParams({ nombre: item.nombre || '', caption: item.caption || '' })
+        respuesta = await api.post(`/api/chat/archivo?${query}`, item.blob, {
+          headers: { 'Content-Type': item.mime || item.blob.type },
+          timeout: 150000,
+        })
+      } else {
+        respuesta = await api.post('/api/chat/mensaje', { texto: item.texto }, { timeout: 150000 })
+      }
+      const { data } = respuesta
       aplicar(data)
       return 'ok'
     } catch (err) {
@@ -259,6 +271,22 @@ export default function ChatWidget() {
     enviarItem(item)
   }
 
+  async function alElegirArchivo(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // permite elegir el mismo archivo otra vez
+    if (!file) return
+    try {
+      const { blob, mime, nombre } = await prepararArchivo(file)
+      // Lo que ya estaba escrito en la barra viaja como pista ("gasto", "agenda"...).
+      const caption = texto.trim()
+      setTexto('')
+      abrir()
+      enviarItem({ tipo: 'archivo', blob, mime, nombre, caption })
+    } catch (err) {
+      mostrarAviso(err instanceof ArchivoNoSoportado ? err.message : 'No se pudo adjuntar el archivo')
+    }
+  }
+
   function empezarGrabacion() {
     if (grabacionRef.current) return // ya hay una grabación en curso o pidiendo permiso
     if (!soportaGrabacion()) {
@@ -284,7 +312,9 @@ export default function ChatWidget() {
 
   const vistaPendientes = pendientes.map(p => ({
     id: `p-${p.id}`, de: 'yo', pendiente: online ? 'enviando…' : 'sin enviar', ts: p.ts,
-    texto: p.tipo === 'audio' ? `🎤 Nota de voz (${p.duracion || 0}s)` : p.texto,
+    texto: p.tipo === 'audio'
+      ? `🎤 Nota de voz (${p.duracion || 0}s)`
+      : p.tipo === 'archivo' ? `${p.mime === 'application/pdf' ? '📄' : '📷'} ${p.nombre || 'Archivo'}` : p.texto,
   }))
 
   const barra = (
@@ -309,6 +339,10 @@ export default function ChatWidget() {
               {noLeidos > 0 && <span className="chat-badge">{noLeidos}</span>}
             </button>
           )}
+          <input ref={archivoRef} type="file" accept="image/*,application/pdf" hidden onChange={alElegirArchivo} />
+          <button className="chat-icon-btn" onClick={() => archivoRef.current?.click()} title="Adjuntar foto o PDF">
+            <Paperclip size={18} />
+          </button>
           <input
             className="chat-input"
             value={texto}

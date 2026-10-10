@@ -22,6 +22,7 @@ const { Telegram, Context } = require('telegraf');
 const { bot } = require('./telegraf');
 const logger = require('./logger');
 const eventsService = require('../services/events.service');
+const { PREFIJO_ARCHIVO_WEB } = require('./archivo-web');
 
 const MAX_MENSAJES = 150;              // por usuario, los más viejos se descartan
 const HANDLER_TIMEOUT_MS = 120 * 1000; // audio + Gemini puede tardar
@@ -277,6 +278,44 @@ async function enviarAudio(userId, { buffer, mimeType, duracion }, { nombre } = 
   });
 }
 
+// Foto o PDF (factura, ticket, transferencia, agenda). Llega como un `document`
+// de Telegram: lo recibe photo.js igual que si lo mandaran desde Telegram
+// (clasifica, lee con Gemini y pide confirmación). El texto que el usuario
+// escribió junto al archivo viaja como `caption`, que photo.js usa como pista.
+async function enviarArchivo(userId, { buffer, mimeType, nombre, caption }, { nombre: nombreUsuario } = {}) {
+  return enCola(userId, async () => {
+    const avisos = [];
+    const telegram = new TelegramWeb(userId, avisos);
+    const fileId = `${PREFIJO_ARCHIVO_WEB}${crypto.randomUUID()}`;
+    telegram.archivos.set(fileId, { buffer, mimeType });
+    const conv = conversacionDe(userId);
+    const esPdf = mimeType === 'application/pdf';
+    const etiqueta = `${esPdf ? '📄' : '📷'} ${nombre || (esPdf ? 'Documento' : 'Foto')}`;
+    const limpio = String(caption || '').trim();
+    const propio = agregarMensaje(userId, conv, {
+      de: 'yo',
+      texto: limpio ? `${etiqueta}\n${limpio}` : etiqueta,
+      tipo: 'archivo',
+    });
+    const message = {
+      message_id: propio.id,
+      date: Math.floor(propio.ts / 1000),
+      chat: chatDe(userId, nombreUsuario),
+      from: usuarioTelegram(userId, nombreUsuario),
+      document: {
+        file_id: fileId,
+        file_unique_id: fileId,
+        file_name: nombre || undefined,
+        mime_type: mimeType,
+        file_size: buffer.length,
+      },
+    };
+    if (limpio) message.caption = limpio;
+    await correrUpdate(userId, { update_id: ++ultimoUpdateId, message }, telegram);
+    return snapshot(userId, avisos);
+  });
+}
+
 // Un botón solo se puede "apretar" si está en un mensaje del bot de esta
 // conversación: Telegram nunca manda callback_data que no venga de un botón
 // real, y los handlers confían en eso.
@@ -314,6 +353,7 @@ module.exports = {
   obtenerConversacion,
   enviarTexto,
   enviarAudio,
+  enviarArchivo,
   apretarBoton,
   MAX_MENSAJES,
   _resetParaTests,

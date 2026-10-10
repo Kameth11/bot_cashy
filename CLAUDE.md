@@ -197,8 +197,15 @@ dueño, al profesional) sigue saliendo por Telegram.
 - **Sin conexión**: lo escrito/grabado queda en IndexedDB
   (`dashboard/src/services/chatCola.js`) y se manda solo al volver internet.
   Confirmar (botones) requiere conexión.
-- **Límites**: el historial se pierde en cada deploy (los movimientos no);
-  fotos/comprobantes por el chat todavía no (se usa "Subir comprobante").
+- **Fotos y PDFs**: botón 📎 del chat → `POST /api/chat/archivo` (el cliente
+  achica las fotos a 2000 px en JPEG, tope 10 MB). Llega a `photo.js` como un
+  `document` de Telegram, así que clasifica (agenda / factura / transferencia),
+  lee con Gemini y pide confirmación igual que en Telegram; lo que se escribe
+  junto al archivo va como `caption` (pista). Los archivos web llevan un
+  `file_id` con prefijo `web-` (`src/lib/archivo-web.js`): no se guarda
+  referencia `tg:` falsa y, sin Storage de Supabase, `comprobante-registro`
+  los respalda por Telegram. También entran en la cola sin conexión.
+- **Límites**: el historial se pierde en cada deploy (los movimientos no).
 - Si cambiás un handler del bot, el chat web lo hereda solo. Si agregás un
   método de Telegram nuevo dirigido al propio usuario (ej. `sendLocation`),
   sumalo en `TelegramWeb.callApi` o la web no lo va a mostrar.

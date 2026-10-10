@@ -12,6 +12,7 @@ jest.mock('../src/lib/canal-web', () => ({
   obtenerConversacion: jest.fn(() => ({ rev: 3, mensajes: [], avisos: [] })),
   enviarTexto: jest.fn(async () => ({ rev: 4, mensajes: [{ id: 1 }], avisos: [] })),
   enviarAudio: jest.fn(async () => ({ rev: 5, mensajes: [], avisos: [] })),
+  enviarArchivo: jest.fn(async () => ({ rev: 5, mensajes: [], avisos: [] })),
   apretarBoton: jest.fn(async () => ({ rev: 6, mensajes: [], avisos: [] })),
 }));
 
@@ -93,6 +94,27 @@ describe('/api/chat', () => {
     });
     expect(res.status).toBe(400);
     expect(canalWeb.enviarAudio).not.toHaveBeenCalled();
+  });
+
+  test('archivo: pasa el buffer, el MIME, el nombre y el caption limpios', async () => {
+    const res = await fetch(`${baseUrl}/api/chat/archivo?nombre=${encodeURIComponent('../fac tura.pdf')}&caption=${encodeURIComponent('gasto\ninsumos')}`, {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/pdf' },
+      body: Buffer.from('%PDF-1.4'),
+    });
+    expect(res.status).toBe(200);
+    expect(canalWeb.enviarArchivo).toHaveBeenCalledWith('1001', {
+      buffer: Buffer.from('%PDF-1.4'), mimeType: 'application/pdf', nombre: '.. fac tura.pdf', caption: 'gasto insumos',
+    });
+  });
+
+  test('archivo: rechaza tipos que no son foto ni PDF y cuerpos vacíos', async () => {
+    const otro = await fetch(`${baseUrl}/api/chat/archivo`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/zip' }, body: Buffer.from('x') });
+    expect(otro.status).toBe(400);
+    const vacio = await fetch(`${baseUrl}/api/chat/archivo`, { method: 'POST', headers: { ...auth, 'Content-Type': 'image/png' }, body: Buffer.alloc(0) });
+    expect(vacio.status).toBe(400);
+    expect((await fetch(`${baseUrl}/api/chat/archivo`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: Buffer.from('x') })).status).toBe(401);
+    expect(canalWeb.enviarArchivo).not.toHaveBeenCalled();
   });
 
   test('botón: valida forma y responde 409 si el canal lo rechaza', async () => {

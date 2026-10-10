@@ -16,6 +16,13 @@ const MAX_AUDIO_BYTES = config.MAX_VOICE_SIZE_BYTES || 5 * 1024 * 1024;
 const MIME_AUDIO = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/wav', 'audio/x-m4a'];
 const subidaAudio = express.raw({ type: MIME_AUDIO, limit: MAX_AUDIO_BYTES });
 
+// Fotos y PDFs: los mismos tipos y el mismo tope que el resto de los comprobantes.
+const MIME_ARCHIVO = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const MAX_ARCHIVO_BYTES = config.MAX_PHOTO_SIZE_BYTES || 10 * 1024 * 1024;
+const subidaArchivo = express.raw({ type: MIME_ARCHIVO, limit: MAX_ARCHIVO_BYTES });
+const MAX_CAPTION = 200;
+const MAX_NOMBRE = 80;
+
 function registrarRutasChat(app, { authMiddleware }) {
   const canalWeb = require('../lib/canal-web');
 
@@ -49,6 +56,22 @@ function registrarRutasChat(app, { authMiddleware }) {
     }
   });
 
+  app.post('/api/chat/archivo', authMiddleware, subidaArchivo, async (req, res) => {
+    const mimeType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!MIME_ARCHIVO.includes(mimeType) || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'Mandá una foto (JPG, PNG, WEBP) o un PDF' });
+    }
+    // Sin barras ni saltos de línea: el nombre solo se muestra en el chat.
+    const nombre = String(req.query.nombre || '').replace(/[\\/\r\n]/g, ' ').trim().slice(0, MAX_NOMBRE);
+    const caption = String(req.query.caption || '').replace(/[\r\n]+/g, ' ').trim().slice(0, MAX_CAPTION);
+    try {
+      res.json(await canalWeb.enviarArchivo(req.user.userId, { buffer: req.body, mimeType, nombre, caption }));
+    } catch (err) {
+      logger.error('CHAT_WEB', 'Error POST /api/chat/archivo', { err: err.message });
+      res.status(500).json({ error: 'No se pudo procesar el archivo' });
+    }
+  });
+
   app.post('/api/chat/boton', authMiddleware, async (req, res) => {
     const mensajeId = Number(req.body?.mensajeId);
     const data = typeof req.body?.data === 'string' ? req.body.data : '';
@@ -65,4 +88,4 @@ function registrarRutasChat(app, { authMiddleware }) {
   });
 }
 
-module.exports = { registrarRutasChat, MIME_AUDIO };
+module.exports = { registrarRutasChat, MIME_AUDIO, MIME_ARCHIVO };

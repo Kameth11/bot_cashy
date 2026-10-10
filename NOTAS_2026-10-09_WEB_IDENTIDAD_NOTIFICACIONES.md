@@ -165,8 +165,10 @@ en este orden recomendado:
    por el canal web con los handlers reales: gasto de Casa ("gasto super 45000
    casa pagó Ana entre Ana y Beto" → tarjeta con casa, quién pagó y reparto →
    Guardar → `registrarGasto` con los datos correctos) y gasto personal.
-3. **Fotos y PDFs por el chat** (facturas, tickets, transferencias). Hoy: "Subir
-   comprobante".
+3. ~~**Fotos y PDFs por el chat**~~ — hecho 2026-10-10 (📎 en el chat; ver
+   `CLAUDE.md`). Verificado con el pipeline real de `photo.js`, foto de 8,9 MB
+   achicada a 1 MB, PDF, sin conexión. Falta probar en producción la lectura
+   real con Gemini de una factura y de una transferencia.
 4. **Historial que sobreviva a los deploys** (hoy vive en memoria del proceso).
 5. **App en las tiendas** con Capacitor sobre la misma PWA (push y micrófono
    nativos); una app 100% nativa solo si hace falta después.

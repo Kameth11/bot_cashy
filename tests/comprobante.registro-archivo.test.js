@@ -59,6 +59,25 @@ test('subido desde el dashboard sin Supabase: se manda por Telegram y queda ese 
   expect(comprobanteService.registrarComprobante).toHaveBeenCalledWith(2222, expect.objectContaining({ archivo: 'tg:tg-doc-1' }));
 });
 
+test('archivo del chat web sin Supabase: se respalda por Telegram sin referencia falsa', async () => {
+  archivoService.tomarArchivo.mockReturnValue({ buffer: Buffer.from('x'), mimeType: 'image/png', origen: 'web' });
+  archivoService.subirArchivo.mockResolvedValue(null);
+  mockSendDocument.mockResolvedValue({ document: { file_id: 'tg-doc-2' } });
+  const e = entities();
+  e.comprobante.archivo = ''; // photo.js no guarda "tg:web-..." para los archivos web
+  const { registrarComprobanteCompleto } = require('../src/services/comprobante-registro.service');
+  await registrarComprobanteCompleto(2222, e); // sin respaldoTelegram: lo decide el origen
+  expect(mockSendDocument).toHaveBeenCalledWith(2222, expect.objectContaining({ filename: 'comp_1.png' }), expect.anything());
+  expect(comprobanteService.registrarComprobante).toHaveBeenCalledWith(2222, expect.objectContaining({ archivo: 'tg:tg-doc-2' }));
+});
+
+test('archivo que vino de Telegram NO se reenvía por Telegram', async () => {
+  archivoService.tomarArchivo.mockReturnValue({ buffer: Buffer.from('x'), mimeType: 'image/jpeg' });
+  archivoService.subirArchivo.mockResolvedValue(null);
+  await registrarComprobanteDesdeEntities(2222, entities());
+  expect(mockSendDocument).not.toHaveBeenCalled();
+});
+
 test('un error al registrar no rompe el guardado del movimiento', async () => {
   comprobanteService.registrarComprobante.mockRejectedValueOnce(new Error('quota'));
   await expect(registrarComprobanteDesdeEntities(2222, entities())).resolves.toBeNull();

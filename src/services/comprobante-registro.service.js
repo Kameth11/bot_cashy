@@ -14,7 +14,8 @@ const { formatMonto } = require('../utils/formatter');
 // loguea y sigue.
 //
 // `respaldoTelegram`: para archivos subidos desde el dashboard, que no tienen
-// file_id de Telegram. Si no se pudo subir a Storage (sin Supabase), se le
+// file_id de Telegram (los que llegan por el chat web se reconocen solos por su
+// `origen`). Si no se pudo subir a Storage (sin Supabase), se le
 // manda el archivo por Telegram a quien lo subió y se guarda ese file_id: así
 // el comprobante igual queda con su archivo (y la persona con una copia).
 async function registrarComprobanteCompleto(userId, entities, { idMovimiento = null, respaldoTelegram = false } = {}) {
@@ -26,7 +27,7 @@ async function registrarComprobanteCompleto(userId, entities, { idMovimiento = n
     if (pendiente) {
       const subido = await archivoService.subirArchivo(userId, c.id, pendiente);
       if (subido) archivo = subido;
-      else if (!archivo && respaldoTelegram) archivo = await enviarCopiaTelegram(userId, c, pendiente);
+      else if (!archivo && (respaldoTelegram || pendiente.origen === 'web')) archivo = await enviarCopiaTelegram(userId, c, pendiente);
     }
 
     const datos = {

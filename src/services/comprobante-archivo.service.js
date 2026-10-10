@@ -32,8 +32,8 @@ const EXTENSIONES = {
 // pago.
 const archivosPendientes = state.pendingComprobanteArchivos;
 
-function recordarArchivo(idComprobante, { buffer, mimeType }) {
-  if (idComprobante && buffer) archivosPendientes.set(idComprobante, { buffer, mimeType });
+function recordarArchivo(idComprobante, { buffer, mimeType, origen }) {
+  if (idComprobante && buffer) archivosPendientes.set(idComprobante, { buffer, mimeType, origen });
 }
 
 function tomarArchivo(idComprobante) {

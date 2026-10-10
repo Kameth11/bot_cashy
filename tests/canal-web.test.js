@@ -57,6 +57,13 @@ beforeAll(() => {
     await ctx.editMessageText('✅ Guardado');
   });
   bot.hears('explota', () => { throw new Error('boom'); });
+  // Equivale a photo.js: baja el archivo con getFileLink y contesta con lo recibido.
+  bot.on('document', async (ctx) => {
+    const doc = ctx.message.document;
+    const link = await ctx.telegram.getFileLink(doc.file_id);
+    const { data } = await require('axios').get(link.href, { responseType: 'arraybuffer' });
+    await ctx.reply(`recibí ${doc.mime_type} ${doc.file_name} ${Buffer.from(data).toString()} caption=${ctx.message.caption || '-'}`);
+  });
   require('../src/handlers/voice');
 });
 
@@ -123,6 +130,22 @@ describe('canal web', () => {
       '🎤 "consulta Juan 15000 efectivo"',
       'NLP: consulta Juan 15000 efectivo',
     ]);
+  });
+
+  test('una foto o PDF llega como document, descargable, con su caption', async () => {
+    const buffer = Buffer.from('contenido-del-pdf');
+    const r = await canalWeb.enviarArchivo(USER, { buffer, mimeType: 'application/pdf', nombre: 'factura.pdf', caption: 'gasto insumos' });
+    expect(r.mensajes.map(m => m.texto)).toEqual([
+      '📄 factura.pdf\ngasto insumos',
+      'recibí application/pdf factura.pdf contenido-del-pdf caption=gasto insumos',
+    ]);
+    expect(r.mensajes[0].tipo).toBe('archivo');
+  });
+
+  test('una imagen sin nombre ni caption se muestra como foto', async () => {
+    const r = await canalWeb.enviarArchivo(USER, { buffer: Buffer.from('img'), mimeType: 'image/jpeg' });
+    expect(r.mensajes[0].texto).toBe('📷 Foto');
+    expect(r.mensajes[1].texto).toBe('recibí image/jpeg undefined img caption=-');
   });
 
   test('un error en un handler le avisa al usuario por el chat, como en Telegram', async () => {
