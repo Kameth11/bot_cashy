@@ -86,3 +86,18 @@ describe('events.service - aislamiento multi-tenant', () => {
     eventsService.unsubscribe('777', res);
   });
 });
+
+describe('emitChatUpdated', () => {
+  test('manda chat_updated con la revisión solo a las conexiones de ese usuario', () => {
+    const svc = require('../src/services/events.service');
+    const propio = { write: jest.fn() };
+    const ajeno = { write: jest.fn() };
+    svc.subscribe('chat-1', propio);
+    svc.subscribe('chat-2', ajeno);
+    svc.emitChatUpdated('chat-1', 9);
+    expect(propio.write).toHaveBeenCalledWith('event: chat_updated\ndata: {"rev":9}\n\n');
+    expect(ajeno.write).not.toHaveBeenCalled();
+    svc.unsubscribe('chat-1', propio);
+    svc.unsubscribe('chat-2', ajeno);
+  });
+});

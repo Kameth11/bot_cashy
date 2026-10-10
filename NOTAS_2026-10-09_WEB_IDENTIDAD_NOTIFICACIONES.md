@@ -55,6 +55,12 @@ viviendo en `ARCHITECTURE.md`; esto es el contexto de la charla, para no perderl
 
 ## 3. ¿Un chat dentro de la web, como el de Telegram?
 
+> **Actualización 2026-10-10: implementado** (ver `CLAUDE.md`, "Chat web").
+> En vez de la opción A o B de abajo se reutilizó el pipeline de Telegraf
+> completo con un `Telegram` falso (`src/lib/canal-web.js`): la web tiene
+> todos los comandos, conversaciones y botones sin duplicar lógica. Incluye
+> notas de voz y cola sin conexión. Por ahora visible solo en el consultorio.
+
 **Conclusión:** para la carga rápida diaria, Telegram gana (ya está abierto en
 el celu, notifica y tiene botones/fotos/voz). Un chat web solo suma valor si el
 objetivo es que alguien **entre sin Telegram** (otros consultorios, recepción).

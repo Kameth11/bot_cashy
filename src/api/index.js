@@ -1778,6 +1778,7 @@ app.post('/api/personal/viajes/cerrar', authMiddleware, personalAccess, async (r
 // ── Casas compartidas (gastos entre varias personas) ──
 // Control de acceso por membresía a cada casa (casa.service), no ownerOnly.
 require('./casa.routes').registrarRutasCasa(app, { authMiddleware, obtenerCotizacionDolar });
+require('./chat.routes').registrarRutasChat(app, { authMiddleware });
 
 // ── Cotizacion (publica) ──
 app.get('/api/cotizacion', (req, res) => {

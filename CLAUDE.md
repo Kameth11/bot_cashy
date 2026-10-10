@@ -170,6 +170,33 @@ Plan completo, fases y decisiones en `PLAN_COMPROBANTES.md`.
 
 ---
 
+## Chat web (mismo bot, dentro del dashboard)
+
+El dashboard tiene un chat con Cashy (barra abajo, se agranda a panel) que es
+**el mismo bot de Telegram**, no una copia: `src/lib/canal-web.js` arma un
+update con la forma de Telegram y corre `bot.middleware()` con un objeto
+`Telegram` propio que guarda las respuestas en un historial en memoria en vez
+de mandarlas a Telegram. Mismas reglas, NLP, comandos, botones de confirmación,
+permisos y cuota de IA. Lo que el bot le manda a **otro** chat (avisos al
+dueño, al profesional) sigue saliendo por Telegram.
+
+- **API**: `GET /api/chat`, `POST /api/chat/mensaje`, `POST /api/chat/audio`
+  (audio crudo del navegador, el MIME llega a Gemini tal cual),
+  `POST /api/chat/boton` (solo `callback_data` de un botón real de ese
+  mensaje). Evento SSE `chat_updated`. Rutas en `src/api/chat.routes.js`.
+- **Front**: `dashboard/src/components/ChatWidget.jsx`. Se muestra solo en las
+  vistas del consultorio (no en Personal ni Casa, por ahora).
+- **Sin conexión**: lo escrito/grabado queda en IndexedDB
+  (`dashboard/src/services/chatCola.js`) y se manda solo al volver internet.
+  Confirmar (botones) requiere conexión.
+- **Límites**: el historial se pierde en cada deploy (los movimientos no);
+  fotos/comprobantes por el chat todavía no (se usa "Subir comprobante").
+- Si cambiás un handler del bot, el chat web lo hereda solo. Si agregás un
+  método de Telegram nuevo dirigido al propio usuario (ej. `sendLocation`),
+  sumalo en `TelegramWeb.callApi` o la web no lo va a mostrar.
+
+---
+
 ## Finanzas personales (segundo ámbito)
 
 Además del cashflow del consultorio, el bot registra **finanzas personales**

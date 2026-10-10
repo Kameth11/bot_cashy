@@ -9,6 +9,7 @@ import NuevoMovimientoModal from './components/NuevoMovimientoModal'
 import NuevoPersonalModal from './components/NuevoPersonalModal'
 import NuevoCasaModal from './components/NuevoCasaModal'
 import ErrorBoundary from './components/ErrorBoundary'
+import ChatWidget from './components/ChatWidget'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import AgendaPage from './pages/AgendaPage'
@@ -76,8 +77,12 @@ function LayoutWithModal() {
     }
   }, [closeNuevo, triggerReload, setNuevoError, setCreando, enPersonal, casaId, mostrarToast])
 
+  // Chat con Cashy: por ahora solo para el consultorio. En Personal y Casa no
+  // se muestra (el bot igual decide el ámbito con sus propias reglas).
+  const conChat = !enPersonal && !enSeccionCasa
+
   return (
-    <div className="app-layout">
+    <div className={`app-layout${conChat ? ' con-chat' : ''}`}>
       <NavBar />
       <main className="app-main">
         <Routes>
@@ -94,6 +99,7 @@ function LayoutWithModal() {
         </Routes>
       </main>
       <BottomNav />
+      {conChat && <ChatWidget />}
       {showNuevo && casaId && (
         <NuevoCasaModal
           casaId={casaId}

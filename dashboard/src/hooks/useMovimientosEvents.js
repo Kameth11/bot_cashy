@@ -5,11 +5,12 @@ const RECONNECT_DELAY_MS = 3000
 
 // Se suscribe a /api/events (SSE) via fetch + ReadableStream para poder enviar
 // el token en el header Authorization (en vez de la URL, como exigiria
-// EventSource). Llama a onUpdate() cada vez que el backend avisa que cambiaron
-// los movimientos del usuario (por el bot o por el propio dashboard).
-export function useMovimientosEvents(onUpdate) {
-  const onUpdateRef = useRef(onUpdate)
-  onUpdateRef.current = onUpdate
+// EventSource). Llama a onEvento(data) cada vez que el backend manda el evento
+// pedido ('movimientos_updated' cuando cambian los movimientos del usuario, por
+// el bot o por el propio dashboard; 'chat_updated' cuando cambia el chat web).
+export function useServerEvent(nombreEvento, onEvento) {
+  const onEventoRef = useRef(onEvento)
+  useEffect(() => { onEventoRef.current = onEvento })
 
   useEffect(() => {
     let stopped = false
@@ -44,9 +45,13 @@ export function useMovimientosEvents(onUpdate) {
           buffer = events.pop() // resto incompleto, se completa en la proxima lectura
 
           for (const chunk of events) {
-            if (chunk.includes('event: movimientos_updated')) {
-              onUpdateRef.current?.()
+            if (!chunk.includes(`event: ${nombreEvento}`)) continue
+            let data = {}
+            const linea = chunk.split('\n').find(l => l.startsWith('data: '))
+            if (linea) {
+              try { data = JSON.parse(linea.slice(6)) } catch { data = {} }
             }
+            onEventoRef.current?.(data)
           }
         }
       } catch (err) {
@@ -65,5 +70,9 @@ export function useMovimientosEvents(onUpdate) {
       abortController?.abort()
       if (reconnectTimer) clearTimeout(reconnectTimer)
     }
-  }, [])
+  }, [nombreEvento])
+}
+
+export function useMovimientosEvents(onUpdate) {
+  useServerEvent('movimientos_updated', () => onUpdate?.())
 }

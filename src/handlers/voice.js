@@ -59,7 +59,7 @@ bot.on('voice', async (ctx) => {
 
     let transcripcion;
     try {
-      transcripcion = await geminiMediaSemaphore.run(() => geminiService.transcribirAudio(audioBuffer, 'audio/ogg'));
+      transcripcion = await geminiMediaSemaphore.run(() => geminiService.transcribirAudio(audioBuffer, voice.mime_type || 'audio/ogg'));
     } catch (e) {
       if (e.code === 'SEMAPHORE_QUEUE_FULL') {
         return ctx.reply('⏳ Estoy procesando varios audios ahora mismo. Probá de nuevo en unos segundos.');

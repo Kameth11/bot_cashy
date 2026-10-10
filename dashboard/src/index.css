@@ -845,3 +845,120 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 @media (max-width: 768px) {
   .casa-saldo-row { align-items: flex-start; }
 }
+
+/* ── Chat con Cashy (mismo bot que Telegram) ─────────────── */
+
+.app-layout.con-chat .app-main { padding-bottom: 76px; }
+
+.chat-dock {
+  position: fixed; right: 16px; bottom: 16px; z-index: 350;
+  width: min(420px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 8px;
+}
+.chat-dock .chat-input-bar {
+  border-radius: 14px; border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(9,30,66,0.18);
+}
+
+.chat-panel {
+  position: fixed; right: 16px; bottom: 16px; z-index: 400;
+  width: min(420px, calc(100vw - 32px)); height: min(640px, calc(100vh - 96px));
+  display: flex; flex-direction: column;
+  background: var(--white); border-radius: 14px; overflow: hidden;
+  box-shadow: 0 12px 40px rgba(9,30,66,0.28), 0 0 0 1px var(--border);
+}
+
+.chat-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--white);
+}
+.chat-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; color: var(--text); }
+.chat-offline {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+  color: var(--amber); background: rgba(255,139,0,0.12); padding: 2px 8px; border-radius: 999px;
+}
+
+.chat-lista {
+  flex: 1; overflow-y: auto; padding: 12px; background: var(--bg);
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.chat-msg { display: flex; flex-direction: column; max-width: 88%; }
+.chat-msg-yo  { align-self: flex-end; align-items: flex-end; }
+.chat-msg-bot { align-self: flex-start; align-items: flex-start; }
+
+.chat-bubble {
+  padding: 8px 10px 4px; border-radius: 12px; font-size: 14px; line-height: 1.4;
+  box-shadow: 0 1px 1px rgba(9,30,66,0.08);
+}
+.chat-msg-bot .chat-bubble { background: var(--white); color: var(--text); border-top-left-radius: 4px; }
+.chat-msg-yo  .chat-bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
+.chat-text { white-space: pre-wrap; word-break: break-word; }
+.chat-text code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: rgba(9,30,66,0.06); padding: 1px 4px; border-radius: 4px; }
+.chat-msg-yo .chat-text code { background: rgba(255,255,255,0.18); }
+.chat-text a { color: var(--primary); text-decoration: underline; }
+.chat-pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: rgba(9,30,66,0.06); padding: 6px 8px; border-radius: 6px; overflow-x: auto; margin: 4px 0; white-space: pre; }
+.chat-meta { display: flex; align-items: center; justify-content: flex-end; gap: 3px; font-size: 10.5px; opacity: 0.65; margin-top: 2px; }
+
+.chat-botones { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; width: 100%; }
+.chat-botones-fila { display: flex; gap: 4px; }
+.chat-boton {
+  flex: 1; min-height: 36px; padding: 6px 10px; font-size: 13px; font-weight: 600;
+  background: var(--white); color: var(--primary); border: 1px solid var(--border); border-radius: 8px;
+  text-align: center; display: inline-flex; align-items: center; justify-content: center;
+}
+.chat-boton:hover:not(:disabled) { background: var(--primary-light); }
+.chat-boton:disabled { opacity: 0.55; cursor: default; }
+
+.chat-vacio { margin: auto 0; color: var(--text-2); font-size: 13.5px; line-height: 1.5; text-align: center; padding: 8px; }
+.chat-vacio code { font-size: 12px; background: var(--white); padding: 1px 4px; border-radius: 4px; }
+.chat-atajos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+
+.chat-escribiendo { font-size: 12px; color: var(--text-3); font-style: italic; padding: 0 4px; }
+
+.chat-input-bar {
+  display: flex; align-items: center; gap: 6px; padding: 8px; background: var(--white);
+  border-top: 1px solid var(--border);
+}
+.chat-input {
+  flex: 1; min-width: 0; height: 40px; padding: 0 12px; font-size: 15px; cursor: text;
+  border: 1px solid var(--border); border-radius: 20px; background: var(--surface); color: var(--text);
+}
+.chat-input:focus { outline: 2px solid var(--primary-light); border-color: var(--primary); }
+.chat-icon-btn {
+  position: relative; width: 40px; height: 40px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 50%; color: var(--text-2);
+}
+.chat-icon-btn:hover { background: var(--bg); }
+.chat-send-btn {
+  width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--primary); color: #fff;
+}
+.chat-badge {
+  position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.chat-grabando { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--danger); font-weight: 600; }
+.chat-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: chat-pulso 1s infinite; }
+@keyframes chat-pulso { 50% { opacity: 0.3; } }
+
+.chat-aviso {
+  align-self: center; background: var(--text); color: #fff; font-size: 13px;
+  padding: 8px 12px; border-radius: 8px; box-shadow: 0 4px 12px rgba(9,30,66,0.25);
+}
+.chat-aviso-panel { margin: 0 12px 8px; }
+
+@media (max-width: 768px) {
+  .app-layout.con-chat .app-main { padding-bottom: 124px; }
+  .chat-dock { left: 0; right: 0; bottom: 60px; width: auto; gap: 6px; }
+  .chat-dock .chat-input-bar { border-radius: 0; border-width: 1px 0 0; box-shadow: 0 -2px 8px rgba(9,30,66,0.06); }
+  .chat-dock .chat-aviso { margin: 0 16px; }
+  .chat-panel {
+    inset: 0; width: auto; height: auto; border-radius: 0; z-index: 1050;
+    height: 100dvh;
+  }
+  .chat-input { font-size: 16px; } /* evita el zoom de iOS al enfocar */
+}

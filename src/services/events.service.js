@@ -42,4 +42,20 @@ function emitMovimientosUpdated(userId) {
   }
 }
 
-module.exports = { subscribe, unsubscribe, onMovimientosUpdated, emitMovimientosUpdated };
+// Chat web (src/lib/canal-web.js): avisa que la conversación del usuario cambió
+// (mensaje nuevo, editado o botones nuevos), para que otras pestañas o
+// dispositivos abiertos la vuelvan a pedir.
+function emitChatUpdated(userId, rev) {
+  const set = subscribers.get(String(userId));
+  if (!set) return;
+  const data = JSON.stringify({ rev: Number(rev) || 0 });
+  for (const res of set) {
+    try {
+      res.write(`event: chat_updated\ndata: ${data}\n\n`);
+    } catch (e) {
+      // conexion rota, se limpiara via 'close'
+    }
+  }
+}
+
+module.exports = { subscribe, unsubscribe, onMovimientosUpdated, emitMovimientosUpdated, emitChatUpdated };

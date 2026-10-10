@@ -110,6 +110,14 @@ handlers en `bot` de Telegraf vía `src/lib/telegraf.js`):
   borrados, reinicios, etc.).
 - `handlers/nlp.js` / `handlers/nlp-confirm.js` — dispatch y confirmación de
   intents NLP (ver skill `bot-cashy-nlp`).
+- `lib/canal-web.js` — **chat del dashboard**: no es un handler sino un
+  segundo "transporte" para TODOS los de arriba. Arma updates con forma de
+  Telegram y corre `bot.middleware()` con un `Telegram` propio
+  (`TelegramWeb.callApi`) que guarda lo que el bot le responde al usuario en
+  un historial web; lo dirigido a otros chats sale por Telegram real. Serializa
+  por usuario, valida que el `callback_data` venga de un botón real del
+  mensaje. Rutas en `api/chat.routes.js`. Los handlers no saben de qué canal
+  vino el update.
 
 ## Estados conversacionales (`src/state/index.js`)
 
