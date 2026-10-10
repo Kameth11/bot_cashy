@@ -4,6 +4,8 @@ import { api } from '../services/api'
 import { useServerEvent } from '../hooks/useMovimientosEvents'
 import { encolar, listarPendientes, quitar } from '../services/chatCola'
 import { renderTelegramMarkdown } from '../utils/telegramMarkdown'
+import { crearGrabacion, soportaGrabacion } from '../services/grabadora'
+import { blobAWav } from '../utils/audioWav'
 
 // Chat con Cashy dentro del dashboard: es el MISMO bot que Telegram (mismas
 // reglas, comandos, confirmaciones y permisos), servido por /api/chat. Sin
@@ -11,18 +13,12 @@ import { renderTelegramMarkdown } from '../utils/telegramMarkdown'
 // manda solo al volver la conexión.
 
 const MAX_AUDIO_SEG = 120 // igual que MAX_VOICE_DURATION_SECONDS del bot
-const MIME_GRABACION = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm']
 const ATAJOS = [
   ['Balance', '/balance'],
   ['Hoy', '/hoy'],
   ['Pendientes', '/pendientes'],
   ['Ayuda', '/ayuda'],
 ]
-
-function elegirMime() {
-  if (typeof MediaRecorder === 'undefined') return null
-  return MIME_GRABACION.find(m => MediaRecorder.isTypeSupported?.(m)) || ''
-}
 
 function esErrorDeRed(err) {
   return !err?.response
@@ -88,8 +84,7 @@ export default function ChatWidget() {
   const abiertoRef = useRef(abierto)
   useEffect(() => { abiertoRef.current = abierto }, [abierto])
   const listaRef = useRef(null)
-  const recorderRef = useRef(null)
-  const descartarRef = useRef(false)
+  const grabacionRef = useRef(null)
   const vaciandoRef = useRef(false)
   const enVueloRef = useRef(false) // hay un POST al bot esperando respuesta
   const avisoTimer = useRef(null)
@@ -152,7 +147,11 @@ export default function ChatWidget() {
     vaciandoRef.current = true
     setOcupado(true)
     try {
-      for (const item of await listarPendientes()) {
+      // Siempre se vuelve a leer la cola: lo que se agregó mientras se mandaba
+      // el ítem anterior (otro audio, otro texto) se manda en esta misma vuelta.
+      while (navigator.onLine) {
+        const [item] = await listarPendientes()
+        if (!item) break
         const r = await mandar(item)
         if (r === 'red') break
         await quitar(item.id)
@@ -242,50 +241,46 @@ export default function ChatWidget() {
     }
   }
 
-  async function empezarGrabacion() {
-    const mime = elegirMime()
-    if (mime === null || !navigator.mediaDevices?.getUserMedia) {
+  async function procesarGrabacion(resultado) {
+    if (resultado.error === 'permiso') return mostrarAviso('No hay permiso para usar el micrófono')
+    if (resultado.error) return mostrarAviso('No se pudo grabar el audio. Probá de nuevo.')
+    if (resultado.corto) return mostrarAviso('El audio es muy corto. Mantené el micrófono un poco más.')
+    if (resultado.descartado) return
+    // WAV mono 16 kHz: el formato que Gemini soporta sí o sí, igual en todos los
+    // navegadores. Si el navegador no puede convertirlo, se manda como se grabó.
+    let item = { tipo: 'audio', blob: resultado.blob, mime: resultado.mime, duracion: resultado.duracion }
+    try {
+      const wav = await blobAWav(resultado.blob)
+      item = { ...item, blob: wav, mime: 'audio/wav' }
+    } catch {
+      // se manda el original
+    }
+    abrir()
+    enviarItem(item)
+  }
+
+  function empezarGrabacion() {
+    if (grabacionRef.current) return // ya hay una grabación en curso o pidiendo permiso
+    if (!soportaGrabacion()) {
       mostrarAviso('Este navegador no permite grabar audio')
       return
     }
-    let stream
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
-      mostrarAviso('No hay permiso para usar el micrófono')
-      return
-    }
-    const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
-    const partes = []
-    const inicio = Date.now()
-    descartarRef.current = false
-    recorder.ondataavailable = e => { if (e.data?.size) partes.push(e.data) }
-    recorder.onstop = () => {
-      stream.getTracks().forEach(t => t.stop())
-      clearInterval(recorder._timer)
-      setGrabando(null)
-      recorderRef.current = null
-      if (descartarRef.current || !partes.length) return
-      const tipo = (recorder.mimeType || mime || 'audio/webm').split(';')[0]
-      const blob = new Blob(partes, { type: tipo })
-      const duracion = Math.round((Date.now() - inicio) / 1000)
-      abrir()
-      enviarItem({ tipo: 'audio', blob, mime: tipo, duracion })
-    }
-    recorder._timer = setInterval(() => {
-      const seg = Math.round((Date.now() - inicio) / 1000)
-      setGrabando({ inicio, segundos: seg })
-      if (seg >= MAX_AUDIO_SEG && recorder.state === 'recording') recorder.stop()
-    }, 500)
-    recorderRef.current = recorder
-    recorder.start()
-    setGrabando({ inicio, segundos: 0 })
+    // La barra pasa a "grabando" ya mismo (aunque el navegador todavía esté
+    // pidiendo el micrófono) para que siempre haya un botón para cortar.
+    setGrabando({ segundos: 0 })
+    grabacionRef.current = crearGrabacion({
+      maxSegundos: MAX_AUDIO_SEG,
+      onTick: segundos => setGrabando({ segundos }),
+      onFin: resultado => {
+        grabacionRef.current = null
+        setGrabando(null)
+        procesarGrabacion(resultado)
+      },
+    })
   }
 
-  function terminarGrabacion(descartar) {
-    descartarRef.current = descartar
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
-  }
+  // Si el chat se desmonta con el micrófono abierto, se suelta.
+  useEffect(() => () => grabacionRef.current?.descartar(), [])
 
   const vistaPendientes = pendientes.map(p => ({
     id: `p-${p.id}`, de: 'yo', pendiente: online ? 'enviando…' : 'sin enviar', ts: p.ts,
@@ -296,13 +291,13 @@ export default function ChatWidget() {
     <div className="chat-input-bar">
       {grabando ? (
         <>
-          <button className="chat-icon-btn" onClick={() => terminarGrabacion(true)} title="Descartar">
+          <button className="chat-icon-btn" onClick={() => grabacionRef.current?.descartar()} title="Descartar">
             <Trash2 size={18} />
           </button>
           <div className="chat-grabando">
             <span className="chat-rec-dot" /> Grabando… {grabando.segundos}s
           </div>
-          <button className="chat-send-btn" onClick={() => terminarGrabacion(false)} title="Enviar audio">
+          <button className="chat-send-btn" onClick={() => grabacionRef.current?.detener()} title="Enviar audio">
             <Square size={16} />
           </button>
         </>

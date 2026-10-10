@@ -181,11 +181,16 @@ permisos y cuota de IA. Lo que el bot le manda a **otro** chat (avisos al
 dueño, al profesional) sigue saliendo por Telegram.
 
 - **API**: `GET /api/chat`, `POST /api/chat/mensaje`, `POST /api/chat/audio`
-  (audio crudo del navegador, el MIME llega a Gemini tal cual),
+  (el navegador convierte lo grabado a WAV mono 16 kHz con
+  `dashboard/src/utils/audioWav.js`; si no puede, manda el original y el MIME
+  llega a Gemini tal cual),
   `POST /api/chat/boton` (solo `callback_data` de un botón real de ese
   mensaje). Evento SSE `chat_updated`. Rutas en `src/api/chat.routes.js`.
 - **Front**: `dashboard/src/components/ChatWidget.jsx`. Se muestra solo en las
   vistas del consultorio (no en Personal ni Casa, por ahora).
+- **Grabación**: `dashboard/src/services/grabadora.js` tiene un único punto de
+  cierre (enviar, descartar, máximo, error, app en segundo plano o micrófono
+  tomado por otra app); siempre suelta el micrófono y avisa una sola vez.
 - **Sin conexión**: lo escrito/grabado queda en IndexedDB
   (`dashboard/src/services/chatCola.js`) y se manda solo al volver internet.
   Confirmar (botones) requiere conexión.

@@ -6,8 +6,8 @@ function mockSdk(impl) {
   generateContent = jest.fn(impl);
   jest.doMock('@google/generative-ai', () => ({
     GoogleGenerativeAI: jest.fn(() => ({
-      getGenerativeModel: ({ model }) => ({
-        generateContent: (prompt, opts) => generateContent(prompt, opts, model),
+      getGenerativeModel: ({ model, generationConfig }) => ({
+        generateContent: (prompt, opts) => generateContent(prompt, opts, model, generationConfig),
       }),
     })),
   }));
@@ -44,6 +44,15 @@ describe('transcribirAudio', () => {
     mockSdk(async () => texto('  consulta Juan 15000  \n'));
     const svc = loadService();
     expect(await svc.transcribirAudio(Buffer.from('x'))).toBe('consulta Juan 15000');
+  });
+
+  test('desactiva el "pensamiento" del modelo para que no recorte la transcripción', async () => {
+    mockSdk(async () => texto('ok'));
+    const svc = loadService();
+    await svc.transcribirAudio(Buffer.from('x'));
+    const generationConfig = generateContent.mock.calls[0][3];
+    expect(generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+    expect(generationConfig.maxOutputTokens).toBeGreaterThanOrEqual(2048);
   });
 
   test('manda el audio en base64 con el mimeType recibido', async () => {

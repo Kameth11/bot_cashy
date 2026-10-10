@@ -147,3 +147,29 @@ push; recordatorio de cobros pendientes → email diario).
   "Sin consultorio asignado" con nombres largos.
 - Mover `ALLOWED_EMAILS` a la base (bloqueante para self-service, ver
   `ARCHITECTURE.md` sección 3).
+
+---
+
+## 7. Chat web — lo que queda (acordado 2026-10-10)
+
+Ya está el chat con texto, audio y cola sin conexión (solo consultorio). Queda,
+en este orden recomendado:
+
+1. **Probar en producción** audio y guardado real, y ajustar con lo que salga.
+   - 2026-10-10, primera prueba: el audio salió cortado (faltaban nombre y
+     método) y la grabadora quedó colgada. Corregido: la transcripción de
+     Gemini no tenía `thinkingBudget: 0` y se cortaba por `maxOutputTokens`;
+     la grabadora tenía una carrera (dos grabaciones a la vez) y la cola no se
+     volvía a leer. Falta confirmar en producción que el audio sale completo.
+2. **Que el chat vea todo (Personal y Casa)**: mostrarlo también en esas
+   pantallas y probar los casos de Casa (quién pagó, entre quiénes). El bot ya
+   decide el ámbito con sus reglas.
+3. **Fotos y PDFs por el chat** (facturas, tickets, transferencias). Hoy: "Subir
+   comprobante".
+4. **Historial que sobreviva a los deploys** (hoy vive en memoria del proceso).
+5. **App en las tiendas** con Capacitor sobre la misma PWA (push y micrófono
+   nativos); una app 100% nativa solo si hace falta después.
+
+Decisión: no se tocan los tests por ahora (1447; corren en ~15 s). Si se quiere
+revisar, hacer una auditoría de tests frágiles (que leen código como texto) y
+duplicados (Casa tiene ~136) antes de borrar nada.

@@ -430,11 +430,20 @@ async function transcribirAudio(buffer, mimeType = 'audio/ogg') {
         model: modelName,
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 2048,
+          // Sin esto los modelos 2.5 "piensan" antes de contestar y esos tokens
+          // salen del mismo tope de maxOutputTokens: la transcripción llegaba
+          // cortada a la mitad (o vacía). Transcribir no necesita razonar.
+          thinkingConfig: { thinkingBudget: 0 },
         },
       });
       const result = await model.generateContent([audioPart, TRANSCRIPTION_PROMPT], { signal: controller.signal });
-      return result.response.text().trim();
+      const texto = result.response.text().trim();
+      const motivo = result.response.candidates?.[0]?.finishReason;
+      if (motivo && motivo !== 'STOP') {
+        console.log(`NLP: transcripcion de audio con ${modelName} termino con ${motivo} (${texto.length} caracteres)`);
+      }
+      return texto;
     } catch (error) {
       const reason = error.name === 'AbortError' ? 'timeout' : error.message.substring(0, 120);
       console.log(`NLP: transcripcion de audio con ${modelName} fallo: ${reason}`);
