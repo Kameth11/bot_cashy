@@ -115,6 +115,11 @@ Columnas del sheet por usuario (`REQUIRED_SHEET_HEADERS` en `sheet.service.js`):
 - **ID_Origen**: email del usuario (o Telegram ID si no tiene email)
 - Los montos en dólares se convierten a pesos usando cotización del día
 
+Qué tiene realmente la base de Supabase: `sql/verificar_estado.sql` (solo lectura;
+las migraciones se corren a mano y no queda registro). Plan para volverla más
+sólida (RLS, trazabilidad de migraciones, fechas reales en `movimientos`,
+reconciliación Sheets↔Supabase): `PLAN_BASE_DE_DATOS.md`.
+
 Esto es el modelo "legacy"/v1, fuente de verdad cuando `USE_SUPABASE=false`.
 Cuando Supabase está habilitado conviven este modelo y un modelo v2
 (`movimientos_v2` + `movimiento_eventos_v2`) más rico, con detección de
