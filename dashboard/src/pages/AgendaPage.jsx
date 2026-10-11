@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { api } from '../services/api'
 import DatePickerButton from '../components/DatePickerButton'
+import MotivoConsulta from '../components/MotivoConsulta'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 
 const pad2 = n => String(n).padStart(2, '0')
@@ -590,19 +591,21 @@ export default function AgendaPage() {
           <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
             <h2 className="modal-title" style={{ fontSize: 16 }}>Editar turno</h2>
             <div className="modal-form">
-              {[
-                { label: 'Paciente', key: 'cliente' },
-                { label: 'Servicio', key: 'servicio' },
-              ].map(({ label, key }) => (
-                <div key={key}>
-                  <label className="form-label">{label}</label>
-                  <input
-                    className="form-input"
-                    value={editForm[key]}
-                    onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
-                  />
-                </div>
-              ))}
+              <div>
+                <label className="form-label">Paciente</label>
+                <input
+                  className="form-input"
+                  value={editForm.cliente}
+                  onChange={e => setEditForm(f => ({ ...f, cliente: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="form-label">Motivo</label>
+                <MotivoConsulta
+                  valorInicial={modalEditar.servicio || ''}
+                  onChange={servicio => setEditForm(f => ({ ...f, servicio }))}
+                />
+              </div>
               <div>
                 <label className="form-label">Hora</label>
                 <input
@@ -665,13 +668,8 @@ export default function AgendaPage() {
                 />
               </div>
               <div>
-                <label className="form-label">Servicio</label>
-                <input
-                  className="form-input"
-                  value={nuevoForm.servicio}
-                  placeholder="Ej: Limpieza, Ortodoncia…"
-                  onChange={e => setNuevoForm(f => ({ ...f, servicio: e.target.value }))}
-                />
+                <label className="form-label">Motivo</label>
+                <MotivoConsulta onChange={servicio => setNuevoForm(f => ({ ...f, servicio }))} />
               </div>
               <div>
                 <label className="form-label">Profesional</label>

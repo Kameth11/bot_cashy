@@ -294,6 +294,12 @@ le avisa a quien hizo el cambio si es el mismo profesional. Los disparan los end
   mapa reemplaza al `CONSULTORIO_MAP` hardcodeado (comportamiento previo de `/profesional`). Los
   registrados también aparecen en el selector de profesional de la Agenda, y el aviso de "Llegó"
   informa por qué canal (Telegram / web) le llegó al profesional. Requiere Supabase.
+- **Motivo de la consulta en la Agenda** (turno nuevo y editar): en vez de escribir el "Servicio", se
+  tildan los motivos habituales (`MotivoConsulta.jsx`, lista en `dashboard/src/utils/motivos.js`) y
+  "Otro…" abre un campo para escribir uno distinto. Se guarda igual que siempre, en el campo `servicio`
+  como texto separado por coma (`"Control, Urgencia, Prótesis parcial"`), así que el bot, los reportes y
+  los turnos viejos no cambian; un texto viejo que no coincide con la lista cae en "Otro…". Pendiente a
+  propósito: que lo que se repite en "Otro…" se pueda guardar como opción propia del consultorio.
 - **Para agregar un aviso nuevo**: sumar el tipo en `TIPOS` y su texto en `TEXTOS_TURNO`
   (`notificaciones.service.js`) y llamar a `notificar`/`notificarTurno` sin `await` desde el endpoint.
 

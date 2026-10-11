@@ -1029,3 +1029,12 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
   .campana-btn { padding: 4px 5px; }
   .logout-btn-nav { padding-left: 6px; padding-right: 6px; }
 }
+
+/* ── Motivo de la consulta: casillas con forma de chip ─────── */
+
+.motivos { display: flex; flex-wrap: wrap; gap: 6px; }
+.motivo-chip { position: relative; user-select: none; }
+/* La casilla real queda para teclado y lectores de pantalla, pero no se ve: el chip es la casilla. */
+.motivo-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.motivo-chip:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
+.motivo-chip:hover:not(.active) { background: var(--surface); }
