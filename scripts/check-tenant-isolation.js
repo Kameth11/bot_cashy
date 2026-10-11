@@ -46,6 +46,8 @@ const PERSONA_TABLES = new Set([
   'presupuestos_personales',
   'preferencias_ambito_personales',
   'chat_historial',
+  'notificaciones',
+  'push_subscriptions',
 ]);
 const PERSONA_LEGACY_FILES = new Set([path.join(SRC_DIR, 'services', 'personal.service.js')]);
 

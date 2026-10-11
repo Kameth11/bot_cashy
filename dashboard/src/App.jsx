@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation, useMatch } from 'react-router-dom
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from './hooks/useAuth'
 import { AppProvider, useApp } from './contexts/AppContext'
+import { NotificacionesProvider } from './contexts/NotificacionesContext'
 import AuthGuard from './components/AuthGuard'
 import NavBar from './components/NavBar'
 import BottomNav from './components/BottomNav'
@@ -144,7 +145,9 @@ export default function App() {
             path="/*"
             element={
               <AuthGuard>
-                <LayoutWithModal />
+                <NotificacionesProvider>
+                  <LayoutWithModal />
+                </NotificacionesProvider>
               </AuthGuard>
             }
           />

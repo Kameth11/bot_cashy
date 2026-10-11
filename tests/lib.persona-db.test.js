@@ -101,7 +101,8 @@ describe('protecciones', () => {
 
   test('las tablas por persona están cubiertas', () => {
     expect([...PERSONA_TABLES].sort()).toEqual([
-      'chat_historial', 'movimientos_personales', 'preferencias_ambito_personales', 'presupuestos_personales', 'viajes_personales',
+      'chat_historial', 'movimientos_personales', 'notificaciones', 'preferencias_ambito_personales', 'presupuestos_personales',
+      'push_subscriptions', 'viajes_personales',
     ]);
   });
 });

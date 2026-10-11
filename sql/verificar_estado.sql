@@ -52,7 +52,10 @@ SELECT * FROM (VALUES
   ('019', 'restricciones de movimientos',
      EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'movimientos_estado_chk')
      AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'movimientos_tipo_chk')
-     AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'movimientos_moneda_chk'))
+     AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'movimientos_moneda_chk')),
+  ('020', 'notificaciones web (notificaciones y push_subscriptions)',
+     EXISTS (SELECT 1 FROM tabla WHERE n = 'notificaciones')
+     AND EXISTS (SELECT 1 FROM tabla WHERE n = 'push_subscriptions'))
 ) AS v(migracion, que_crea, aplicada)
 ORDER BY migracion;
 

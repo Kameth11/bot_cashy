@@ -58,4 +58,25 @@ function emitChatUpdated(userId, rev, epoca = null) {
   }
 }
 
-module.exports = { subscribe, unsubscribe, onMovimientosUpdated, emitMovimientosUpdated, emitChatUpdated };
+// Notificaciones web (src/services/notificaciones.service.js): un aviso nuevo para
+// esta persona. Llega con la web abierta; con la web cerrada va por Web Push.
+function emitNotificacion(userId, notificacion) {
+  const set = subscribers.get(String(userId));
+  if (!set) return 0;
+  const data = JSON.stringify(notificacion);
+  let enviados = 0;
+  for (const res of set) {
+    try {
+      res.write(`event: notificacion
+data: ${data}
+
+`);
+      enviados += 1;
+    } catch (e) {
+      // conexion rota, se limpiara via 'close'
+    }
+  }
+  return enviados;
+}
+
+module.exports = { subscribe, unsubscribe, onMovimientosUpdated, emitMovimientosUpdated, emitChatUpdated, emitNotificacion };

@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('../config');
 const { notificarLlegadaPaciente } = require('../services/profesional.service');
+const notificacionesWeb = require('../services/notificaciones.service');
 const { resolveTenantId } = require('../services/tenant.service');
 const { getSupabase, isAvailable } = require('../lib/supabase');
 const { esAdminOriginal, obtenerClientePorUserId, resolverPermisos } = require('../auth');
@@ -1031,6 +1032,8 @@ app.post('/api/agenda', authMiddleware, requierePermiso('editar_agenda'), async 
     const { hora, cliente, servicio, profesional, fecha } = req.body || {};
     if (!cliente) return res.status(400).json({ error: 'cliente es requerido' });
     const idTurno = await crearTurno(req.user.userId, { hora, cliente, servicio, profesional, fecha });
+    // Aviso al profesional (campanita/push); sin await: no demora la respuesta ni la rompe.
+    notificacionesWeb.notificarTurno(req.user.userId, 'turno_nuevo', { cliente, hora, servicio, profesional });
     res.status(201).json({ ok: true, idTurno });
   } catch (err) {
     logger.error('API', 'Error POST /api/agenda', { err: err.message });
@@ -1084,6 +1087,8 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, requierePermiso('editar_a
       logger.error('API', 'Error avisando llegada al profesional', { err: err.message });
       notificacion = { ok: false, error: 'envio_fallido' };
     }
+    // Además del aviso por Telegram, campanita y push en la web (sin await, best-effort).
+    notificacionesWeb.notificarTurno(req.user.userId, 'llegada_paciente', turno);
 
     res.json({ ok: true, notificacion });
   } catch (err) {
@@ -1146,6 +1151,7 @@ app.post('/api/agenda/:idTurno/cancelar', authMiddleware, requierePermiso('edita
     const turno = await obtenerTurnoPorId(req.user.userId, req.params.idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
     await actualizarEstadoTurno(req.user.userId, req.params.idTurno, 'Cancelado');
+    notificacionesWeb.notificarTurno(req.user.userId, 'turno_cancelado', turno);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1157,6 +1163,7 @@ app.post('/api/agenda/:idTurno/novino', authMiddleware, requierePermiso('editar_
     const turno = await obtenerTurnoPorId(req.user.userId, req.params.idTurno);
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
     await actualizarEstadoTurno(req.user.userId, req.params.idTurno, 'No vino');
+    notificacionesWeb.notificarTurno(req.user.userId, 'turno_no_vino', turno);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1787,6 +1794,7 @@ app.post('/api/personal/viajes/cerrar', authMiddleware, personalAccess, async (r
 // Control de acceso por membresía a cada casa (casa.service), no ownerOnly.
 require('./casa.routes').registrarRutasCasa(app, { authMiddleware, obtenerCotizacionDolar });
 require('./chat.routes').registrarRutasChat(app, { authMiddleware });
+require('./notificaciones.routes').registrarRutasNotificaciones(app, { authMiddleware });
 
 // ── Cotizacion (publica) ──
 app.get('/api/cotizacion', (req, res) => {

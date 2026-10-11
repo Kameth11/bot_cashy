@@ -18,6 +18,8 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
+        // Manejadores de Web Push (public/push-sw.js): avisos con la app cerrada.
+        importScripts: ['push-sw.js'],
         // Por defecto el service worker responde a CUALQUIER navegación con la pantalla
         // principal de la app: abrir /api/... o /privacidad.html a mano mostraba una
         // página en blanco. Estas rutas las sirve el servidor, no la app.

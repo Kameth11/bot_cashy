@@ -103,6 +103,9 @@ ALLOWED_EMAILS=                   # Solo bypass de emergencia (el flujo normal u
 GEMINI_VISION_MODEL=              # gemini-2.5-flash (default recomendado)
 GEMINI_MODEL=                     # gemini-2.5-flash-lite (para texto barato)
 COTIZACION_DEFAULT=               # Fallback si falla Bluelytics
+VAPID_PUBLIC_KEY=                 # Web Push (opcional): npx web-push generate-vapid-keys
+VAPID_PRIVATE_KEY=                # idem; sin las dos no hay push, la campanita anda igual
+VAPID_SUBJECT=                    # mailto:tu@email.com (o https://tu-dominio)
 ```
 
 ---
@@ -252,6 +255,35 @@ dueño, al profesional) sigue saliendo por Telegram.
 - Si cambiás un handler del bot, el chat web lo hereda solo. Si agregás un
   método de Telegram nuevo dirigido al propio usuario (ej. `sendLocation`),
   sumalo en `TelegramWeb.callApi` o la web no lo va a mostrar.
+
+---
+
+## Notificaciones web (campanita + Web Push)
+
+Avisos en el dashboard para quien trabaja ahí, además de los de Telegram (que siguen).
+Hoy se avisa **al profesional del turno** (el registrado con `/profesional`) cuando en la
+Agenda web se marca **Llegó**, se **crea**, se **cancela** o se marca **No vino** un turno; no se
+le avisa a quien hizo el cambio si es el mismo profesional. Los disparan los endpoints de
+`/api/agenda` (no el bot de Telegram ni la lectura de agenda por foto: no avisan todavía).
+
+- **Servicio**: `src/services/notificaciones.service.js` (`notificar`, `notificarTurno`). Un
+  aviso se guarda, se manda por SSE (evento `notificacion`, `events.service.js`) y por Web Push
+  a los dispositivos suscriptos. Todo best-effort: un fallo nunca rompe la acción que lo disparó.
+- **API**: `GET /api/notificaciones` (lista + `push.disponible`/`clavePublica`),
+  `POST /api/notificaciones/leidas`, `POST`/`DELETE /api/notificaciones/suscripcion`.
+  Rutas en `src/api/notificaciones.routes.js`. Cada persona solo ve lo suyo (el `userId` sale de la sesión).
+- **Datos**: tablas `notificaciones` y `push_subscriptions` (`sql/migrations/020_notificaciones_web.sql`,
+  **hay que correrla a mano**), por persona con `forPersona`. Sin la tabla, o sin Supabase, se guardan
+  en memoria (se pierden en cada deploy y las suscripciones push también).
+- **Push**: necesita `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` en Railway. Sin
+  ellas el servidor no ofrece push (la campanita funciona igual). En iPhone solo anda con la PWA
+  instalada en la pantalla de inicio (iOS 16.4+). Un dispositivo caído (404/410) se borra solo.
+- **Front**: `NotificacionesContext.jsx` (estado + SSE), `CampanaNotificaciones.jsx` (en la NavBar;
+  incluye el botón para activar/desactivar el push en ese dispositivo), `services/push.js`, y
+  `dashboard/public/push-sw.js` (manejadores `push`/`notificationclick`, cargado por el service
+  worker con `workbox.importScripts` en `vite.config.js`).
+- **Para agregar un aviso nuevo**: sumar el tipo en `TIPOS` y su texto en `TEXTOS_TURNO`
+  (`notificaciones.service.js`) y llamar a `notificar`/`notificarTurno` sin `await` desde el endpoint.
 
 ---
 

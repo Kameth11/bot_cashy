@@ -982,3 +982,50 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 .detalle-footer { margin-top: 20px; flex-wrap: wrap; }
 
 .fila-clickeable { cursor: pointer; }
+
+/* ── Campanita de notificaciones ───────────────────────────── */
+
+.campana { position: relative; }
+.campana-btn {
+  position: relative; background: none; border: none; border-radius: 6px;
+  padding: 5px 8px; font-size: 17px; line-height: 1; cursor: pointer;
+}
+.campana-btn:hover { background: var(--surface); }
+.campana-badge {
+  position: absolute; top: 0; right: 0; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: var(--red); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
+.campana-panel {
+  position: absolute; right: 0; top: calc(100% + 8px); width: 340px; max-height: 70vh; overflow-y: auto;
+  background: var(--white); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(9,30,66,0.22); z-index: 400;
+}
+.campana-titulo { padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--text); border-bottom: 1px solid var(--bg); }
+.campana-vacio { padding: 20px 16px; font-size: 12.5px; color: var(--text-3); line-height: 1.5; }
+.campana-lista { list-style: none; margin: 0; padding: 0; }
+.campana-item {
+  width: 100%; display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 10px 16px; background: none; border: none; border-bottom: 1px solid var(--bg); cursor: pointer;
+}
+.campana-item:hover { background: var(--surface); }
+.campana-item.nueva { background: #EAF0FB; }
+.campana-item-titulo { font-size: 13px; font-weight: 600; color: var(--text); }
+.campana-item-cuerpo { font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.campana-item-hora { font-size: 11px; color: var(--text-3); }
+.campana-push {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 16px;
+  font-size: 12px; color: var(--text-2); line-height: 1.45; border-top: 1px solid var(--bg);
+}
+.campana-push-btn { align-self: flex-start; padding: 6px 14px; font-size: 12.5px; }
+.campana-push-error { color: var(--red); }
+
+@media (max-width: 600px) {
+  .campana-panel { position: fixed; left: 8px; right: 8px; top: 60px; width: auto; }
+  /* Con la campanita la barra no entra en 375px: se compactan separadores y márgenes. */
+  .navbar { padding: 0 10px; }
+  .navbar-right { gap: 2px; }
+  .navbar-right .navbar-divider { display: none; }
+  .campana-btn { padding: 4px 5px; }
+  .logout-btn-nav { padding-left: 6px; padding-right: 6px; }
+}

@@ -1,6 +1,7 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useApp } from '../contexts/AppContext'
+import CampanaNotificaciones from './CampanaNotificaciones'
 
 export default function NavBar() {
   const { user, logout, puede, esDueno, puedePersonal } = useAuth()
@@ -77,6 +78,7 @@ export default function NavBar() {
         {puede('cargar_movimientos') && (
           <button className="btn-nuevo" onClick={openNuevo}>+ Nuevo</button>
         )}
+        <CampanaNotificaciones />
         <div className="navbar-divider" />
         <div className="bot-status">
           <span className="bot-dot" />
