@@ -212,8 +212,14 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
   mezclados. **Orden para producción:** respaldo reciente → consulta 3 (estado/tipo/moneda
   raros en 0) → 018 → 019 → `SELECT count(*) FROM movimientos WHERE fecha_iso IS NULL`
   → cuando todo dé 0, los `VALIDATE CONSTRAINT` que están en el encabezado de la 019.
-  Falta el punto 4 (filtrar por mes en la base en vez de traer todo): recién conviene
-  hacerlo con `fecha_iso` ya verificada en producción.
+- **Fase 2, punto 4 (parcial)**: `/hoy`, `/semana` y `/mes` piden a Supabase solo un rango
+  de fechas (`obtenerDatosSheet(userId, { desde, hasta })` → filtro sobre `fecha_iso`, con
+  2 días de margen y siempre incluyendo filas sin `fecha_iso`); el filtro exacto sigue en
+  memoria, así que el resultado es el mismo. Sin la migración 018 se lee todo como antes.
+  La caché es por rango. **No se tocó** `/api/movimientos` ni balance/pendientes/deudores:
+  el dashboard usa `total` y esas vistas necesitan historia completa; hacerlo exige
+  rediseñar sus respuestas (paginar). Las filas que solo existen en `movimientos_v2` se
+  siguen leyendo completas.
 
 ## 6.b Pendiente de tu lado y decisiones abiertas (traspaso 2026-10-11)
 
@@ -230,7 +236,7 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
 repo es privado (migración 002 tiene IDs y un email reales)? ¿negarse a arrancar sin
 service key en producción (`SUPABASE_REQUIRE_SERVICE_KEY=true`) o solo avisar? (`fecha_iso` y restricciones ya preparadas en 018/019: falta correrlas con respaldo previo.)
 
-**Siguiente:** punto 4 de la fase 2, punto 3 de la fase 3, fase 4
+**Siguiente:** punto 3 de la fase 3, fase 4
 (SaaS, solo si se decide vender). Producto: app en tiendas (Android primero, ver notas),
 push, login sin Telegram, deshacer en Personal/Casa/Agenda.
 

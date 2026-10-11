@@ -176,9 +176,11 @@ async function getSheetCliente(userId) {
   return sheet;
 }
 
-async function obtenerDatosSheet(userId) {
+// `rango` ({ desde, hasta } 'AAAA-MM-DD') es opcional: solo achica la lectura en
+// Supabase; el que lo pide sigue filtrando por fecha en memoria.
+async function obtenerDatosSheet(userId, rango = null) {
   const db = getDbService();
-  if (db) return db.obtenerDatosSheet(userId);
+  if (db) return db.obtenerDatosSheet(userId, rango);
   const sheetId = getSheetId(userId);
   if (!sheetId) {
     console.error('No se encontro sheetId para userId:', userId);

@@ -3,7 +3,22 @@ const { withUserWriteLock } = require('../lib/write-queue');
 const db = require('./db.service');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 
-const { esHoy, esEstaSemana, esEsteMes, normalizarFecha, fechaArgentinaStr } = require('../utils/date');
+const { esHoy, esEstaSemana, esEsteMes, normalizarFecha, fechaArgentinaStr, ahoraArgentina } = require('../utils/date');
+
+// Rango 'AAAA-MM-DD' que CONTIENE lo que esHoy/esEstaSemana/esEsteMes aceptan (con 2 días
+// de margen por zona horaria). Solo achica la lectura en Supabase; el filtro exacto sigue
+// siendo el de memoria.
+function isoLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function rangoAlrededor(inicio, fin, margenDias = 2) {
+  const a = new Date(inicio); a.setDate(a.getDate() - margenDias);
+  const b = new Date(fin); b.setDate(b.getDate() + margenDias);
+  return { desde: isoLocal(a), hasta: isoLocal(b) };
+}
+function rangoHoy() { const h = ahoraArgentina(); return rangoAlrededor(h, h); }
+function rangoSemana() { const h = ahoraArgentina(); const i = new Date(h); i.setDate(h.getDate() - 6); return rangoAlrededor(i, h); }
+function rangoMes() { const h = ahoraArgentina(); return rangoAlrededor(new Date(h.getFullYear(), h.getMonth(), 1), new Date(h.getFullYear(), h.getMonth() + 1, 0)); }
 const { formatMonto, formatFecha, escapeMarkdown } = require('../utils/formatter');
 const { obtenerCotizacionDolar } = require('./cotizacion.service');
 const { sanitizarInput } = require('../utils/formatter');
@@ -92,7 +107,7 @@ async function ejecutarBalance(userId) {
 }
 
 async function ejecutarHoy(userId) {
-  const datos = await obtenerDatosSheet(userId);
+  const datos = await obtenerDatosSheet(userId, rangoHoy());
   const hoy = datos.filter(d => esHoy(d.fecha));
 
   if (hoy.length === 0) {
@@ -132,7 +147,7 @@ async function ejecutarHoy(userId) {
 }
 
 async function ejecutarSemana(userId) {
-  const datos = await obtenerDatosSheet(userId);
+  const datos = await obtenerDatosSheet(userId, rangoSemana());
   const semana = datos.filter(d => esEstaSemana(d.fecha));
 
   if (semana.length === 0) {
@@ -180,7 +195,7 @@ async function ejecutarSemana(userId) {
 }
 
 async function ejecutarMes(userId) {
-  const datos = await obtenerDatosSheet(userId);
+  const datos = await obtenerDatosSheet(userId, rangoMes());
   const mes = datos.filter(d => esEsteMes(d.fecha));
 
   if (mes.length === 0) {

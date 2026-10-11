@@ -39,6 +39,7 @@ const legacyCapabilityCache = {
   extendedMovimientos: false,
   extendedCampos: false,
   fechaCobro: false,
+  fechaIso: false,
 };
 
 let v2CapabilityPromise = null;
@@ -104,7 +105,7 @@ function getSheetId(userId) {
 }
 
 function invalidateCache(userId) {
-  datosCache.delete(datosCacheKey(userId));
+  invalidarDatosCache(userId);
   getSheetService().invalidateCache(userId);
 }
 
@@ -230,7 +231,7 @@ function isMissingColumnError(error) {
 
 async function resolveLegacyCapabilities(supabase) {
   if (!USE_SUPABASE || !supabase) {
-    return { extendedMovimientos: false, extendedCampos: false, fechaCobro: false };
+    return { extendedMovimientos: false, extendedCampos: false, fechaCobro: false, fechaIso: false };
   }
 
   if (legacyCapabilityCache.checked) {
@@ -238,6 +239,7 @@ async function resolveLegacyCapabilities(supabase) {
       extendedMovimientos: legacyCapabilityCache.extendedMovimientos,
       extendedCampos: legacyCapabilityCache.extendedCampos,
       fechaCobro: legacyCapabilityCache.fechaCobro,
+      fechaIso: legacyCapabilityCache.fechaIso,
     };
   }
 
@@ -249,6 +251,7 @@ async function resolveLegacyCapabilities(supabase) {
     let extendedMovimientos = false;
     let extendedCampos = false;
     let fechaCobro = false;
+    let fechaIso = false;
 
     // tenant-isolation-ignore: solo prueba si existen columnas, no lee datos de usuario
     const check = await supabase
@@ -291,12 +294,27 @@ async function resolveLegacyCapabilities(supabase) {
       console.error('Supabase movimientos fecha_cobro check error:', fechaCobroCheck.error.message);
     }
 
+    // Migración 018: fecha real para filtrar por rango en la base. Sin ella, se lee
+    // todo y se filtra en memoria como siempre.
+    // tenant-isolation-ignore: solo prueba si existe la columna, no lee datos de usuario
+    const fechaIsoCheck = await supabase
+      .from('movimientos')
+      .select('fecha_iso')
+      .limit(1);
+
+    if (!fechaIsoCheck.error) {
+      fechaIso = true;
+    } else if (!isMissingColumnError(fechaIsoCheck.error)) {
+      console.error('Supabase movimientos fecha_iso check error:', fechaIsoCheck.error.message);
+    }
+
     legacyCapabilityCache.checked = true;
+    legacyCapabilityCache.fechaIso = fechaIso;
     legacyCapabilityCache.extendedMovimientos = extendedMovimientos;
     legacyCapabilityCache.extendedCampos = extendedCampos;
     legacyCapabilityCache.fechaCobro = fechaCobro;
     legacyCapabilityPromise = null;
-    return { extendedMovimientos, extendedCampos, fechaCobro };
+    return { extendedMovimientos, extendedCampos, fechaCobro, fechaIso };
   })();
 
   return legacyCapabilityPromise;
@@ -611,7 +629,13 @@ function mapV2RowToPlainData(row) {
   };
 }
 
-async function fetchLegacyRowsForUser(supabase, userId, tenantId) {
+// `rango` ({ desde, hasta } en 'AAAA-MM-DD') es opcional y solo ACHICA la lectura: el
+// que lo pide sigue filtrando en memoria, así que tiene que pasar un rango que
+// contenga todo lo que necesita (con margen). Las filas sin fecha_iso (fecha que no
+// se pudo interpretar) se incluyen siempre, para no perder nada que antes se leía.
+async function fetchLegacyRowsForUser(supabase, userId, tenantId, rango = null) {
+  const usarRango = Boolean(rango && rango.desde && rango.hasta &&
+    (await resolveLegacyCapabilities(supabase)).fechaIso);
   // Sin .eq('user_id', userId) a propósito: el tenant (forTenant/tenantId)
   // YA es el límite de aislamiento correcto — dueño e invitados comparten
   // un mismo "consultorio". Filtrar además por user_id hacía que cada
@@ -627,9 +651,13 @@ async function fetchLegacyRowsForUser(supabase, userId, tenantId) {
   const rows = [];
   for (let from = 0; from < MAX_MOVIMIENTOS_READ; from += MOVIMIENTOS_PAGE_SIZE) {
     const to = Math.min(from + MOVIMIENTOS_PAGE_SIZE, MAX_MOVIMIENTOS_READ) - 1;
-    const { data, error } = await forTenant(tenantId)
+    let consulta = forTenant(tenantId)
       .from('movimientos')
-      .select('*')
+      .select('*');
+    if (usarRango) {
+      consulta = consulta.or(`fecha_iso.is.null,and(fecha_iso.gte.${rango.desde},fecha_iso.lte.${rango.hasta})`);
+    }
+    const { data, error } = await consulta
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .range(from, to);
@@ -662,8 +690,8 @@ async function fetchV2RowsForUser(supabase, userId) {
   return data || [];
 }
 
-async function resolveReadModelRows(supabase, userId, tenantId) {
-  const legacyRows = await fetchLegacyRowsForUser(supabase, userId, tenantId);
+async function resolveReadModelRows(supabase, userId, tenantId, rango = null) {
+  const legacyRows = await fetchLegacyRowsForUser(supabase, userId, tenantId, rango);
   const v2Rows = await fetchV2RowsForUser(supabase, userId);
   const legacyIds = new Set(legacyRows.map(row => String(row.id)));
   const v2OnlyRows = v2Rows.filter(row => !row.legacy_row_id || !legacyIds.has(String(row.legacy_row_id)));
@@ -942,17 +970,33 @@ function datosCacheKey(userId) {
   return String(cliente ? cliente.ownerId : userId);
 }
 
-onMovimientosUpdated(userId => { datosCache.delete(datosCacheKey(userId)); });
+// La clave lleva el rango pedido ('<dueño>|<desde>..<hasta>'): al invalidar hay que
+// borrar todas las variantes del mismo dueño.
+function invalidarDatosCache(userId) {
+  const prefijo = datosCacheKey(userId) + '|';
+  for (const k of [...datosCache.keys()]) {
+    if (k.startsWith(prefijo)) datosCache.delete(k);
+  }
+}
 
-function obtenerDatosSheet(userId) {
+onMovimientosUpdated(invalidarDatosCache);
+
+// `rango` opcional ({ desde, hasta } 'AAAA-MM-DD'): solo achica la lectura en Supabase;
+// quien lo usa sigue filtrando por fecha en memoria. Sin Supabase o sin la migración
+// 018 se ignora y se lee todo.
+function rangoKey(rango) {
+  return rango && rango.desde && rango.hasta ? `${rango.desde}..${rango.hasta}` : '';
+}
+
+function obtenerDatosSheet(userId, rango = null) {
   if (!USE_SUPABASE) return getSheetService().obtenerDatosSheet(userId);
 
-  const key = datosCacheKey(userId);
+  const key = datosCacheKey(userId) + '|' + rangoKey(rango);
   const hit = datosCache.get(key);
   if (hit && Date.now() - hit.ts < DATOS_CACHE_TTL_MS) return hit.promise;
 
   const entry = { ts: Date.now(), promise: null };
-  entry.promise = leerDatos(userId).catch(err => {
+  entry.promise = leerDatos(userId, rango).catch(err => {
     if (datosCache.get(key) === entry) datosCache.delete(key);
     throw err;
   });
@@ -960,7 +1004,7 @@ function obtenerDatosSheet(userId) {
   return entry.promise;
 }
 
-async function leerDatos(userId) {
+async function leerDatos(userId, rango = null) {
   if (!USE_SUPABASE) {
     return getSheetService().obtenerDatosSheet(userId);
   }
@@ -976,7 +1020,7 @@ async function leerDatos(userId) {
   }
 
   try {
-    const { legacyRows, v2OnlyRows, v2ByLegacyId } = await resolveReadModelRows(supabase, userId, tenantId);
+    const { legacyRows, v2OnlyRows, v2ByLegacyId } = await resolveReadModelRows(supabase, userId, tenantId, rango);
     const combined = [
       ...legacyRows.map(row => mapLegacyDbRowToPlainData(row, v2ByLegacyId.get(String(row.id)) || null)),
       ...v2OnlyRows.map(mapV2RowToPlainData),
