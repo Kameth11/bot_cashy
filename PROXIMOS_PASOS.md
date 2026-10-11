@@ -21,12 +21,16 @@ sección 7 de `NOTAS_2026-10-09_WEB_IDENTIDAD_NOTIFICACIONES.md`.
    de transferencia; gasto de Casa y uno personal. Si el audio sale cortado, mirar
    el log de Railway (línea "transcripcion de audio … termino con …").
 3. Confirmar que Railway tenga `SUPABASE_SERVICE_ROLE_KEY`.
-4. Sin plan pago no hay copias confiables: hacer volcados propios (ver abajo).
+4. **Respaldo automático** (ya armado, falta activarlo): seguir `RESPALDOS.md` — crear el
+   rol de solo lectura (`sql/backup_rol_lectura.sql`), cargar los secretos
+   `SUPABASE_DB_URL` y `BACKUP_PASSPHRASE` en GitHub, hacer la primera corrida a mano y
+   probar una restauración. Hasta que lo hagas, el workflow diario falla a propósito.
 
 ## Qué sigue (en este orden)
-1. **Respaldo propio automático** (porque no hay plan pago): volcado diario de la
-   base (`pg_dump`) y de los comprobantes del bucket a un lugar aparte. Es la fase 0
-   del plan que falta.
+1. **Respaldo de los archivos del bucket `comprobantes`** (el de la base ya está armado,
+   ver `RESPALDOS.md`): hace falta confirmar si se usa Supabase Storage o solo la copia por
+   Telegram, y si se usa, bajarlos con un script (requiere la service role key en GitHub, o
+   un almacenamiento aparte).
 2. **Fase 1 de `PLAN_BASE_DE_DATOS.md`**: registro de migraciones (017), prueba de
    las migraciones contra un Postgres real en CI, mirar `.error` en `auth_codes`,
    avisar si falta la service role key, limpiar `sql/` y el código muerto de

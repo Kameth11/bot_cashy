@@ -1,0 +1,60 @@
+name: Respaldo de la base
+
+# Copia cifrada de la base de Supabase, todos los días. Qué hace, cómo se configura
+# y cómo se restaura: RESPALDOS.md. Si falta la configuración el trabajo FALLA a
+# propósito (GitHub avisa por mail): un respaldo que no corre no debe pasar por bueno.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'   # 06:17 UTC = 03:17 en Argentina
+  workflow_dispatch:       # también a mano: Actions → "Respaldo de la base" → Run workflow
+
+permissions:
+  contents: read
+
+concurrency:
+  group: respaldo
+  cancel-in-progress: false
+
+jobs:
+  respaldo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Tiene que ser >= a la versión de Postgres de Supabase.
+      PG_CLIENT_VERSION: '17'
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Revisar la configuración
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Faltan los secretos SUPABASE_DB_URL y/o BACKUP_PASSPHRASE. No se hizo ninguna copia. Ver RESPALDOS.md, paso 4."
+            exit 1
+          fi
+
+      - name: Instalar el cliente de PostgreSQL
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq "postgresql-client-$PG_CLIENT_VERSION"
+          echo "/usr/lib/postgresql/$PG_CLIENT_VERSION/bin" >> "$GITHUB_PATH"
+
+      - name: Respaldar
+        run: scripts/backup/respaldar.sh respaldos
+
+      - name: Fecha de la copia
+        id: fecha
+        run: echo "dia=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Guardar la copia cifrada
+        uses: actions/upload-artifact@v4
+        with:
+          name: respaldo-${{ steps.fecha.outputs.dia }}
+          path: respaldos/*
+          retention-days: 90
+          if-no-files-found: error

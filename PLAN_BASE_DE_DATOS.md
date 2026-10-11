@@ -66,6 +66,7 @@ Cada fase se puede cortar al terminar sin dejar nada a medias.
 | 0.2 | Correr `sql/verificar_estado.sql` (cada consulta por separado) y guardar el resultado | Saber con certeza qué migraciones tiene la base. Todas deberían dar `true` |
 | 0.3 | En Railway, confirmar que existe `SUPABASE_SERVICE_ROLE_KEY` | El backend cae a la `anon` key si falta; con las políticas actuales casi todo fallaría, pero conviene que sea explícito |
 | 0.4 | En Supabase, ver qué plan tenés y si hay **copias de seguridad automáticas** (y por cuánto tiempo) | Hay datos financieros de clientes. Sin backup verificado, un error es irreversible |
+| 0.5 | **Respaldo propio automático** (el plan gratuito no garantiza copias): seguir `RESPALDOS.md` | Copia diaria cifrada en GitHub, con restauración probada. Armado 2026-10-11; falta que cargues los secretos y hagas la primera corrida |
 
 ### Fase 1 — Trazabilidad y red de seguridad (chica; 1–2 sesiones; riesgo bajo)
 

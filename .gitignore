@@ -58,3 +58,6 @@ Thumbs.db
 logs/
 temp/
 tmp/clientes.json
+
+# Copias de la base generadas por scripts/backup/respaldar.sh (cifradas, pero no van al repo)
+respaldos/

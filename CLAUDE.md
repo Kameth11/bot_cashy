@@ -121,7 +121,8 @@ Columnas del sheet por usuario (`REQUIRED_SHEET_HEADERS` en `sheet.service.js`):
 Qué tiene realmente la base de Supabase: `sql/verificar_estado.sql` (solo lectura;
 las migraciones se corren a mano y no queda registro). Plan para volverla más
 sólida (RLS, trazabilidad de migraciones, fechas reales en `movimientos`,
-reconciliación Sheets↔Supabase): `PLAN_BASE_DE_DATOS.md`.
+reconciliación Sheets↔Supabase): `PLAN_BASE_DE_DATOS.md`. Respaldo diario cifrado de la
+base (GitHub Actions) y cómo restaurarlo: `RESPALDOS.md`.
 
 Esto es el modelo "legacy"/v1, fuente de verdad cuando `USE_SUPABASE=false`.
 Cuando Supabase está habilitado conviven este modelo y un modelo v2
