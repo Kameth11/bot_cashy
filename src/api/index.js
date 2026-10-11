@@ -344,10 +344,11 @@ app.post('/api/auth/request-code',
 
   if (isAvailable() && getSupabase()) {
     try {
-      await getSupabase().from('auth_codes').upsert(
+      const { error } = await getSupabase().from('auth_codes').upsert(
         { telegram_user_id: telegramId, code, expires_at: expiresAt.toISOString(), used: false, intentos: 0 },
         { onConflict: 'telegram_user_id' }
       );
+      if (error) throw new Error(error.message);
     } catch (err) {
       logger.warn('AUTH', 'No se pudo persistir auth_code en Supabase', { telegramId, err: err.message });
     }
@@ -408,7 +409,8 @@ app.post('/api/auth/verify',
     authCodes.set(telegramId, codeData);
     if (isAvailable() && getSupabase()) {
       try {
-        await getSupabase().from('auth_codes').update({ intentos: codeData.intentos }).eq('telegram_user_id', telegramId);
+        const { error } = await getSupabase().from('auth_codes').update({ intentos: codeData.intentos }).eq('telegram_user_id', telegramId);
+        if (error) throw new Error(error.message);
       } catch (err) {
         logger.warn('AUTH', 'No se pudo persistir intentos de auth_code en Supabase', { telegramId, err: err.message });
       }
@@ -425,7 +427,8 @@ app.post('/api/auth/verify',
   authCodes.set(telegramId, codeData);
   if (isAvailable() && getSupabase()) {
     try {
-      await getSupabase().from('auth_codes').update({ used: true }).eq('telegram_user_id', telegramId);
+      const { error } = await getSupabase().from('auth_codes').update({ used: true }).eq('telegram_user_id', telegramId);
+      if (error) throw new Error(error.message);
     } catch (err) {
       logger.warn('AUTH', 'No se pudo marcar auth_code como usado en Supabase', { telegramId, err: err.message });
     }

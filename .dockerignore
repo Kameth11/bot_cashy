@@ -1,0 +1,12 @@
+node_modules
+dashboard/node_modules
+dashboard/dist
+.git
+.github
+.env
+.env.*
+clientes.json
+tests
+sql
+scripts
+*.md

@@ -3,8 +3,8 @@
 Bot de Telegram + dashboard web para gestión de cashflow de un consultorio médico.
 Registra ingresos/egresos en lenguaje natural y los guarda en Google Sheets individuales por usuario (+ Supabase opcional).
 
-**Retomando trabajo**: leer `PROXIMOS_PASOS.md` (estado actual, pendientes, decisiones
-abiertas y trampas conocidas) antes de empezar.
+**Retomando trabajo**: leer `PLAN_BASE_DE_DATOS.md` (sección 6 "Hecho" y 6.b
+"Pendiente y decisiones abiertas") y `RESPALDOS.md` antes de empezar.
 
 **Alcance de negocio**: hoy hay un cliente real, pero la intención es venderlo
 a otros consultorios (SaaS multi-tenant). Esto todavía NO está implementado
@@ -119,7 +119,8 @@ Columnas del sheet por usuario (`REQUIRED_SHEET_HEADERS` en `sheet.service.js`):
 - Los montos en dólares se convierten a pesos usando cotización del día
 
 Qué tiene realmente la base de Supabase: `sql/verificar_estado.sql` (solo lectura;
-las migraciones se corren a mano y no queda registro). Plan para volverla más
+las migraciones se corren a mano, orden en `sql/README.md`; desde la 017 quedan
+registradas en `schema_migrations` y CI las prueba contra un Postgres real). Plan para volverla más
 sólida (RLS, trazabilidad de migraciones, fechas reales en `movimientos`,
 reconciliación Sheets↔Supabase): `PLAN_BASE_DE_DATOS.md`.
 
@@ -128,6 +129,20 @@ Cuando Supabase está habilitado conviven este modelo y un modelo v2
 (`movimientos_v2` + `movimiento_eventos_v2`) más rico, con detección de
 capacidades y mapeo automático entre ambos. Ver skill `bot-cashy-db` para el
 detalle completo.
+
+---
+
+## Cómo trabajar / trampas conocidas
+
+- **No se tocan los tests por ahora** (decisión del usuario).
+- No se pueden probar acá Gemini, Supabase ni Google Sheets reales (no hay claves).
+  Sí: handlers con un server de prueba + Playwright, y SQL contra un Postgres 16 local
+  (`/usr/lib/postgresql/16/bin`, datos en `/var/lib/postgresql`, borrarlos al terminar;
+  o directo `scripts/probar-sql.sh`).
+- `pkill -f <patrón>` se mata a sí mismo si el patrón aparece en el propio comando.
+- `dashboard/dist` está versionado: un `npm run build` lo modifica; restaurarlo con
+  `git checkout -- dashboard/dist` antes de commitear. No dejar archivos sueltos de
+  pruebas en la raíz. Hay que correr `npm ci` antes de `npm test` en una sesión nueva.
 
 ---
 

@@ -92,6 +92,7 @@ let apiServer = null;
 // sigue en vuelo) cualquier mensaje o request encuentra `clientes` vacío y
 // todo el mundo (dueños incluidos) parece "no autorizado".
 async function iniciar() {
+  require('./lib/supabase').verificarClaveServicio(logger);
   await clienteService.listo;
 
   // Start API (does not depend on bot).
