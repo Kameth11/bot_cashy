@@ -51,6 +51,7 @@ const loginTelegram = require('../services/login-telegram.service');
 const { puedeUsarPersonal } = require('../auth/personal-acceso');
 const { obtenerUsernameBot } = require('../lib/bot-info');
 const loginGoogle = require('../services/login-google.service');
+const invitacionWeb = require('../services/invitacion-web.service');
 const state = require('../state');
 const logger = require('../lib/logger');
 const { createLimiter } = require('../lib/rate-limiter');
@@ -529,7 +530,16 @@ app.post('/api/auth/google',
       return res.json({ estado: 'aprobada', ...armarSesion(userId) });
     }
 
-    // Cuenta de Google sin vincular: se confirma en el bot.
+    // Cuenta de Google sin vincular. Si el dueño (o quien tenga permiso) invitó a ESTE email desde
+    // el dashboard, se crea la cuenta acá mismo, sin Telegram. Google ya confirmó que el email es de
+    // quien entra; sin una invitación pendiente no pasa nada de esto y sigue el vínculo por el bot.
+    const canje = await invitacionWeb.canjearPorGoogle(g);
+    if (canje.ok) {
+      logger.audit('auth_google_alta_por_invitacion', { userId: canje.userId, ownerId: canje.ownerId, ip: req.ip });
+      return res.json({ estado: 'aprobada', ...armarSesion(canje.userId), bienvenida: true });
+    }
+
+    // Sin invitación: se confirma en el bot.
     const username = await obtenerUsernameBot().catch(() => null);
     if (!username) {
       return res.json({ estado: 'no_disponible' });
@@ -1805,6 +1815,15 @@ app.post('/api/personal/viajes/cerrar', authMiddleware, personalAccess, async (r
 require('./casa.routes').registrarRutasCasa(app, { authMiddleware, obtenerCotizacionDolar });
 require('./chat.routes').registrarRutasChat(app, { authMiddleware });
 require('./notificaciones.routes').registrarRutasNotificaciones(app, { authMiddleware });
+const invitacionesPorUsuario = createLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
+require('./invitaciones.routes').registrarRutasInvitaciones(app, {
+  authMiddleware,
+  requierePermiso,
+  rateLimit,
+  limitador: invitacionesPorUsuario,
+  esDuenoOAdmin,
+  dashboardUrl: () => config.DASHBOARD_URL,
+});
 require('./profesionales.routes').registrarRutasProfesionales(app, {
   authMiddleware,
   esDuenoOAdmin,

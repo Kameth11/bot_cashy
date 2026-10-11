@@ -3,24 +3,11 @@ import { useAuth } from '../hooks/useAuth'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import CotizacionWidget from '../components/CotizacionWidget'
 import TabProfesionales from '../components/TabProfesionales'
+import TabInvitaciones from '../components/TabInvitaciones'
+import { PERMISOS_LABELS, PRESET_LABELS } from '../utils/permisos'
 import { api } from '../services/api'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-const PERMISOS_LABELS = {
-  ver_agenda:         'Ver agenda',
-  editar_agenda:      'Editar agenda',
-  ver_movimientos:    'Ver movimientos',
-  cargar_movimientos: 'Cargar movimientos',
-  editar_movimientos: 'Editar movimientos',
-  ver_balance:        'Ver balance / reportes',
-}
-
-const PRESET_LABELS = {
-  odontologo: 'Odontólogo',
-  recepcion:  'Recepción',
-  contadora:  'Contadora',
-}
 
 function detectarPreset(permisos, presets) {
   if (!presets) return null
@@ -438,12 +425,12 @@ function TabSolicitudes() {
 // ── ConfigPage principal ───────────────────────────────────────────────────
 
 export default function ConfigPage() {
-  const { user, logout } = useAuth()
+  const { user, logout, puede } = useAuth()
   const navigate         = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const tabParam  = searchParams.get('tab') || 'general'
-  const activeTab = ['general', 'profesionales', 'accesos', 'solicitudes'].includes(tabParam) ? tabParam : 'general'
+  const activeTab = ['general', 'profesionales', 'invitaciones', 'accesos', 'solicitudes'].includes(tabParam) ? tabParam : 'general'
 
   function setTab(tab) {
     setSearchParams(tab === 'general' ? {} : { tab })
@@ -457,6 +444,7 @@ export default function ConfigPage() {
   const tabs = [
     { id: 'general',     label: 'General' },
     { id: 'profesionales', label: 'Profesionales' },
+    ...(puede('invitar_personas') ? [{ id: 'invitaciones', label: 'Invitar' }] : []),
     ...(user?.isAdmin ? [{ id: 'accesos',     label: 'Accesos'     }] : []),
     ...(user?.isAdmin ? [{ id: 'solicitudes', label: 'Solicitudes' }] : []),
   ]
@@ -464,6 +452,7 @@ export default function ConfigPage() {
   const subtitulos = {
     general:     'Cuenta y preferencias',
     profesionales: 'Quién atiende y recibe avisos de sus turnos',
+    invitaciones: 'Sumar personas al consultorio con su Gmail',
     accesos:     'Permisos por usuario',
     solicitudes: 'Solicitudes de acceso',
   }
@@ -493,6 +482,7 @@ export default function ConfigPage() {
 
       {activeTab === 'general'     && <TabGeneral user={user} onLogout={handleLogout} />}
       {activeTab === 'profesionales' && <TabProfesionales />}
+      {activeTab === 'invitaciones' && puede('invitar_personas') && <TabInvitaciones />}
       {activeTab === 'accesos'     && <TabAccesos />}
       {activeTab === 'solicitudes' && <TabSolicitudes />}
     </div>

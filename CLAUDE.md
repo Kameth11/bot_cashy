@@ -376,6 +376,27 @@ dueño le asigna qué puede ver/hacer ahí con permisos granulares en
 está ahí se aprueba directo sin pasar por `tenant_requests`. Fase 1 de
 `ARCHITECTURE.md` sección 3 ya está implementada.
 
+**Invitado por email, sin Telegram (invitaciones web):** quien tenga el permiso **`invitar_personas`**
+invita desde Config → **Invitar** escribiendo un Gmail, eligiendo permisos (y, si quiere, nombre y
+consultorio como profesional). La persona entra al dashboard con **"Entrar con Google"** usando ese
+email y la cuenta se crea sola: invitado del dueño (mismo Sheet) con los permisos elegidos y un **ID
+propio negativo** (no choca con los de Telegram, que son positivos). Sin invitación pendiente para ese
+email, un Gmail cualquiera NO entra (sigue el vínculo por el bot de siempre).
+- **Quién puede invitar lo decide el dueño**: `invitar_personas` es un permiso más, que se asigna en
+  Config → Accesos. Por defecto solo el dueño; ningún preset lo incluye.
+- **Reglas** (`src/services/invitacion-web.service.js`, probadas en `tests/invitacion-web.service.test.js`):
+  solo se dan permisos que quien invita tiene (sin escalar privilegio); `invitar_personas` solo lo
+  da el dueño (no se encadena); una invitación vale 7 días, se usa una vez (UPDATE condicional, sin
+  carreras), se puede revocar (quien la creó o el dueño) y hay un tope de 25 pendientes por consultorio.
+- **Datos**: tabla `invitaciones_web` (`sql/migrations/021_invitaciones_web.sql`, **hay que correrla a
+  mano**). Es GLOBAL con `tenant_id` explícito (se busca por email al entrar, cuando aún no se sabe el
+  consultorio): el servicio filtra por tenant en todo lo que lista, crea o revoca. Requiere Supabase y
+  `GOOGLE_CLIENT_ID`.
+- **API**: `GET`/`POST /api/invitaciones`, `DELETE /api/invitaciones/:id`
+  (`src/api/invitaciones.routes.js`); el canje vive en `POST /api/auth/google`.
+- **Limitaciones**: estas cuentas no tienen Telegram, así que no usan el bot (sí agenda, chat web,
+  campanita y push). No hay todavía "quitar miembro" desde el dashboard ni forma de vincularles Telegram después.
+
 ---
 
 ## Privacidad

@@ -485,7 +485,16 @@ ahí solo usa el `sub`, el identificador estable de la cuenta de Google.
 - Bot: `/google` (estado) y `/google desvincular`. Un `sub` ↔ una persona, y una persona
   ↔ un `sub` (para cambiar de cuenta hay que desvincular antes).
 
-**Etapa 2 (NO implementada; a conversar antes de construir).** Meta: que nada dependa
+**Etapa 2, avance (2026-10-11): alta por invitación, sin Telegram.** Quien tiene el permiso
+`invitar_personas` (el dueño por defecto; lo asigna a quien quiera en Accesos) invita a un email desde el
+dashboard; la persona entra con "Entrar con Google" y se le crea la cuenta como invitado del dueño, con
+**ID negativo** (opción 1 de abajo: no migra nada). El email sirve de prueba de identidad SOLO porque lo
+escribió a propósito alguien con permiso y Google confirma que es de quien entra (a diferencia del email
+de `/start`). Detalle y reglas: `CLAUDE.md` ("Invitado por email") y `src/services/invitacion-web.service.js`.
+Sigue abierto de lo de abajo: alta abierta (sin invitación), vincular Telegram después, fusión de cuentas,
+y que el bot resuelva personas por otro ID.
+
+**Etapa 2 (resto, NO implementada; a conversar antes de construir).** Meta: que nada dependa
 de Telegram y que el dashboard/una app tengan el chat. Hoy `profiles.id` ES el ID de
 Telegram y lo usan `user_id` de las tablas personales, casas, sheets y el bot. Puntos
 abiertos:

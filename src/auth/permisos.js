@@ -8,6 +8,9 @@ const PERMISOS = [
   'cargar_movimientos',
   'editar_movimientos',
   'ver_balance',
+  // Invitar a otras personas al consultorio (por email, sin Telegram). Solo la tiene el dueño
+  // salvo que lo asigne a alguien en Accesos; ningún preset la incluye. Ver invitacion-web.service.js.
+  'invitar_personas',
 ];
 
 // Presets: plantillas rápidas para asignar en el dashboard o por comando.

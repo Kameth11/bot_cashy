@@ -143,6 +143,7 @@ function BotonGoogle({ onSesion, onVincular }) {
     <div style={{ marginTop: '20px' }}>
       <p style={{ ...estilos.nota, margin: '0 0 12px' }}>o</p>
       <div ref={contenedor} style={{ display: 'flex', justifyContent: 'center' }} />
+      <p style={{ ...estilos.nota, margin: '10px 0 0' }}>¿Te invitaron al consultorio? Entrá con el Gmail al que te invitaron.</p>
       {error && <div style={{ ...estilos.error, marginTop: '12px', marginBottom: 0 }}>{error}</div>}
     </div>
   )

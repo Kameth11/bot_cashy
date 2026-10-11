@@ -32,7 +32,10 @@ const ALLOWED_FILES = new Set([
 //    sin tenant_id (ver comentarios en tenant-db.js y tenant.service.js).
 //  - DRAFT_TABLES: esquemas draft que no existen en producción todavía. Al
 //    activarlas hay que sumarles tenant_id y pasarlas a SCOPED_TABLES.
-const GLOBAL_TABLES = new Set(['profiles', 'tenants', 'tenant_requests', 'auth_codes']);
+// invitaciones_web: se busca por EMAIL al entrar con Google (todavía no se sabe de qué consultorio
+// es); por eso es global, con tenant_id explícito: invitacion-web.service.js filtra por él en
+// todo lo que lista, crea o revoca.
+const GLOBAL_TABLES = new Set(['profiles', 'tenants', 'tenant_requests', 'auth_codes', 'invitaciones_web']);
 const DRAFT_TABLES = new Set(['movimientos_v2', 'movimiento_eventos_v2']);
 
 // Las tablas del ámbito PERSONAL son de cada persona (no del consultorio): además de

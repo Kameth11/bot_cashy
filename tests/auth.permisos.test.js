@@ -9,8 +9,9 @@ const {
 } = require('../src/auth/permisos');
 
 describe('permisos constants', () => {
-  test('PERMISOS tiene los 6 permisos esperados', () => {
-    expect(PERMISOS).toHaveLength(6);
+  test('PERMISOS tiene los 7 permisos esperados', () => {
+    expect(PERMISOS).toHaveLength(7);
+    expect(PERMISOS).toContain('invitar_personas');
     expect(PERMISOS).toContain('ver_agenda');
     expect(PERMISOS).toContain('ver_balance');
     expect(PERMISOS).toContain('cargar_movimientos');
