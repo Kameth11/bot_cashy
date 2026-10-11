@@ -217,11 +217,25 @@ describe('editar un movimiento', () => {
     expect(await svc.actualizarMovimientoPersonal(ANA, 'pers_nada', { monto: 5 })).toBeNull();
   });
 
-  test('user_id, tenant_id, tipo y el id no se pueden cambiar por esta vía', async () => {
+  test('user_id, tenant_id y el id no se pueden cambiar por esta vía', async () => {
     const id = await cargar(ANA);
-    await svc.actualizarMovimientoPersonal(ANA, id, { descripcion: 'Otro nombre', user_id: BETO, tenant_id: 'tX', tipo: 'Ingreso', idMov: 'otro', viajeId: 'v9' });
+    await svc.actualizarMovimientoPersonal(ANA, id, { descripcion: 'Otro nombre', user_id: BETO, tenant_id: 'tX', idMov: 'otro', viajeId: 'v9' });
     expect(fila(id)).toMatchObject({ user_id: ANA, tenant_id: 't1', tipo_movimiento: 'egreso', legacy_id: id, descripcion: 'Otro nombre' });
     expect(fila(id).viaje_id).toBeFalsy();
+  });
+
+  test('se puede pasar de gasto a ingreso si se elige una categoría de ingreso', async () => {
+    const id = await cargar(ANA);
+    await svc.actualizarMovimientoPersonal(ANA, id, { tipo: 'Ingreso', categoria: 'sueldo' });
+    expect(fila(id)).toMatchObject({ tipo_movimiento: 'ingreso', categoria: 'sueldo' });
+  });
+
+  test('cambiar el tipo sin una categoría del tipo nuevo se rechaza y no cambia nada', async () => {
+    const id = await cargar(ANA);
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { tipo: 'Ingreso' })).rejects.toThrow('categoria_invalida');
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { tipo: 'Ingreso', categoria: 'supermercado' })).rejects.toThrow('categoria_invalida');
+    await expect(svc.actualizarMovimientoPersonal(ANA, id, { tipo: 'cualquiera', categoria: 'sueldo' })).rejects.toThrow('tipo_invalido');
+    expect(fila(id).tipo_movimiento).toBe('egreso');
   });
 
   test('validaciones: monto, descripción, moneda, método y categoría del tipo correcto', async () => {

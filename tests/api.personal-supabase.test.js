@@ -141,9 +141,18 @@ describe('PUT /api/personal/movimientos/:id (editar)', () => {
     expect(personal.actualizarMovimientoPersonal).toHaveBeenCalledWith('3333', 'pers_1', { descripcion: 'Super Coto', monto: 1500 });
   });
 
-  test('solo pasa los campos editables que vinieron (nada de tipo, id, user_id)', async () => {
-    await req('PUT', '/api/personal/movimientos/pers_1', 3333, { categoria: 'supermercado', moneda: 'Dolares', metodoPago: 'tarjeta', tipo: 'Ingreso', idMov: 'x', fecha: '03/10/2026' });
+  test('solo pasa los campos editables que vinieron (nada de id, user_id)', async () => {
+    await req('PUT', '/api/personal/movimientos/pers_1', 3333, { categoria: 'supermercado', moneda: 'Dolares', metodoPago: 'tarjeta', idMov: 'x', user_id: 'otro', fecha: '03/10/2026' });
     expect(personal.actualizarMovimientoPersonal).toHaveBeenCalledWith('3333', 'pers_1', { categoria: 'supermercado', moneda: 'Dólares', metodoPago: 'tarjeta', fecha: '03/10/2026' });
+  });
+
+  test('pasa el tipo si viene válido y responde 400 si no lo es', async () => {
+    await req('PUT', '/api/personal/movimientos/pers_1', 3333, { tipo: 'Ingreso', categoria: 'sueldo' });
+    expect(personal.actualizarMovimientoPersonal).toHaveBeenCalledWith('3333', 'pers_1', { tipo: 'Ingreso', categoria: 'sueldo' });
+    personal.actualizarMovimientoPersonal.mockClear();
+    const r = await req('PUT', '/api/personal/movimientos/pers_1', 3333, { tipo: 'liquidacion' });
+    expect(r.status).toBe(400);
+    expect(personal.actualizarMovimientoPersonal).not.toHaveBeenCalled();
   });
 
   test.each([
