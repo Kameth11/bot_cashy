@@ -48,3 +48,15 @@ INSERT INTO schema_migrations (version, descripcion) VALUES
   ('016', 'auth_codes y RLS explícito'),
   ('017', 'registro de migraciones')
 ON CONFLICT (version) DO NOTHING;
+
+-- 018 y 019 se pueden haber corrido ANTES que esta: se registran solo si realmente están.
+INSERT INTO schema_migrations (version, descripcion)
+SELECT '018', 'movimientos.fecha_iso (DATE) con trigger'
+WHERE EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'movimientos' AND column_name = 'fecha_iso')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_migrations (version, descripcion)
+SELECT '019', 'restricciones estado/tipo/moneda en movimientos (NOT VALID)'
+WHERE EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'movimientos_estado_chk')
+ON CONFLICT (version) DO NOTHING;
