@@ -3,6 +3,9 @@
 Bot de Telegram + dashboard web para gestión de cashflow de un consultorio médico.
 Registra ingresos/egresos en lenguaje natural y los guarda en Google Sheets individuales por usuario (+ Supabase opcional).
 
+**Retomando trabajo**: leer `PROXIMOS_PASOS.md` (estado actual, pendientes, decisiones
+abiertas y trampas conocidas) antes de empezar.
+
 **Alcance de negocio**: hoy hay un cliente real, pero la intención es venderlo
 a otros consultorios (SaaS multi-tenant). Esto todavía NO está implementado
 a nivel de datos/seguridad — antes de tocar arquitectura, auth, o el modelo

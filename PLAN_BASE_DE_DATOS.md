@@ -183,3 +183,57 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
 - `sql/verificar_estado.sql` (solo lectura).
 - Validación de toda la historia SQL en un Postgres 16 real, incluida la
   repetición de 015/016 y el acceso por rol.
+
+---
+
+## 7. Si algún día hay que cambiar de proveedor (Supabase / Railway)
+
+Relevado el 2026-10-11. **No hace falta mudarse hoy**; esto es para decidir con calma.
+Los precios salen de blogs de terceros (los oficiales no se pudieron abrir) y
+cambian seguido: confirmarlos en las páginas oficiales antes de decidir.
+
+**Lo que condiciona cualquier mudanza**
+
+- **El código usa Supabase por su API REST** (`supabase-js`, unas 70 llamadas
+  `.from(...)`), no SQL directo. Cambiar de base obliga a reescribir el acceso a
+  datos. Está centralizado en `lib/tenant-db.js` y `lib/persona-db.js`, así que es
+  factible, pero no es una mudanza de un día.
+- **Los comprobantes usan Supabase Storage** (bucket privado `comprobantes`): habría
+  que reemplazarlo (S3, Cloudflare R2, etc.).
+- **La app es un único proceso con estado en memoria** (sesiones del bot, historial
+  del chat, límites de uso) y el bot usa long polling: **no puede correr en dos
+  instancias a la vez ni "dormirse"**. Descarta plataformas que escalan a cero
+  (Cloud Run con mínimo 0, funciones serverless). Para crecer más allá de una
+  instancia hay que sacar ese estado a Redis y pasar el bot a webhooks.
+
+**Base de datos**
+
+| Opción | Cuándo conviene |
+|---|---|
+| **Quedarse en Supabase y pasar a Pro** (≈ US$ 25/mes; copias diarias de 7 días; PITR como extra; tope de gasto activo por defecto) | Es el camino de menor esfuerzo y menos sorpresas: no hay que tocar el código. **Recomendado.** |
+| Neon (Postgres serverless) | Si se quiere ramas de la base para pruebas; requiere reescribir el acceso a datos y el Storage |
+| Postgres administrado de una nube grande (AWS RDS, Google Cloud SQL) | La opción más "sólida" y predecible, con más trabajo y costo base; requiere reescribir acceso y Storage |
+| Postgres propio (en Railway o un VPS) | Evitar: los backups pasan a ser responsabilidad tuya |
+
+**Hosting de la app**
+
+| Opción | A favor | En contra |
+|---|---|---|
+| **Railway** (hoy; Hobby ≈ US$ 5, Pro ≈ US$ 20 + uso) | Cómodo y barato para uso bajo | Cobro por uso: puede subir con el tráfico. Configurar alertas y límite de gasto |
+| Render (precio fijo por servicio, ≈ US$ 7–25) | El más predecible | Cambió su estructura de precios el 2026-08-01; la base se cobra aparte |
+| DigitalOcean App Platform (precio fijo) | Predecible | Menos cómodo |
+| Fly.io | Barato, pago por segundo | Más trabajo de operación |
+
+**Cómo reducir la dependencia hoy, sin mudarse**
+
+1. Agregar un `Dockerfile` (hoy se construye con Railpack): hace el cambio de
+   hosting casi trivial.
+2. Poner el Storage detrás de una interfaz propia (hoy lo toca
+   `comprobante-archivo.service.js`).
+3. Mantener volcados propios de la base (`pg_dump`) y de los comprobantes: sirven
+   de backup y de plan de salida.
+4. Mantener el acceso a datos detrás de los wrappers `forTenant`/`forPersona`.
+
+**Cuándo mudarse (disparadores)**: llega el segundo cliente que paga; la base se
+acerca a 500 MB (tope del plan gratuito); hace falta recuperación a un instante
+exacto; el costo o los límites de un proveedor dejan de cerrar.
