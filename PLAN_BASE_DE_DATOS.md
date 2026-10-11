@@ -193,8 +193,10 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
   se sacó del dashboard el código muerto de Supabase. Quedó pendiente (opcional):
   unificar las dos definiciones de `profesionales` y el hash de `auth_codes`.
 - **Respaldo propio** (fase 0.5): workflow diario cifrado con rol de solo lectura y restauración probada, ver `RESPALDOS.md`. Los archivos del bucket `comprobantes` quedan pendientes (script listo, sin conectar).
-- **Dockerfile** (sección 7): imagen única bot + API + dashboard. No se pudo construir
-  acá (sin daemon de Docker): probarlo con `docker build .` antes de depender de él.
+- ~~**Dockerfile** (sección 7)~~ — **se sacó el 2026-10-11.** Railway lo tomó solo y,
+  combinado con `startCommand: npm run start:prod` (que recompila el dashboard), todos los
+  deploys fallaban en el healthcheck (EACCES). Se vuelve a Railpack. Si se retoma, probar con
+  `docker build .` y no dejarlo en la raíz mientras Railway sea el hosting.
 
 - **Fase 3, puntos 1 y 2** (2026-10-11): `/reconciliar` (`reconciliacion.service.js`, solo
   lee: cruza por `ID_Unico`, detecta faltantes de cada lado, montos distintos y meses que no
@@ -230,7 +232,6 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
 4. Probar en producción: audio largo con nombre + monto + método (si sale cortado, mirar
    en el log de Railway la línea "transcripcion de audio … termino con …"); foto de
    factura y de transferencia; un gasto de Casa y uno personal.
-5. Probar `docker build .` y correr la imagen con el `.env`.
 
 **Decisiones abiertas:** ¿se vende pronto a otros consultorios (sube la fase 4)? ¿el
 repo es privado (migración 002 tiene IDs y un email reales)? ¿negarse a arrancar sin
@@ -282,8 +283,8 @@ cambian seguido: confirmarlos en las páginas oficiales antes de decidir.
 
 **Cómo reducir la dependencia hoy, sin mudarse**
 
-1. Agregar un `Dockerfile` (hoy se construye con Railpack): hace el cambio de
-   hosting casi trivial.
+1. Tener un `Dockerfile` listo (hoy se construye con Railpack; ver nota de 2026-10-11 en la
+   sección 6 sobre por qué no está en la raíz): hace el cambio de hosting casi trivial.
 2. Poner el Storage detrás de una interfaz propia (hoy lo toca
    `comprobante-archivo.service.js`).
 3. Mantener volcados propios de la base (`pg_dump`) y de los comprobantes: sirven
