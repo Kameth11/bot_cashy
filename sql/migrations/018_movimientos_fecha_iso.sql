@@ -53,5 +53,11 @@ WHERE fecha_iso IS NULL AND fecha IS NOT NULL AND fecha <> '';
 
 CREATE INDEX IF NOT EXISTS idx_movimientos_tenant_fecha_iso ON movimientos(tenant_id, fecha_iso);
 
-INSERT INTO schema_migrations (version, descripcion) VALUES ('018', 'movimientos.fecha_iso (DATE) con trigger')
-ON CONFLICT (version) DO NOTHING;
+-- Se registra solo si la 017 ya se corrió (si no, no pasa nada: correr la 017 después).
+DO $$
+BEGIN
+  IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+    INSERT INTO schema_migrations (version, descripcion) VALUES ('018', 'movimientos.fecha_iso (DATE) con trigger')
+    ON CONFLICT (version) DO NOTHING;
+  END IF;
+END $$;

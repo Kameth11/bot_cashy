@@ -39,5 +39,11 @@ BEGIN
   END IF;
 END $$;
 
-INSERT INTO schema_migrations (version, descripcion) VALUES ('019', 'restricciones estado/tipo/moneda en movimientos (NOT VALID)')
-ON CONFLICT (version) DO NOTHING;
+-- Se registra solo si la 017 ya se corrió (si no, no pasa nada: correr la 017 después).
+DO $$
+BEGIN
+  IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+    INSERT INTO schema_migrations (version, descripcion) VALUES ('019', 'restricciones estado/tipo/moneda en movimientos (NOT VALID)')
+    ON CONFLICT (version) DO NOTHING;
+  END IF;
+END $$;
