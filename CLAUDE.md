@@ -160,6 +160,16 @@ servicio Endodoncia U$50 transferencia
 gasto Insumos $-500
 ```
 
+### Resúmenes por período en lenguaje natural
+
+"cómo me fue ayer", "cuánto gasté el mes pasado", "resumen del año", "cuánto cobré en marzo",
+"últimos 15 días", "del 01/03 al 15/03" → intent `resumen_periodo`. La IA solo identifica la
+frase del período y los filtros (tipo, categoría, profesional, paciente); **las fechas las
+calcula código** (`src/utils/periodo.js`) y las sumas también (`ejecutarPeriodo` en
+`command.service.js`), y la respuesta siempre muestra el rango y los filtros usados.
+`quick_nlp` resuelve los pedidos simples sin IA; si hay filtros que no entiende, lo deja a Gemini.
+Hoy / esta semana / este mes siguen siendo `ver_hoy` / `ver_semana` / `ver_mes`.
+
 ### Comprobantes por foto / PDF
 
 Una foto o PDF la clasifica la IA (agenda / factura-ticket / transferencia).

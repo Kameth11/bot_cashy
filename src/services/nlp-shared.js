@@ -5,11 +5,12 @@
 
 const SYSTEM_PROMPT = `Eres un parser de mensajes de cashflow para un CONSULTORIO ODONTOLOGICO de Argentina. Tu UNICA salida es un JSON objeto, sin texto antes o despues.
 
-Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, consulta_agenda, desconocido
+Intents: registrar_movimiento, ver_balance, ver_hoy, ver_semana, ver_mes, ver_ingresos, ver_egresos, ver_pendientes, cobrar_movimiento, editar_movimiento, eliminar_movimiento, ver_dolar, actualizardolar, ver_ayuda, listar_movimientos, consulta_agenda, resumen_periodo, desconocido
 
 registrar_movimiento: tipo("ingreso"/"servicio"/"gasto"), descripcion(string), monto(number|null), moneda("Pesos"/"Dolares"/"Euros"), metodo_pago("efectivo"/"transferencia"/"tarjeta"|null), estado("Cobrado"/"Pendiente"), categoria(string|null), pacienteNombre(string|null), pagadorNombre(string|null), profesionalNombre(string|null), tratamientoNombre(string|null), proveedorNombre(string|null)
 cobrar/editar/eliminar_movimiento: nombre(string|null)
 consulta_agenda: fecha_ref(string|null) — si preguntan por turnos/agenda/pacientes de un día ("qué turnos tengo hoy", "tengo alguien mañana", "quién viene a la tarde"), usar este intent. fecha_ref es el texto literal que usó el usuario para referirse al día ("hoy", "mañana", "pasado mañana", una fecha explícita tipo 15/03), o null si no menciona ningún día (asumir hoy).
+resumen_periodo: periodo(string), tipo("ingreso"/"egreso"/null), categoria(string|null), profesional(string|null), paciente(string|null) — para pedir cuánto se ganó/gastó/cobró en un período que NO es el actual: "ayer", "anteayer", "la semana pasada", "el mes pasado", "marzo", "este año", "el año pasado", "últimos 15 días", "del 01/03 al 15/03". periodo es el texto literal del usuario sobre el período (NO calcules fechas). tipo solo si pide solo ingresos/cobros ("ingreso") o solo gastos ("egreso"). categoria/profesional/paciente solo si filtra por alguno. Para hoy / esta semana / este mes sin filtros seguir usando ver_hoy / ver_semana / ver_mes. Para "este año" usar resumen_periodo.
 Todos los demas intents: entities vacio {}
 
 CONTEXTO: El usuario es odontólogo/dentista argentino. Los mensajes describen cobros de pacientes, gastos del consultorio y sueldos de empleados. Conoce estas palabras clave:
@@ -83,7 +84,11 @@ Ejemplos:
 "hola" -> {"intent":"desconocido","entities":{}}
 "que turnos tengo hoy" -> {"intent":"consulta_agenda","entities":{"fecha_ref":null}}
 "tengo algun paciente mañana a la tarde" -> {"intent":"consulta_agenda","entities":{"fecha_ref":"mañana"}}
-"quien viene pasado mañana" -> {"intent":"consulta_agenda","entities":{"fecha_ref":"pasado mañana"}}`;
+"quien viene pasado mañana" -> {"intent":"consulta_agenda","entities":{"fecha_ref":"pasado mañana"}}
+"como me fue ayer" -> {"intent":"resumen_periodo","entities":{"periodo":"ayer","tipo":null,"categoria":null,"profesional":null,"paciente":null}}
+"cuanto gaste en insumos el mes pasado" -> {"intent":"resumen_periodo","entities":{"periodo":"el mes pasado","tipo":"egreso","categoria":"insumos","profesional":null,"paciente":null}}
+"cuanto cobro la doctora lopez en marzo" -> {"intent":"resumen_periodo","entities":{"periodo":"marzo","tipo":"ingreso","categoria":null,"profesional":"lopez","paciente":null}}
+"resumen del año" -> {"intent":"resumen_periodo","entities":{"periodo":"este año","tipo":null,"categoria":null,"profesional":null,"paciente":null}}`;
 
 function normalizarMetodoPago(metodo) {
   if (!metodo) return null;
@@ -211,6 +216,21 @@ function normalizarNlpResult(parsed) {
 
     if (!normalized.entities.monto && !normalized.entities.descripcion) {
       console.error(`NLP: registrar_movimiento descartado — monto y descripcion son null`);
+      return null;
+    }
+  }
+
+  if (normalized.intent === 'resumen_periodo') {
+    const e = normalized.entities;
+    e.periodo = e.periodo == null ? null : String(e.periodo).trim() || null;
+    const tipoRaw = String(e.tipo || '').trim().toLowerCase();
+    e.tipo = ['ingreso', 'ingresos', 'cobro', 'cobros'].includes(tipoRaw) ? 'ingreso'
+      : ['egreso', 'egresos', 'gasto', 'gastos'].includes(tipoRaw) ? 'egreso' : null;
+    e.categoria = normalizarCategoria(e.categoria);
+    e.profesional = normalizarEntidadNombre(e.profesional);
+    e.paciente = normalizarEntidadNombre(e.paciente);
+    if (!e.periodo) {
+      console.error('NLP: resumen_periodo sin periodo');
       return null;
     }
   }

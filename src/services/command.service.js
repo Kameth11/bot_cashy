@@ -3,7 +3,7 @@ const { withUserWriteLock } = require('../lib/write-queue');
 const db = require('./db.service');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
 
-const { esHoy, esEstaSemana, esEsteMes, normalizarFecha, fechaArgentinaStr, ahoraArgentina } = require('../utils/date');
+const { esHoy, esEstaSemana, esEsteMes, normalizarFecha, fechaArgentinaStr, ahoraArgentina, fechaStrAIso } = require('../utils/date');
 
 // Rango 'AAAA-MM-DD' que CONTIENE lo que esHoy/esEstaSemana/esEsteMes aceptan (con 2 días
 // de margen por zona horaria). Solo achica la lectura en Supabase; el filtro exacto sigue
@@ -221,6 +221,66 @@ async function ejecutarMes(userId) {
   msg += `   Dólares: ${dolares.length} movimientos`;
 
   return msg;
+}
+
+const sinTildes = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+const fechaIsoADdmm = isoStr => { const [y, m, d] = isoStr.split('-'); return `${d}/${m}/${y}`; };
+
+// Resumen de un período cualquiera (ayer, mes pasado, un año, un rango...) con filtros
+// opcionales. El rango ya viene calculado por utils/periodo.js: acá solo se filtra y se
+// suma, y la respuesta SIEMPRE dice qué fechas y filtros usó para que se note si se
+// entendió mal el pedido.
+async function ejecutarPeriodo(userId, { desde, hasta, etiqueta, tipo = null, categoria = null, profesional = null, paciente = null }) {
+  const margen = (iso, dias) => { const [y, m, d] = iso.split('-').map(Number); return isoLocal(new Date(y, m - 1, d + dias)); };
+  const datos = await obtenerDatosSheet(userId, { desde: margen(desde, -2), hasta: margen(hasta, 2) });
+
+  const filtros = [];
+  if (tipo) filtros.push(tipo === 'egreso' ? 'solo egresos' : 'solo ingresos');
+  if (categoria) filtros.push(`categoría: ${categoria}`);
+  if (profesional) filtros.push(`profesional: ${profesional}`);
+  if (paciente) filtros.push(`paciente: ${paciente}`);
+
+  const enPeriodo = datos.filter(d => {
+    const f = fechaStrAIso(d.fecha);
+    if (!f || f < desde || f > hasta) return false;
+    if (tipo && d.tipo !== (tipo === 'egreso' ? 'Egreso' : 'Ingreso')) return false;
+    if (categoria && sinTildes(d.categoria).replace(/\s+/g, '_') !== sinTildes(categoria)) return false;
+    if (profesional && !sinTildes(d.profesional).includes(sinTildes(profesional))) return false;
+    if (paciente && !sinTildes(d.paciente).includes(sinTildes(paciente))) return false;
+    return true;
+  });
+
+  const encabezado = `📊 *RESUMEN: ${String(etiqueta).toUpperCase()}*\n` +
+    `📅 ${fechaIsoADdmm(desde)} al ${fechaIsoADdmm(hasta)}` +
+    (filtros.length ? `\n🔎 ${escapeMarkdown(filtros.join(' · '))}` : '') + `\n━━━━━━━━━━━━━━━━━\n\n`;
+
+  if (enPeriodo.length === 0) {
+    return encabezado + '📭 No hay movimientos en ese período.';
+  }
+
+  const ingresos = enPeriodo.filter(d => d.tipo === 'Ingreso');
+  const egresos = enPeriodo.filter(d => d.tipo === 'Egreso');
+  const suma = (lista, abs = false) => lista.reduce((acc, d) => acc + (abs ? Math.abs(d.montoPesos || 0) : (d.montoPesos || 0)), 0);
+  const totalIngresos = suma(ingresos);
+  const totalEgresos = suma(egresos, true);
+  const fmt = n => `$${n.toLocaleString('es-AR')}`;
+
+  let msg = encabezado;
+  if (!tipo || tipo === 'ingreso') msg += `💰 Ingresos: ${ingresos.length} - ${fmt(totalIngresos)}\n`;
+  if (!tipo || tipo === 'egreso') msg += `💸 Egresos: ${egresos.length} - ${fmt(totalEgresos)}\n`;
+  if (!tipo) msg += `\n💵 *Neto: ${fmt(totalIngresos - totalEgresos)}*\n`;
+
+  const pendientes = ingresos.filter(d => d.estado === 'Pendiente');
+  if (pendientes.length) msg += `\n⏳ Sin cobrar en este período: ${pendientes.length} - ${fmt(suma(pendientes))}\n`;
+
+  if (egresos.length && !categoria && (!tipo || tipo === 'egreso')) {
+    const porCategoria = {};
+    egresos.forEach(d => { const c = d.categoria || 'sin categoría'; porCategoria[c] = (porCategoria[c] || 0) + Math.abs(d.montoPesos || 0); });
+    const top = Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    msg += `\n📂 *Egresos por categoría:*\n` + top.map(([c, v]) => `   ${escapeMarkdown(c)}: ${fmt(v)}`).join('\n') + '\n';
+  }
+
+  return msg.trimEnd();
 }
 
 async function ejecutarIngresos(userId) {
@@ -1281,6 +1341,7 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
 }
 
 module.exports = {
+  ejecutarPeriodo,
   ejecutarBalance,
   ejecutarHoy,
   ejecutarSemana,

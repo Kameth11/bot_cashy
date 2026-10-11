@@ -17,6 +17,7 @@ const INTENT_PERMISOS = {
   ver_balance: 'ver_balance',
   ver_semana: 'ver_balance',
   ver_mes: 'ver_balance',
+  resumen_periodo: 'ver_balance',
   ver_hoy: 'ver_movimientos',
   ver_ingresos: 'ver_movimientos',
   ver_egresos: 'ver_movimientos',
@@ -85,6 +86,27 @@ const INTENT_HANDLERS = {
       : ordenados.map(lineaTurno).join('\n');
 
     return ctx.reply(`${aviso}Turnos del ${fecha}:\n${lista}`);
+  },
+
+  resumen_periodo: async (ctx, entities) => {
+    const { resolverPeriodo } = require('../utils/periodo');
+    const { ahoraArgentina } = require('../utils/date');
+    const periodo = resolverPeriodo(entities.periodo, ahoraArgentina());
+    if (!periodo) {
+      return ctx.reply(
+        'No entendí a qué período te referís. Probá con: "ayer", "el mes pasado", "marzo", "este año", "últimos 15 días" o "del 01/03 al 15/03".'
+      );
+    }
+    const msg = await cmd.ejecutarPeriodo(ctx.from.id, {
+      desde: periodo.desde,
+      hasta: periodo.hasta,
+      etiqueta: periodo.etiqueta,
+      tipo: entities.tipo || null,
+      categoria: entities.categoria || null,
+      profesional: entities.profesional || null,
+      paciente: entities.paciente || null,
+    });
+    return replyWithDashboard(ctx, msg);
   },
 
   ver_semana: async (ctx, entities) => {

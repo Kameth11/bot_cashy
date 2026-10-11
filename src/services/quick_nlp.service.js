@@ -988,6 +988,46 @@ function ingresoSinPacienteConNombre(result) {
   return Boolean(descripcion && descripcion.trim());
 }
 
+// ── Resumen de un período (ayer, mes pasado, marzo, este año...) ──
+// Reconoce solo pedidos SIMPLES: una pregunta de resumen + un período, sin otros
+// filtros. Si sobra cualquier palabra ("... en insumos", "... de la doctora Lopez") se
+// la deja a la IA, para no contestar con una cifra que ignora parte del pedido. Los
+// períodos en curso (hoy / esta semana / este mes) los siguen resolviendo sus intents.
+const PERIODO_CUE = /\b(resumen|como (?:me |nos )?(?:fue|fueron|vengo|vine|estuvo|estuve|va|vamos|anduvo|anduve|vino)|cuanto (?:hice|gaste|cobre|facture|ingrese|entro|salio|gastamos|cobramos|facturamos|tuve)|que (?:cobre|gaste|hubo|paso)|movimientos|balance|ingresos|egresos|gastos|cobros|caja|neto)\b/;
+const PERIODO_PALABRAS_OK = new Set((
+  'resumen como me nos fue fueron vengo vine estuvo estuve va vamos anduvo anduve vino cuanto hice gaste cobre facture ingrese entro salio gastamos cobramos facturamos tuve ' +
+  'que hubo paso movimientos balance ingresos egresos gastos cobros caja neto en de del la el los las un una mi mis y por total plata guita lo todo todos todas ' +
+  'ayer anteayer antes pasado pasada anterior ultimo ultima ultimos ultimas mes meses semana semanas ano anio este esta dias dia al desde hasta del anual ' +
+  'enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre ' +
+  'un una dos tres cuatro cinco seis siete diez quince veinte treinta'
+).split(' '));
+
+function matchResumenPeriodo(rawText, text) {
+  if (/[$€]|\bu\$s?\b|\busd\b|\beur\b/.test(text)) return null;
+  if (!PERIODO_CUE.test(text)) return null;
+  const { resolverPeriodo } = require('../utils/periodo');
+  const { ahoraArgentina } = require('../utils/date');
+  const periodo = resolverPeriodo(text, ahoraArgentina());
+  if (!periodo || periodo.actual) return null;
+
+  const sobrantes = text
+    .replace(/[0-9]+(?:[/-][0-9]+){0,2}/g, ' ')
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter(w => !PERIODO_PALABRAS_OK.has(w) && !/^(?:ingres|egres|cobr|gast|entr|sal)/.test(w));
+  // Pide un período concreto pero con filtros que acá no se entienden: que decida la IA.
+  // (Si lo dejáramos seguir, "cuanto gaste en insumos el mes pasado" caería en el atajo de
+  // "cuanto gaste" y mostraría todos los egresos, ignorando mes y categoría.)
+  if (sobrantes.length) return { deferIA: true };
+
+  const pideEgresos = /\b(gast|egres|salio)/.test(text);
+  const pideIngresos = /\b(ingres|cobr|entro|factur)/.test(text);
+  const tipo = pideEgresos && !pideIngresos ? 'egreso' : pideIngresos && !pideEgresos ? 'ingreso' : null;
+
+  return { intent: 'resumen_periodo', entities: { periodo: text, tipo, categoria: null, profesional: null, paciente: null } };
+}
+
 function quickParse(rawText) {
   const text = normalizar(rawText);
   if (!text || text.length < 2) return null;
@@ -1022,6 +1062,9 @@ function quickParse(rawText) {
 
   const pagoEntreTerceros = matchPagoEntreTerceros(rawText, text);
   if (pagoEntreTerceros) return pagoEntreTerceros;
+
+  const resumenPeriodo = matchResumenPeriodo(rawText, text);
+  if (resumenPeriodo) return resumenPeriodo.deferIA ? null : resumenPeriodo;
 
   const montoInfo = extraerMonto(rawText);
   if (!montoInfo) {
