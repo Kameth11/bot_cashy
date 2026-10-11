@@ -14,6 +14,33 @@ async function registrarProfesional(tenantId, telegramUserId, nombre, consultori
   return { ok: true };
 }
 
+// Todos los profesionales registrados del consultorio (para la pantalla de Config del dashboard).
+async function listarProfesionales(tenantId) {
+  if (!isAvailable() || !tenantId) return [];
+  const { data } = await forTenant(tenantId)
+    .from('profesionales')
+    .select('telegram_user_id, nombre, consultorio, activo')
+    .eq('activo', true)
+    .order('nombre', { ascending: true });
+  return (data || []).map(p => ({
+    userId: String(p.telegram_user_id),
+    nombre: p.nombre,
+    consultorio: p.consultorio || null,
+  }));
+}
+
+// Da de baja a un profesional (la persona sigue siendo usuaria; solo deja de recibir avisos de turnos).
+async function eliminarProfesional(tenantId, userId) {
+  if (!isAvailable()) return { ok: false, error: 'supabase_no_disponible' };
+  if (!tenantId) return { ok: false, error: 'tenant_no_resuelto' };
+  const { error } = await forTenant(tenantId)
+    .from('profesionales')
+    .delete()
+    .eq('telegram_user_id', String(userId));
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 // Consultorios que algún profesional del tenant declaró al hacer /profesional
 // (columna `consultorio` de la tabla, ver sql/migrations/010_profesionales_consultorio.sql).
 // Reemplaza a CONSULTORIO_MAP (hardcodeado, un solo tenant) para resolver
@@ -95,4 +122,4 @@ async function notificarLlegadaPaciente(tenantId, nombreProfesional, paciente, h
   }
 }
 
-module.exports = { registrarProfesional, buscarProfesionalPorNombre, normalizarNombreProfesional, notificarLlegadaPaciente, listarConsultoriosAsignados };
+module.exports = { registrarProfesional, listarProfesionales, eliminarProfesional, buscarProfesionalPorNombre, normalizarNombreProfesional, notificarLlegadaPaciente, listarConsultoriosAsignados };

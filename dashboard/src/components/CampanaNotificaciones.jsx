@@ -123,7 +123,12 @@ export default function CampanaNotificaciones() {
         <div className="campana-panel" role="dialog" aria-label="Notificaciones">
           <div className="campana-titulo">Notificaciones</div>
           {lista.length === 0 ? (
-            <div className="campana-vacio">Todavía no tenés avisos. Acá vas a ver cuando llegue un paciente o cambie un turno.</div>
+            <div className="campana-vacio">
+              Todavía no tenés avisos. Acá vas a ver cuando llegue un paciente o cambie un turno tuyo.{' '}
+              <button type="button" className="btn-link-inline" onClick={() => { setAbierto(false); navigate('/config?tab=profesionales') }}>
+                ¿Sos profesional? Registrate para recibirlos
+              </button>
+            </div>
           ) : (
             <ul className="campana-lista">
               {lista.map(n => (

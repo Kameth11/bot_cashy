@@ -282,6 +282,18 @@ le avisa a quien hizo el cambio si es el mismo profesional. Los disparan los end
   incluye el botón para activar/desactivar el push en ese dispositivo), `services/push.js`, y
   `dashboard/public/push-sw.js` (manejadores `push`/`notificationclick`, cargado por el service
   worker con `workbox.importScripts` en `vite.config.js`).
+- **Registro de profesionales desde el dashboard** (equivalente web de `/profesional`): Config →
+  **Profesionales** (`TabProfesionales.jsx`). Cada persona registra el suyo (nombre como figura en la
+  agenda + consultorio opcional); el dueño registra o da de baja a cualquiera de sus miembros
+  (él y sus invitados; los invitados aparecen tras `/codigo` + `/unir`). API en
+  `src/api/profesionales.routes.js` (`GET /api/profesionales/registro`, `PUT`/`DELETE
+  /api/profesionales/registro/:userId`, con `yo` para uno mismo). Escribe en la misma tabla
+  `profesionales` que el bot, así que ambos caminos son intercambiables. Rechaza nombres repetidos
+  (409: el aviso le llegaría a quien no es) e invalida el mapa consultorio→profesional de la lectura
+  de agenda por foto (`invalidarConsultorioMap`). Ojo: en cuanto un profesional declara consultorio, ese
+  mapa reemplaza al `CONSULTORIO_MAP` hardcodeado (comportamiento previo de `/profesional`). Los
+  registrados también aparecen en el selector de profesional de la Agenda, y el aviso de "Llegó"
+  informa por qué canal (Telegram / web) le llegó al profesional. Requiere Supabase.
 - **Para agregar un aviso nuevo**: sumar el tipo en `TIPOS` y su texto en `TEXTOS_TURNO`
   (`notificaciones.service.js`) y llamar a `notificar`/`notificarTurno` sin `await` desde el endpoint.
 

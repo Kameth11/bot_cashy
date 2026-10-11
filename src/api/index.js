@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const config = require('../config');
-const { notificarLlegadaPaciente } = require('../services/profesional.service');
+const { notificarLlegadaPaciente, listarProfesionales: listarProfesionalesRegistrados } = require('../services/profesional.service');
 const notificacionesWeb = require('../services/notificaciones.service');
 const { resolveTenantId } = require('../services/tenant.service');
 const { getSupabase, isAvailable } = require('../lib/supabase');
@@ -995,7 +995,16 @@ app.get('/api/profesionales', authMiddleware, requierePermiso('ver_agenda'), asy
     const datos = await getDatosConCache(req.user.userId);
     const set = new Set();
     datos.forEach(d => { if (d.profesional) set.add(d.profesional); });
-    res.json({ profesionales: Array.from(set) });
+
+    // Los registrados (dashboard o /profesional) también: son a quienes se les avisa de sus turnos.
+    let registrados = [];
+    try {
+      const tenantId = await resolveTenantId(req.user.userId);
+      registrados = (await listarProfesionalesRegistrados(tenantId)).map(p => ({ nombre: p.nombre, consultorio: p.consultorio }));
+    } catch (_) { /* sin base: queda solo lo que sale de la agenda */ }
+    registrados.forEach(p => set.add(p.nombre));
+
+    res.json({ profesionales: Array.from(set), registrados });
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener profesionales' });
   }
@@ -1087,10 +1096,11 @@ app.post('/api/agenda/:idTurno/llego', authMiddleware, requierePermiso('editar_a
       logger.error('API', 'Error avisando llegada al profesional', { err: err.message });
       notificacion = { ok: false, error: 'envio_fallido' };
     }
-    // Además del aviso por Telegram, campanita y push en la web (sin await, best-effort).
-    notificacionesWeb.notificarTurno(req.user.userId, 'llegada_paciente', turno);
+    // Además del aviso por Telegram, campanita y push en la web. Nunca lanza; se espera para
+    // poder decirle al dashboard por qué canal le llegó al profesional.
+    const notificacionWeb = await notificacionesWeb.notificarTurno(req.user.userId, 'llegada_paciente', turno);
 
-    res.json({ ok: true, notificacion });
+    res.json({ ok: true, notificacion, notificacionWeb });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1795,6 +1805,12 @@ app.post('/api/personal/viajes/cerrar', authMiddleware, personalAccess, async (r
 require('./casa.routes').registrarRutasCasa(app, { authMiddleware, obtenerCotizacionDolar });
 require('./chat.routes').registrarRutasChat(app, { authMiddleware });
 require('./notificaciones.routes').registrarRutasNotificaciones(app, { authMiddleware });
+require('./profesionales.routes').registrarRutasProfesionales(app, {
+  authMiddleware,
+  esDuenoOAdmin,
+  clientes: () => clienteService.clientes,
+  resolveTenantId,
+});
 
 // ── Cotizacion (publica) ──
 app.get('/api/cotizacion', (req, res) => {

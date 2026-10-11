@@ -80,14 +80,23 @@ const ESTADOS = {
 }
 
 
-// Resultado del aviso por Telegram al profesional cuando se marca "Llegó".
-function textoAvisoLlegada(turno, notif) {
+// Resultado del aviso al profesional cuando se marca "Llegó": por Telegram y/o por la web
+// (campanita y push). `web` es lo que devolvió notificarTurno (omitido si el profesional es quien lo marcó).
+function textoAvisoLlegada(turno, notif, web) {
   if (!notif) return null
-  if (notif.ok) return { ok: true, texto: `Le avisamos a ${notif.profesional} por Telegram que llegó ${turno.cliente || 'el paciente'}.` }
+  const canales = []
+  if (notif.ok) canales.push('Telegram')
+  if (web?.ok && !web.omitido) canales.push('la web')
+  if (canales.length) {
+    const quien = notif.profesional || turno.profesional || 'el profesional'
+    return { ok: true, texto: `Le avisamos a ${quien} por ${canales.join(' y ')} que llegó ${turno.cliente || 'el paciente'}.` }
+  }
+  if (web?.omitido) return { ok: true, texto: 'Listo. El profesional sos vos, así que no se te avisa a vos mismo.' }
+
   const prof = turno.profesional || 'el profesional'
   const motivos = {
     sin_profesional: 'El turno no tiene profesional asignado, así que no se avisó a nadie.',
-    profesional_no_encontrado: `No se avisó: no hay ningún profesional registrado como "${prof}". Tiene que escribirle /profesional al bot con ese nombre.`,
+    profesional_no_encontrado: `No se avisó: no hay ningún profesional registrado como "${prof}". Registralo en Configuración → Profesionales con ese nombre.`,
     envio_fallido: `No se pudo mandar el aviso a ${notif.profesional || prof}. Revisá que haya iniciado el bot en Telegram (/start) y no lo tenga bloqueado.`,
     tenant_no_resuelto: 'No se pudo mandar el aviso (consultorio sin configurar en la base).',
   }
@@ -115,6 +124,27 @@ export default function AgendaPage() {
   const [dropdownAbierto, setDropdownAbierto] = useState(null)
   const [sheetTurno, setSheetTurno] = useState(null) // hoja de acciones (celular)
   const [aviso, setAviso] = useState(null)
+  const [registrados, setRegistrados] = useState([]) // profesionales dados de alta (dashboard o /profesional)
+
+  // Los registrados son a quienes se les avisa de sus turnos: tienen que poder elegirse acá.
+  useEffect(() => {
+    let activo = true
+    api.get('/api/profesionales')
+      .then(res => { if (activo) setRegistrados((res.data?.registrados || []).map(p => p.nombre)) })
+      .catch(() => {})
+    return () => { activo = false }
+  }, [])
+
+  // Sin repetir (aunque difieran en mayúsculas) y conservando el valor actual aunque ya no figure.
+  function opcionesProfesional(actual) {
+    const vistos = new Set()
+    const lista = []
+    for (const nombre of [...FILTROS_CONSULTORIO, ...registrados, actual].filter(Boolean)) {
+      const k = nombre.trim().toLowerCase()
+      if (!vistos.has(k)) { vistos.add(k); lista.push(nombre) }
+    }
+    return lista
+  }
 
   function shiftFecha(deltaDias) {
     setFecha(f => { const d = new Date(f); d.setDate(d.getDate() + deltaDias); return d })
@@ -150,7 +180,7 @@ export default function AgendaPage() {
       setTurnos(prev => prev.map(t =>
         t.idTurno === turno.idTurno ? { ...t, estado: 'Llegó' } : t
       ))
-      setAviso(textoAvisoLlegada(turno, data?.notificacion))
+      setAviso(textoAvisoLlegada(turno, data?.notificacion, data?.notificacionWeb))
     } catch {
       alert('Error al registrar llegada')
     } finally {
@@ -589,7 +619,7 @@ export default function AgendaPage() {
                   onChange={e => setEditForm(f => ({ ...f, profesional: e.target.value }))}
                 >
                   <option value="">Sin asignar</option>
-                  {FILTROS_CONSULTORIO.map(nombre => (
+                  {opcionesProfesional(editForm.profesional).map(nombre => (
                     <option key={nombre} value={nombre}>{nombre}</option>
                   ))}
                 </select>
@@ -650,7 +680,7 @@ export default function AgendaPage() {
                   onChange={e => setNuevoForm(f => ({ ...f, profesional: e.target.value }))}
                 >
                   <option value="">Sin asignar</option>
-                  {FILTROS_CONSULTORIO.map(nombre => (
+                  {opcionesProfesional(nuevoForm.profesional).map(nombre => (
                     <option key={nombre} value={nombre}>{nombre}</option>
                   ))}
                 </select>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import CotizacionWidget from '../components/CotizacionWidget'
+import TabProfesionales from '../components/TabProfesionales'
 import { api } from '../services/api'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -442,7 +443,7 @@ export default function ConfigPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const tabParam  = searchParams.get('tab') || 'general'
-  const activeTab = ['general', 'accesos', 'solicitudes'].includes(tabParam) ? tabParam : 'general'
+  const activeTab = ['general', 'profesionales', 'accesos', 'solicitudes'].includes(tabParam) ? tabParam : 'general'
 
   function setTab(tab) {
     setSearchParams(tab === 'general' ? {} : { tab })
@@ -455,12 +456,14 @@ export default function ConfigPage() {
 
   const tabs = [
     { id: 'general',     label: 'General' },
+    { id: 'profesionales', label: 'Profesionales' },
     ...(user?.isAdmin ? [{ id: 'accesos',     label: 'Accesos'     }] : []),
     ...(user?.isAdmin ? [{ id: 'solicitudes', label: 'Solicitudes' }] : []),
   ]
 
   const subtitulos = {
     general:     'Cuenta y preferencias',
+    profesionales: 'Quién atiende y recibe avisos de sus turnos',
     accesos:     'Permisos por usuario',
     solicitudes: 'Solicitudes de acceso',
   }
@@ -489,6 +492,7 @@ export default function ConfigPage() {
       )}
 
       {activeTab === 'general'     && <TabGeneral user={user} onLogout={handleLogout} />}
+      {activeTab === 'profesionales' && <TabProfesionales />}
       {activeTab === 'accesos'     && <TabAccesos />}
       {activeTab === 'solicitudes' && <TabSolicitudes />}
     </div>

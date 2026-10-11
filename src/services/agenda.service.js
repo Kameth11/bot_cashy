@@ -77,6 +77,12 @@ async function obtenerConsultorioMap(tenantId) {
   return mapa;
 }
 
+// Para que un cambio en los profesionales (alta, baja, consultorio) se note ya, sin esperar el TTL.
+function invalidarConsultorioMap(tenantId) {
+  if (tenantId) consultorioMapCache.delete(tenantId);
+  else consultorioMapCache.clear();
+}
+
 // ── Tab "Turnos" — estructura plana, consultable por fecha ──
 
 const TURNOS_COLS = ['ID_Turno', 'Fecha', 'Hora', 'Cliente', 'Servicio', 'Profesional', 'Consultorio', 'Estado'];
@@ -545,4 +551,5 @@ module.exports = {
   fechaHoyStr,
   resolverProfesional,
   obtenerConsultorioMap,
+  invalidarConsultorioMap,
 };
