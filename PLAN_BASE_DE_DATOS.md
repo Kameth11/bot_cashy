@@ -196,6 +196,13 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
 - **Dockerfile** (sección 7): imagen única bot + API + dashboard. No se pudo construir
   acá (sin daemon de Docker): probarlo con `docker build .` antes de depender de él.
 
+- **Fase 3, puntos 1 y 2** (2026-10-11): `/reconciliar` (`reconciliacion.service.js`, solo
+  lee: cruza por `ID_Unico`, detecta faltantes de cada lado, montos distintos y meses que no
+  cierran) y `dual-write-fallos.service.js` (cuenta y loguea cada escritura doble fallida y
+  avisa al admin por Telegram a partir de 3 en una hora, máximo un aviso por hora). Falta el
+  punto 3 (leer primero de Supabase donde aún no sea así) y **correr `/reconciliar` en
+  producción** para ver cuántas diferencias hay antes de decidir cómo corregirlas.
+
 ## 6.b Pendiente de tu lado y decisiones abiertas (traspaso 2026-10-11)
 
 **Lo que tiene que hacer el usuario (Claude no puede):**
@@ -212,7 +219,7 @@ repo es privado (migración 002 tiene IDs y un email reales)? ¿negarse a arranc
 service key en producción (`SUPABASE_REQUIRE_SERVICE_KEY=true`) o solo avisar? ¿agregar
 `fecha_iso` y restricciones a `movimientos` (fase 2), previa copia de seguridad?
 
-**Siguiente:** fase 2 (fechas reales), fase 3 (reconciliar Sheets ↔ Supabase), fase 4
+**Siguiente:** fase 2 (fechas reales), punto 3 de la fase 3, fase 4
 (SaaS, solo si se decide vender). Producto: app en tiendas (Android primero, ver notas),
 push, login sin Telegram, deshacer en Personal/Casa/Agenda.
 

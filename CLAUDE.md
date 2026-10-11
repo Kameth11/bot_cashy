@@ -190,6 +190,7 @@ Plan completo, fases y decisiones en `PLAN_COMPROBANTES.md`.
 | `/personal` | Resumen del mes de finanzas personales |
 | `/viaje` | Ver / abrir / cerrar un viaje (agrupa gastos personales) |
 | `/google` | Ver / quitar la cuenta de Google vinculada para entrar al dashboard |
+| `/reconciliar` | Solo admin: compara Sheets vs Supabase (por ID, cantidad y montos por mes) y lista las escrituras dobles que fallaron. Solo lee |
 | `/casa` | Gastos compartidos: resumen, saldos, invitar, saldar (ver sección Casas) |
 
 ---

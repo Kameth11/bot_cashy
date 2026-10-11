@@ -44,6 +44,7 @@ require('./handlers/commands/eliminar');
 require('./handlers/commands/editar');
 require('./handlers/commands/listar');
 require('./handlers/commands/debug');
+require('./handlers/commands/reconciliar');
 require('./handlers/commands/limpiar');
 require('./handlers/commands/dolar');
 require('./handlers/commands/actualizardolar');

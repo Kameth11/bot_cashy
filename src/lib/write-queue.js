@@ -50,6 +50,9 @@ function withOwnerWriteLock(ownerId, fn) {
 function runInBackground(userId, fn, label = 'background') {
   withUserWriteLock(userId, fn).catch(err => {
     console.error(`runInBackground[${label}] error (userId=${userId}):`, err && err.message ? err.message : err);
+    // Un dual-write a Sheets que falla deja las dos copias distintas: se cuenta y,
+    // si se acumulan, se avisa al admin (dual-write-fallos.service.js).
+    try { require('../services/dual-write-fallos.service').registrar(label, userId, err); } catch { /* nunca romper por el aviso */ }
   });
 }
 

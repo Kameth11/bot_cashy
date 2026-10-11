@@ -84,6 +84,10 @@ function toDbDate(value) {
   return legacyDateToIso(raw);
 }
 
+function registrarFalloDualWrite(tipo, userId, err) {
+  try { require('./dual-write-fallos.service').registrar(tipo, userId, err); } catch { /* nunca romper por el aviso */ }
+}
+
 function getSheetService() {
   return require('./sheet.service');
 }
@@ -1163,6 +1167,7 @@ async function doAddRow(userId, rowData, options = {}) {
 
   if (error) {
     console.error('Supabase addRow error:', error.message);
+    registrarFalloDualWrite('supabase-addRow', userId, error);
     try {
       const sheet = await getSheetService().getSheetCliente(userId);
       if (sheet) {
@@ -1186,6 +1191,7 @@ async function doAddRow(userId, rowData, options = {}) {
     );
   } catch (v2Error) {
     console.error('Supabase movimientos_v2 sync insert error:', v2Error.message);
+    registrarFalloDualWrite('v2-insert', userId, v2Error);
   }
 
   // dual-write best-effort: Supabase ya es la fuente de verdad, así que el
