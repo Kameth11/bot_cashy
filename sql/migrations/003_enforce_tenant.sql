@@ -24,12 +24,14 @@ DROP POLICY IF EXISTS "Users can insert own movimientos" ON movimientos;
 DROP POLICY IF EXISTS "Users can update own movimientos" ON movimientos;
 DROP POLICY IF EXISTS "Users can delete own movimientos" ON movimientos;
 
+DROP POLICY IF EXISTS "solo_service_role" ON profiles;
 CREATE POLICY "solo_service_role" ON profiles
   FOR ALL
   TO service_role
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "solo_service_role" ON movimientos;
 CREATE POLICY "solo_service_role" ON movimientos
   FOR ALL
   TO service_role

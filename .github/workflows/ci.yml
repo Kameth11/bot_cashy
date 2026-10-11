@@ -69,19 +69,41 @@ jobs:
           fi
           exit $EXIT_CODE
 
+  sql-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aplicar sql/ en un Postgres real (dos veces) y verificar
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: scripts/probar-sql.sh
+
   notify:
     runs-on: ubuntu-latest
-    needs: [backend-tests, dashboard-build]
+    needs: [backend-tests, dashboard-build, sql-postgres]
     if: always()
     steps:
       - name: Notificar a Discord
         env:
           BACKEND_RESULT: ${{ needs.backend-tests.result }}
           DASHBOARD_RESULT: ${{ needs.dashboard-build.result }}
+          SQL_RESULT: ${{ needs.sql-postgres.result }}
           BACKEND_SUMMARY: ${{ needs.backend-tests.outputs.summary }}
           DASHBOARD_SUMMARY: ${{ needs.dashboard-build.outputs.summary }}
         run: |
-          if [ "$BACKEND_RESULT" = "success" ] && [ "$DASHBOARD_RESULT" = "success" ]; then
+          if [ "$BACKEND_RESULT" = "success" ] && [ "$DASHBOARD_RESULT" = "success" ] && [ "$SQL_RESULT" = "success" ]; then
             STATUS="✅ CI en verde"
             COLOR=3066993
           else

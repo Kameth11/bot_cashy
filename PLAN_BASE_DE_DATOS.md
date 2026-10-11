@@ -184,6 +184,37 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
 - `sql/verificar_estado.sql` (solo lectura).
 - Validación de toda la historia SQL en un Postgres 16 real, incluida la
   repetición de 015/016 y el acceso por rol.
+- **Fase 1 completa** (2026-10-11): migración **017** (`schema_migrations`); job
+  `sql-postgres` en CI y `scripts/probar-sql.sh` (baseline + migraciones dos veces +
+  `verificar_estado.sql` + RLS en todas las tablas); la 003 pasó a ser idempotente;
+  `.error` de `auth_codes` ahora se loguea; `verificarClaveServicio` avisa fuerte si
+  falta la service role key (y con `SUPABASE_REQUIRE_SERVICE_KEY=true` no arranca);
+  `schema_v2_draft.sql` movido a `sql/borradores/`, `sql/README.md` con el orden;
+  se sacó del dashboard el código muerto de Supabase. Quedó pendiente (opcional):
+  unificar las dos definiciones de `profesionales` y el hash de `auth_codes`.
+- **Respaldo propio** (fase 0.5): workflow diario cifrado con rol de solo lectura y restauración probada, ver `RESPALDOS.md`. Los archivos del bucket `comprobantes` quedan pendientes (script listo, sin conectar).
+- **Dockerfile** (sección 7): imagen única bot + API + dashboard. No se pudo construir
+  acá (sin daemon de Docker): probarlo con `docker build .` antes de depender de él.
+
+## 6.b Pendiente de tu lado y decisiones abiertas (traspaso 2026-10-11)
+
+**Lo que tiene que hacer el usuario (Claude no puede):**
+1. Correr `016` y `017` en Supabase y después `sql/verificar_estado.sql` (todo `true`).
+2. Seguir `RESPALDOS.md`: rol `backup_ro` (`sql/backup_rol_lectura.sql`), secretos `SUPABASE_DB_URL` y `BACKUP_PASSPHRASE`, primera corrida a mano y una restauración de prueba.
+3. Confirmar que Railway tenga `SUPABASE_SERVICE_ROLE_KEY`.
+4. Probar en producción: audio largo con nombre + monto + método (si sale cortado, mirar
+   en el log de Railway la línea "transcripcion de audio … termino con …"); foto de
+   factura y de transferencia; un gasto de Casa y uno personal.
+5. Probar `docker build .` y correr la imagen con el `.env`.
+
+**Decisiones abiertas:** ¿se vende pronto a otros consultorios (sube la fase 4)? ¿el
+repo es privado (migración 002 tiene IDs y un email reales)? ¿negarse a arrancar sin
+service key en producción (`SUPABASE_REQUIRE_SERVICE_KEY=true`) o solo avisar? ¿agregar
+`fecha_iso` y restricciones a `movimientos` (fase 2), previa copia de seguridad?
+
+**Siguiente:** fase 2 (fechas reales), fase 3 (reconciliar Sheets ↔ Supabase), fase 4
+(SaaS, solo si se decide vender). Producto: app en tiendas (Android primero, ver notas),
+push, login sin Telegram, deshacer en Personal/Casa/Agenda.
 
 ---
 

@@ -44,7 +44,9 @@ SELECT * FROM (VALUES
   ('015', 'tabla chat_historial',
      EXISTS (SELECT 1 FROM tabla WHERE n = 'chat_historial')),
   ('016', 'tabla auth_codes',
-     EXISTS (SELECT 1 FROM tabla WHERE n = 'auth_codes'))
+     EXISTS (SELECT 1 FROM tabla WHERE n = 'auth_codes')),
+  ('017', 'tabla schema_migrations',
+     EXISTS (SELECT 1 FROM tabla WHERE n = 'schema_migrations'))
 ) AS v(migracion, que_crea, aplicada)
 ORDER BY migracion;
 

@@ -98,3 +98,11 @@ hay una tabla sin política, restauración con las mismas filas, el mismo conten
 las filas) y las mismas políticas RLS, y las protecciones (base no vacía, clave incorrecta,
 archivo dañado, restauración todo-o-nada). **No se pudo probar** el workflow en GitHub
 Actions ni contra Supabase real: la primera corrida a mano (paso 5) es esa prueba.
+
+## Archivos del bucket `comprobantes` (pendiente de conectar)
+`scripts/backup-comprobantes.js` copia el bucket privado a una carpeta
+(`SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… node scripts/backup-comprobantes.js <carpeta>`),
+incremental por tamaño. **No está enganchado al workflow diario** a propósito: necesita la
+service role key (que puede borrar y escribir) y el respaldo de la base usa un rol de solo
+lectura. Antes de conectarlo hay que confirmar si realmente se usa Supabase Storage (sin
+Storage, los comprobantes se respaldan por Telegram) y decidir dónde guardar los archivos.
