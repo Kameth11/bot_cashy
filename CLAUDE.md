@@ -356,7 +356,8 @@ Resumen de lo más visible:
 - [ ] Modelo de datos v2 completo en producción (`movimientos_v2` y eventos
       siguen siendo draft; hoy hay categorías de egresos, profesionales y
       reportes `/deudores`, `/por_profesional`, `/cobros_por_metodo`)
-- [ ] JWT del dashboard más corto / cookie httpOnly (hoy 180d)
+- [ ] JWT del dashboard en cookie httpOnly (la duración ya es 14d por defecto,
+      configurable con `SESSION_DURATION_DAYS`; falta mover el token a cookie)
 - [ ] Redis para write-lock (escalado horizontal; hoy una sola instancia)
 - [ ] Onboarding automático del Sheet (Fase 3) y billing (Fase 4)
 - [ ] QA manual end-to-end en Telegram real
