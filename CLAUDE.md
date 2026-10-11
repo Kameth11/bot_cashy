@@ -99,7 +99,7 @@ AUTHORIZED_USER_ID=               # Telegram ID del admin
 SPREADSHEET_ID=                   # Google Sheet del admin
 GOOGLE_SERVICE_ACCOUNT_EMAIL=     # Email de la service account
 GOOGLE_PRIVATE_KEY=               # Clave privada (con \n escapados)
-ALLOWED_EMAILS=                   # Emails autorizados separados por coma
+ALLOWED_EMAILS=                   # Solo bypass de emergencia (el flujo normal usa tenant_requests)
 GEMINI_VISION_MODEL=              # gemini-2.5-flash (default recomendado)
 GEMINI_MODEL=                     # gemini-2.5-flash-lite (para texto barato)
 COTIZACION_DEFAULT=               # Fallback si falla Bluelytics
@@ -314,10 +314,13 @@ Detalle y decisiones en `ARCHITECTURE.md` ("Espacios compartidos") y
 **Dueño (registro directo):**
 1. Usuario hace `/start`
 2. Bot pide email corporativo
-3. Si está en `ALLOWED_EMAILS` → validado
-4. Usuario configura su propio Google Sheet
-5. Queda registrado en `clientes.json` (NO commitear)
-6. Máximo 3 intentos de email fallidos
+3. Si el email tiene una solicitud aprobada en la tabla `tenant_requests`
+   (Supabase) → validado. Si no existe, se crea una solicitud `pending`.
+4. El admin aprueba/rechaza con `/aprobar`, `/rechazar`, `/solicitudes` o
+   desde Config en el dashboard (sin redeploy)
+5. Usuario configura su propio Google Sheet
+6. Queda registrado en `clientes.json` (NO commitear)
+7. Máximo 3 intentos de email fallidos
 
 **Invitado (vía `/unir CODIGO`):** el dueño genera un código con `/codigo`;
 el invitado hace `/unir CODIGO` y queda agregado directo a `usuarios[]` del
@@ -325,9 +328,9 @@ dueño — **no configura ni tiene su propio sheet**, usa el del dueño. El
 dueño le asigna qué puede ver/hacer ahí con permisos granulares en
 `/accesos` (ver skill `bot-cashy-arquitectura`).
 
-`ALLOWED_EMAILS` hoy vive en `.env` (cambiarlo requiere redeploy) — es un
-bloqueante conocido para self-service, ver `ARCHITECTURE.md` sección 3,
-Fase 1.
+`ALLOWED_EMAILS` (`.env`) quedó solo como bypass de emergencia: si el email
+está ahí se aprueba directo sin pasar por `tenant_requests`. Fase 1 de
+`ARCHITECTURE.md` sección 3 ya está implementada.
 
 ---
 
@@ -350,7 +353,16 @@ Resumen de lo más visible:
 - [ ] Integración AFIP / facturación electrónica (candidato: FacturAPI)
 - [ ] Consolidación de sheets multi-usuario para el admin
 - [ ] Alertas automáticas de cobros pendientes
-- [ ] Modelo de datos v2 (categorías, paciente/profesional como entidades)
+- [ ] Modelo de datos v2 completo en producción (`movimientos_v2` y eventos
+      siguen siendo draft; hoy hay categorías de egresos, profesionales y
+      reportes `/deudores`, `/por_profesional`, `/cobros_por_metodo`)
+- [ ] JWT del dashboard más corto / cookie httpOnly (hoy 180d)
+- [ ] Redis para write-lock (escalado horizontal; hoy una sola instancia)
+- [ ] Onboarding automático del Sheet (Fase 3) y billing (Fase 4)
+- [ ] QA manual end-to-end en Telegram real
+
+Ya hecho: multi-tenancy Fase 2 (`tenant_id` + `forTenant`), `tenant_requests`,
+permisos granulares, PWA, reportes de gestión.
 
 ---
 
