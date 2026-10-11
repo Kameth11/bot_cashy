@@ -9,9 +9,10 @@ import SubirComprobanteModal from '../components/SubirComprobanteModal'
 import DatePickerButton from '../components/DatePickerButton'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
-import { formatFecha, formatPesos, etiquetaCategoria } from '../utils/format'
+import { formatFecha, formatPesos, formatMontoConMoneda, etiquetaCategoria } from '../utils/format'
 import { etiquetaMes, mesesRecientes } from '../utils/meses'
 import BarraCategoria from '../components/BarraCategoria'
+import DetalleMovimientoModal from '../components/DetalleMovimientoModal'
 
 // Paleta de la barra según cuánto se consumió del presupuesto.
 function colorPresupuesto(porcentaje) {
@@ -36,6 +37,7 @@ export default function PersonalPage() {
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
   const [edicionError, setEdicionError] = useState(null)
   const [accionError, setAccionError] = useState(null)
+  const [viendo, setViendo] = useState(null)         // movimiento abierto en el detalle
 
   const [categorias,     setCategorias]     = useState(null)
   const [showPresu,      setShowPresu]      = useState(false)
@@ -139,6 +141,32 @@ export default function PersonalPage() {
           error={edicionError}
           onGuardar={guardarEdicion}
           onCerrar={() => { setEditando(null); setEdicionError(null) }}
+        />
+      )}
+      {viendo && (
+        <DetalleMovimientoModal
+          titulo={viendo.descripcion}
+          signo={viendo.tipo?.toLowerCase() === 'egreso' ? 'egreso' : 'ingreso'}
+          monto={`${viendo.tipo?.toLowerCase() === 'egreso' ? '−' : '+'}${formatMontoConMoneda(viendo.monto, viendo.moneda || 'Pesos')}`}
+          subtitulo={viendo.moneda && viendo.moneda !== 'Pesos' && Number(viendo.montoPesos) > 0
+            ? `≈ ${formatPesos(Math.abs(Number(viendo.montoPesos)))}` : null}
+          filas={[
+            ['Tipo', viendo.tipo?.toLowerCase() === 'egreso' ? 'Gasto' : 'Ingreso'],
+            ['Fecha', formatFecha(viendo.fecha, 'dd/MM/yyyy')],
+            ['Hora', viendo.hora],
+            ['Categoría', viendo.categoria ? etiquetaCategoria(viendo.categoria) : null],
+            ['Comercio', viendo.comercio],
+            ['Método de pago', viendo.metodoPago ? etiquetaCategoria(viendo.metodoPago) : null],
+            ['Moneda', viendo.moneda],
+            ['Viaje', viendo.viajeId ? '✈️ Sí' : null],
+            ['Notas', viendo.notas],
+          ]}
+          acciones={comprobantes.some(c => c.idMovimiento === viendo.idMov) && (
+            <button type="button" className="btn-secondary" onClick={() => { setViendoComp(comprobantes.find(c => c.idMovimiento === viendo.idMov)); setViendo(null) }}>📎 Comprobante</button>
+          )}
+          onEditar={() => { const m = viendo; setViendo(null); setEdicionError(null); setEditando(m) }}
+          onBorrar={() => { const m = viendo; setViendo(null); borrar(m) }}
+          onCerrar={() => setViendo(null)}
         />
       )}
       {viendoComp && <ComprobanteModal comprobante={viendoComp} onCerrar={() => setViendoComp(null)} />}
@@ -311,7 +339,7 @@ export default function PersonalPage() {
             ) : (
               <div className="pers-lista">
                 {resumen.movimientos.map(m => (
-                  <div key={m.idMov} className="pers-item">
+                  <div key={m.idMov} className="pers-item fila-clickeable" onClick={() => setViendo(m)}>
                     <div className="pers-item-main">
                       <span className="pers-item-desc">{m.descripcion}</span>
                       <span className="pers-item-meta">
@@ -321,7 +349,7 @@ export default function PersonalPage() {
                         {m.viajeId && ' · ✈️'}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
                       {comprobantes.some(c => c.idMovimiento === m.idMov) && (
                         <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantes.find(c => c.idMovimiento === m.idMov))}>📎</button>
                       )}

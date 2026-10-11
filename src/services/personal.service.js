@@ -542,9 +542,10 @@ async function registrarMovimientoPersonal(userId, datos) {
   return { movimiento, viaje: viajeId ? viajeActivo : null };
 }
 
-// Campos que se pueden corregir de un movimiento personal. El tipo (ingreso/egreso), el
-// viaje y el id no se cambian: para eso se borra y se vuelve a cargar.
-const CAMPOS_EDITABLES = ['descripcion', 'monto', 'moneda', 'fecha', 'categoria', 'metodoPago', 'comercio', 'notas'];
+// Campos que se pueden corregir de un movimiento personal. El viaje y el id no se cambian:
+// para eso se borra y se vuelve a cargar. Si cambia el tipo (ingreso/egreso), la categoría
+// tiene que ser válida para el tipo nuevo (las listas son disjuntas).
+const CAMPOS_EDITABLES = ['descripcion', 'monto', 'moneda', 'fecha', 'categoria', 'metodoPago', 'comercio', 'notas', 'tipo'];
 const METODOS_VALIDOS = ['efectivo', 'transferencia', 'tarjeta', 'debito'];
 const MONEDAS_VALIDAS = ['Pesos', 'Dólares', 'Euros'];
 
@@ -584,11 +585,20 @@ async function actualizarMovimientoPersonal(userId, idMov, cambios = {}) {
   if ('moneda' in nuevo) {
     if (!MONEDAS_VALIDAS.includes(nuevo.moneda)) throw new Error('moneda_invalida');
   }
+  if ('tipo' in nuevo) {
+    if (!['gasto', 'egreso', 'ingreso'].includes(String(nuevo.tipo || '').toLowerCase())) throw new Error('tipo_invalido');
+    nuevo.tipo = esEgreso(nuevo.tipo) ? 'Egreso' : 'Ingreso';
+  }
+  // La categoría se valida contra el tipo que va a quedar, no contra el que tenía.
+  const tipoFinal = nuevo.tipo ?? actual.tipo;
+  const listaCategorias = esEgreso(tipoFinal) ? CATEGORIAS_EGRESO_PERSONAL : CATEGORIAS_INGRESO_PERSONAL;
   if ('categoria' in nuevo) {
     const c = normalizarCategoriaPersonal(nuevo.categoria);
-    const lista = String(actual.tipo).toLowerCase() === 'ingreso' ? CATEGORIAS_INGRESO_PERSONAL : CATEGORIAS_EGRESO_PERSONAL;
-    if (!c || !lista.includes(c)) throw new Error('categoria_invalida');
+    if (!c || !listaCategorias.includes(c)) throw new Error('categoria_invalida');
     nuevo.categoria = c;
+  } else if ('tipo' in nuevo && esEgreso(nuevo.tipo) !== esEgreso(actual.tipo)) {
+    // Cambió de tipo sin elegir categoría: la actual (del otro tipo) ya no vale.
+    throw new Error('categoria_invalida');
   }
   if ('fecha' in nuevo && !esFechaValidaDdmmaaaa(nuevo.fecha)) throw new Error('fecha_invalida');
   if ('metodoPago' in nuevo) {
@@ -601,6 +611,7 @@ async function actualizarMovimientoPersonal(userId, idMov, cambios = {}) {
   const igual = (campo) => (campo === 'monto' ? Number(nuevo.monto) === Number(actual.monto)
     : campo === 'metodoPago' ? (nuevo.metodoPago || null) === (actual.metodoPago || null)
     : campo === 'comercio' || campo === 'notas' ? (nuevo[campo] || null) === (actual[campo] || null)
+    : campo === 'tipo' ? esEgreso(nuevo.tipo) === esEgreso(actual.tipo)
     : nuevo[campo] === actual[campo]);
   for (const campo of Object.keys(nuevo)) if (igual(campo)) delete nuevo[campo];
   if (Object.keys(nuevo).length === 0) return actual; // nada que guardar
@@ -635,6 +646,7 @@ async function actualizarEnSheet(userId, idMov, nuevo) {
   const columnas = {
     descripcion: 'Descripcion', monto: 'Monto', moneda: 'Moneda', montoPesos: 'MontoPesos',
     fecha: 'Fecha', categoria: 'Categoria', metodoPago: 'MetodoPago', comercio: 'Comercio', notas: 'Notas',
+    tipo: 'Tipo',
   };
   for (const [campo, valor] of Object.entries(nuevo)) {
     if (columnas[campo]) fila.set(columnas[campo], valor == null ? '' : valor);
@@ -653,6 +665,7 @@ async function actualizarEnSheet(userId, idMov, nuevo) {
       if ('montoPesos' in nuevo) patch.monto_pesos = nuevo.montoPesos;
       if ('moneda' in nuevo) patch.moneda = nuevo.moneda;
       if ('categoria' in nuevo) patch.categoria = nuevo.categoria;
+      if ('tipo' in nuevo) patch.tipo_movimiento = esEgreso(nuevo.tipo) ? 'egreso' : 'ingreso';
       if ('comercio' in nuevo) patch.comercio = nuevo.comercio || null;
       if ('notas' in nuevo) patch.notas = nuevo.notas || null;
       if ('fecha' in nuevo) { const iso = fechaStrAIso(nuevo.fecha); if (iso) patch.fecha = iso; }

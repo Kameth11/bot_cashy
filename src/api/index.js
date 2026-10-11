@@ -1644,6 +1644,10 @@ app.put('/api/personal/movimientos/:idMov', authMiddleware, personalAccess, asyn
       if (!cambios.moneda) return res.status(400).json({ error: 'La moneda es inválida' });
     }
     if (body.categoria !== undefined) cambios.categoria = body.categoria;
+    if (body.tipo !== undefined) {
+      if (!['Ingreso', 'Egreso'].includes(body.tipo)) return res.status(400).json({ error: 'El tipo es inválido' });
+      cambios.tipo = body.tipo;
+    }
     if (body.metodoPago !== undefined) cambios.metodoPago = body.metodoPago || null;
     if (body.fecha !== undefined) {
       if (!esFechaValidaDdmmaaaa(body.fecha)) {
@@ -1667,6 +1671,7 @@ app.put('/api/personal/movimientos/:idMov', authMiddleware, personalAccess, asyn
       monto_invalido: 'El monto es inválido',
       descripcion_invalida: 'La descripción es inválida',
       categoria_invalida: 'La categoría no es válida para este movimiento',
+      tipo_invalido: 'El tipo es inválido',
       moneda_invalida: 'La moneda es inválida',
       metodo_invalido: 'El método de pago es inválido',
       fecha_invalida: 'La fecha es inválida (DD/MM/AAAA)',

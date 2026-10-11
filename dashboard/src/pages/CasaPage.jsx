@@ -4,6 +4,7 @@ import { api } from '../services/api'
 import MetricCard from '../components/MetricCard'
 import BarraCategoria from '../components/BarraCategoria'
 import NuevoCasaModal from '../components/NuevoCasaModal'
+import DetalleMovimientoModal from '../components/DetalleMovimientoModal'
 import DatePickerButton from '../components/DatePickerButton'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
@@ -126,6 +127,7 @@ export default function CasaPage() {
   const [error, setError] = useState(null)
   const [reload, setReload] = useState(0)
   const [editando, setEditando] = useState(null)   // gasto que se está corrigiendo
+  const [viendo, setViendo] = useState(null)       // movimiento abierto en el detalle
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
   const [edicionError, setEdicionError] = useState(null)
   const [mostrarOtra, setMostrarOtra] = useState(false)
@@ -279,6 +281,31 @@ export default function CasaPage() {
           onCerrar={() => { setEditando(null); setEdicionError(null) }}
         />
       )}
+      {viendo && (
+        <DetalleMovimientoModal
+          titulo={viendo.descripcion}
+          signo={viendo.tipo === 'gasto' ? 'egreso' : null}
+          monto={formatMontoConMoneda(viendo.monto, viendo.moneda || 'Pesos')}
+          subtitulo={viendo.tipo === 'liquidacion' ? 'Pago entre personas de la casa' : null}
+          filas={[
+            ['Tipo', viendo.tipo === 'liquidacion' ? 'Liquidación' : 'Gasto'],
+            ['Fecha', formatFecha(viendo.fecha, 'dd/MM/yyyy')],
+            ['Hora', viendo.hora],
+            ['Categoría', viendo.tipo === 'gasto' && viendo.categoria ? etiquetaCategoria(viendo.categoria) : null],
+            [viendo.tipo === 'gasto' ? 'Pagó' : 'De', viendo.pagoPor ? nombreDe(viendo.pagoPor) : null],
+            ['Para', viendo.tipo === 'liquidacion' && viendo.para ? nombreDe(viendo.para) : null],
+            ['Repartido entre', viendo.tipo === 'gasto' && viendo.repartoEntre?.length
+              ? (viendo.repartoEntre.length === resumen.miembros.length ? 'Todos' : viendo.repartoEntre.map(nombreDe).join(', '))
+              : null],
+            ['Moneda', viendo.moneda],
+            ['Método de pago', viendo.metodoPago ? etiquetaCategoria(viendo.metodoPago) : null],
+            ['Notas', viendo.notas],
+          ]}
+          onEditar={viendo.puedoBorrar && viendo.tipo === 'gasto' ? () => { const m = viendo; setViendo(null); setEdicionError(null); setEditando(m) } : undefined}
+          onBorrar={viendo.puedoBorrar ? () => { const m = viendo; setViendo(null); borrar(m) } : undefined}
+          onCerrar={() => setViendo(null)}
+        />
+      )}
       <div className="page-header">
         <div>
           <h1 className="page-title">🏡 {resumen?.casa.nombre || casas.find(c => c.casaId === casaId)?.nombre}</h1>
@@ -407,7 +434,7 @@ export default function CasaPage() {
             ) : (
               <div className="pers-lista">
                 {resumen.movimientos.map(m => (
-                  <div key={m.idMov} className="pers-item">
+                  <div key={m.idMov} className="pers-item fila-clickeable" onClick={() => setViendo(m)}>
                     <div className="pers-item-main">
                       <span className="pers-item-desc">{m.tipo === 'liquidacion' ? '💸 ' : ''}{m.descripcion}</span>
                       <span className="pers-item-meta">
@@ -417,7 +444,7 @@ export default function CasaPage() {
                         {m.tipo === 'gasto' && m.repartoEntre.length > 0 && ` · entre ${m.repartoEntre.length === resumen.miembros.length ? 'todos' : m.repartoEntre.map(nombreDe).join(', ')}`}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={e => e.stopPropagation()}>
                       <span className="casa-saldo-monto">{formatMontoConMoneda(m.monto, m.moneda)}</span>
                       {m.puedoBorrar && m.tipo === 'gasto' && <button className="action-btn" title="Editar" onClick={() => { setEdicionError(null); setEditando(m) }}>✏️</button>}
                       {m.puedoBorrar && <button className="action-btn" title="Borrar" onClick={() => borrar(m)}>🗑</button>}

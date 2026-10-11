@@ -66,8 +66,12 @@ export default function NuevoPersonalModal({ categorias, guardando, error, onGua
 
   function cambiarTipo(tipo) {
     // Las categorías de ingreso y egreso son disjuntas: al cambiar de tipo la
-    // elegida deja de ser válida.
-    setForm(f => ({ ...f, tipo, categoria: '' }))
+    // elegida deja de ser válida. Si se vuelve al tipo original al editar, se recupera.
+    setForm(f => {
+      if (f.tipo === tipo) return f
+      const volviendoAlOriginal = editando && tipo === formularioDesde(inicial).tipo
+      return { ...f, tipo, categoria: volviendoAlOriginal ? formularioDesde(inicial).categoria : '' }
+    })
   }
 
   function handleSubmit(e) {
@@ -92,9 +96,11 @@ export default function NuevoPersonalModal({ categorias, guardando, error, onGua
     }
 
     if (editando) {
-      // En edición solo viajan los campos que el usuario cambió; el tipo no se cambia.
+      // En edición solo viajan los campos que el usuario cambió. Si cambia el tipo, la
+      // categoría también cambia (se limpia al cambiar y hay que elegir una nueva).
       const orig = formularioDesde(inicial)
       const cambios = {}
+      if (form.tipo !== orig.tipo) cambios.tipo = form.tipo
       if (descripcion !== orig.descripcion) cambios.descripcion = descripcion
       if (montoNum !== Number(orig.monto)) cambios.monto = montoNum
       if (form.moneda !== orig.moneda) cambios.moneda = form.moneda
@@ -126,15 +132,13 @@ export default function NuevoPersonalModal({ categorias, guardando, error, onGua
         <h2 className="modal-title">{editando ? '✏️ Editar movimiento personal' : '🏠 Nuevo movimiento personal'}</h2>
 
         <form onSubmit={handleSubmit} className="modal-form">
-          {!editando && (
-            <div>
-              <label className="form-label">Tipo</label>
-              <div className="seg-group">
-                <Seg active={form.tipo === 'Egreso'}  onClick={() => cambiarTipo('Egreso')}>↓ Gasto</Seg>
-                <Seg active={form.tipo === 'Ingreso'} onClick={() => cambiarTipo('Ingreso')}>↑ Ingreso</Seg>
-              </div>
+          <div>
+            <label className="form-label">Tipo</label>
+            <div className="seg-group">
+              <Seg active={form.tipo === 'Egreso'}  onClick={() => cambiarTipo('Egreso')}>↓ Gasto</Seg>
+              <Seg active={form.tipo === 'Ingreso'} onClick={() => cambiarTipo('Ingreso')}>↑ Ingreso</Seg>
             </div>
-          )}
+          </div>
 
           <div>
             <label className="form-label">Descripción *</label>

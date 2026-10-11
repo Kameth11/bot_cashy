@@ -4,7 +4,7 @@ import { es } from 'date-fns/locale'
 import { api } from '../services/api'
 import { deshacerBorrado, deshacerEdicion } from '../services/deshacer'
 import { CurrencyBadge, StatusBadge, MontoCell } from '../components/Money'
-import { formatFecha as fmtFecha } from '../utils/format'
+import { formatFecha as fmtFecha, formatMontoConMoneda, formatPesos, etiquetaCategoria } from '../utils/format'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
 import DatePickerButton from '../components/DatePickerButton'
@@ -12,6 +12,7 @@ import { ordenarPorFechaDesc } from '../utils/movimientos'
 import ComprobanteModal from '../components/ComprobanteModal'
 import SubirComprobanteModal from '../components/SubirComprobanteModal'
 import { useAuth } from '../hooks/useAuth'
+import DetalleMovimientoModal from '../components/DetalleMovimientoModal'
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export default function MovimientosPage() {
   const [borrandoLote,  setBorrandoLote]  = useState(false)
   const [comprobantes,  setComprobantes]  = useState([])
   const [viendoComp,    setViendoComp]    = useState(null)
+  const [viendo,        setViendo]        = useState(null)   // movimiento abierto en el detalle
 
   useEffect(() => {
     let active = true
@@ -211,6 +213,39 @@ export default function MovimientosPage() {
           onGuardado={() => { setSubiendo(false); setReload(r => r + 1) }}
         />
       )}
+      {viendo && (
+        <DetalleMovimientoModal
+          titulo={viendo.descripcion}
+          signo={viendo.tipo?.toLowerCase() === 'egreso' ? 'egreso' : 'ingreso'}
+          monto={`${viendo.tipo?.toLowerCase() === 'egreso' ? '−' : '+'}${formatMontoConMoneda(viendo.monto, viendo.moneda || 'Pesos')}`}
+          subtitulo={viendo.moneda && viendo.moneda !== 'Pesos' && Number(viendo.montoPesos) > 0
+            ? `≈ ${formatPesos(Math.abs(Number(viendo.montoPesos)))}` : null}
+          filas={[
+            ['Tipo', viendo.tipo],
+            ['Estado', viendo.estado],
+            ['Fecha', fmtFecha(viendo.fecha, 'dd/MM/yyyy')],
+            ['Hora', viendo.hora],
+            ['Fecha de cobro', viendo.fechaCobro && viendo.fechaCobro !== viendo.fecha ? fmtFecha(viendo.fechaCobro, 'dd/MM/yyyy') : null],
+            ['Saldo pendiente', Number(viendo.saldoPendiente) > 0 ? formatMontoConMoneda(viendo.saldoPendiente, viendo.moneda || 'Pesos') : null],
+            ['Categoría', viendo.categoria ? etiquetaCategoria(viendo.categoria) : null],
+            ['Paciente', viendo.paciente],
+            ['Pagador', viendo.pagador],
+            ['Profesional', viendo.profesional],
+            ['Tratamiento', viendo.tratamiento],
+            ['Proveedor', viendo.proveedor],
+            ['Método de pago', viendo.metodoPago ? etiquetaCategoria(viendo.metodoPago) : null],
+            ['Moneda', viendo.moneda],
+            ['Fecha de prestación', viendo.fechaPrestacion ? fmtFecha(viendo.fechaPrestacion, 'dd/MM/yyyy') : null],
+            ['Vencimiento', viendo.fechaVencimiento ? fmtFecha(viendo.fechaVencimiento, 'dd/MM/yyyy') : null],
+          ]}
+          acciones={comprobantePorMov(viendo) && (
+            <button type="button" className="btn-secondary" onClick={() => { setViendoComp(comprobantePorMov(viendo)); setViendo(null) }}>📎 Comprobante</button>
+          )}
+          onEditar={puede('editar_movimientos') ? () => { const m = viendo; setViendo(null); setModalError(null); setEditando(m) } : undefined}
+          onBorrar={puede('editar_movimientos') ? () => { const m = viendo; setViendo(null); setModalError(null); setConfirmDelete(m) } : undefined}
+          onCerrar={() => setViendo(null)}
+        />
+      )}
       {viendoComp && <ComprobanteModal comprobante={viendoComp} onCerrar={() => setViendoComp(null)} />}
       {confirmDelete && (
         <ConfirmDeleteModal
@@ -322,9 +357,9 @@ export default function MovimientosPage() {
                 {filtered.map((mov, i) => {
                   const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
                   return (
-                    <tr key={mov.idUnico ?? mov.id ?? i}>
+                    <tr key={mov.idUnico ?? mov.id ?? i} className="fila-clickeable" onClick={() => setViendo(mov)}>
                       {puede('editar_movimientos') && (
-                        <td>
+                        <td onClick={e => e.stopPropagation()}>
                           <input
                             type="checkbox" disabled={!mov.idUnico}
                             checked={!!mov.idUnico && seleccion.has(mov.idUnico)}
@@ -348,7 +383,7 @@ export default function MovimientosPage() {
                           <FechaCobroNote mov={mov} />
                         </div>
                       </td>
-                      <td>
+                      <td onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
                           {comprobantePorMov(mov) && (
                             <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantePorMov(mov))}>📎</button>
@@ -366,7 +401,7 @@ export default function MovimientosPage() {
             {/* Mobile cards */}
             <div className="mov-cards-mobile">
               {filtered.map((mov, i) => (
-                <div key={mov.idUnico ?? i} className="mov-card-mobile">
+                <div key={mov.idUnico ?? i} className="mov-card-mobile fila-clickeable" onClick={() => setViendo(mov)}>
                   <div className="mov-card-top">
                     <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       {puede('editar_movimientos') && (
@@ -375,6 +410,7 @@ export default function MovimientosPage() {
                           disabled={!mov.idUnico}
                           checked={!!mov.idUnico && seleccion.has(mov.idUnico)}
                           onChange={() => alternarSeleccion(mov.idUnico)}
+                          onClick={e => e.stopPropagation()}
                           style={{ width: 20, height: 20, margin: 0 }}
                         />
                       )}
@@ -392,7 +428,7 @@ export default function MovimientosPage() {
                   {(mov.paciente || mov.profesional) && <div className="mov-card-sub">{mov.paciente || mov.profesional}</div>}
                   <div className="mov-card-bottom">
                     <MontoCell mov={mov} />
-                    <div style={{ display: 'flex', gap: 2 }}>
+                    <div style={{ display: 'flex', gap: 2 }} onClick={e => e.stopPropagation()}>
                       {comprobantePorMov(mov) && (
                         <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantePorMov(mov))}>📎</button>
                       )}

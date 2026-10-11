@@ -151,6 +151,7 @@ async function actualizarMovimiento(userId, idMov, cambios = {}) {
   if ('montoPesos' in cambios) patch.monto_pesos = cambios.montoPesos;
   if ('moneda' in cambios) patch.moneda = cambios.moneda;
   if ('categoria' in cambios) patch.categoria = cambios.categoria;
+  if ('tipo' in cambios) patch.tipo_movimiento = String(cambios.tipo).toLowerCase() === 'ingreso' ? 'ingreso' : 'egreso';
   if ('metodoPago' in cambios) patch.metodo_pago = normalizarMetodo(cambios.metodoPago);
   if ('comercio' in cambios) patch.comercio = cambios.comercio || null;
   if ('notas' in cambios) patch.notas = cambios.notas || null;
