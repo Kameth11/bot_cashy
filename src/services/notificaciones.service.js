@@ -29,9 +29,10 @@ const TIPOS = ['llegada_paciente', 'turno_nuevo', 'turno_cancelado', 'turno_no_v
 // ── Claves VAPID ─────────────────────────────────────────────────────────────
 
 function configuracionPush() {
-  const publica = process.env.VAPID_PUBLIC_KEY || '';
-  const privada = process.env.VAPID_PRIVATE_KEY || '';
-  const asunto = process.env.VAPID_SUBJECT || '';
+  // trim: pegar la clave en Railway con un espacio o salto de línea de más es el error más común.
+  const publica = String(process.env.VAPID_PUBLIC_KEY || '').trim();
+  const privada = String(process.env.VAPID_PRIVATE_KEY || '').trim();
+  const asunto = String(process.env.VAPID_SUBJECT || '').trim();
   return { publica, privada, asunto, activo: Boolean(publica && privada) };
 }
 
@@ -54,6 +55,13 @@ function vapidConfigurado() {
 
 function pushDisponible() { return vapidConfigurado(); }
 function clavePublica() { return pushDisponible() ? configuracionPush().publica : null; }
+
+// Por qué no hay push, para mostrárselo a quien lo busca (en vez de esconder la opción).
+// null = hay push. 'sin_claves' = faltan variables en el servidor. 'claves_invalidas' = están pero no sirven.
+function motivoSinPush() {
+  if (pushDisponible()) return null;
+  return configuracionPush().activo ? 'claves_invalidas' : 'sin_claves';
+}
 
 // ── Almacenamiento: Supabase con respaldo en memoria ─────────────────────────
 
@@ -292,6 +300,7 @@ module.exports = {
   borrarSuscripcion,
   pushDisponible,
   clavePublica,
+  motivoSinPush,
   suscripcionValida,
   _memoria: memoria, // solo para tests
 };

@@ -15,6 +15,11 @@ let soportaActivo = false;
 // se manda en ningún upsert, y el login con Google queda deshabilitado.
 let soportaGoogle = false;
 
+// ¿La tabla profiles tiene `telegram_id` (migración 022)? Es el Telegram que una cuenta nacida en la
+// web (ID negativo) vinculó después. Mismo criterio que `google_sub`: sin la columna no se manda en
+// ningún upsert y vincular Telegram queda deshabilitado.
+let soportaTelegram = false;
+
 // Serializa escrituras a clientes.json/Supabase para evitar que dos
 // registros concurrentes pisen el archivo con datos desactualizados.
 let writeQueue = Promise.resolve();
@@ -50,6 +55,8 @@ function buildProfileRow(userId, clienteData = {}, tenantId = null) {
   if (soportaActivo) row.activo = true;
   // Solo viaja si la persona vinculó Google (vincularGoogle exige que la columna exista).
   if (clienteData.googleSub) row.google_sub = clienteData.googleSub;
+  // Idem: solo viaja si la cuenta vinculó un Telegram (vincularTelegram exige que la columna exista).
+  if (clienteData.telegramId) row.telegram_id = clienteData.telegramId;
   if (tenantId) row.tenant_id = tenantId;
   return row;
 }
@@ -78,6 +85,7 @@ async function cargarClientes() {
       clientes = {};
       soportaActivo = Object.prototype.hasOwnProperty.call(data[0], 'activo');
       soportaGoogle = Object.prototype.hasOwnProperty.call(data[0], 'google_sub');
+      soportaTelegram = Object.prototype.hasOwnProperty.call(data[0], 'telegram_id');
       for (const profile of data) {
         // Baja lógica: quien salió del consultorio pero tiene Personal conserva su
         // perfil (las tablas personales dependen de él) y NO figura como cliente.
@@ -92,6 +100,7 @@ async function cargarClientes() {
           creadoEn: profile.created_at || new Date().toISOString(),
         };
         if (profile.google_sub) clientes[userId].googleSub = profile.google_sub;
+        if (profile.telegram_id) clientes[userId].telegramId = Number(profile.telegram_id);
         // Solo si tiene casas: así los perfiles sin casas no mandan la columna.
         if (Array.isArray(profile.casas) && profile.casas.length > 0) {
           clientes[userId].casas = profile.casas;
@@ -317,6 +326,72 @@ async function desvincularGoogle(userId) {
   return true;
 }
 
+// ── Telegram vinculado a una cuenta nacida en la web ─────────────────────────
+// Una cuenta creada por invitación (invitacion-web.service.js) tiene un ID negativo y ningún
+// Telegram. Si después vincula uno, el bot trata a ESE Telegram como esa cuenta (ver el
+// middleware de src/handlers/middleware.js) y los avisos a la persona salen a ese Telegram
+// (src/lib/telegram-destino.js).
+
+function telegramVinculoSoportado() {
+  return !(USE_SUPABASE && isAvailable()) || soportaTelegram;
+}
+
+// userId (string) de la cuenta que vinculó ese Telegram, o null.
+function cuentaPorTelegramId(telegramId) {
+  const tid = Number(telegramId);
+  if (!Number.isFinite(tid)) return null;
+  for (const [id, c] of Object.entries(clientes)) {
+    if (c && c.telegramId === tid) return id;
+  }
+  return null;
+}
+
+// ¿Este Telegram ya es (o forma parte de) una cuenta por sí mismo? (dueño con su propio perfil, o
+// invitado listado en el usuarios[] de algún dueño). No se lo puede vincular a otra cuenta.
+function telegramYaTieneCuenta(telegramId) {
+  const tid = Number(telegramId);
+  const str = String(telegramId);
+  if (clientes[str]) return true;
+  return Object.values(clientes).some(c => Array.isArray(c?.usuarios) && c.usuarios.some(u => Number(u) === tid || String(u) === str));
+}
+
+/**
+ * Vincula el Telegram `telegramId` a la cuenta web `userId` (ID negativo). Quien llama ya verificó que
+ * telegramId es quien tocó "Sí" en el bot.
+ * @returns {Promise<{ok:true} | {ok:false, motivo:'no_disponible'|'sin_perfil'|'no_aplica'|'telegram_con_cuenta'|'telegram_en_uso'|'ya_vinculada_otra'}>}
+ */
+async function vincularTelegram(userId, telegramId) {
+  const key = String(userId);
+  const tid = Number(telegramId);
+  if (!Number.isFinite(tid) || tid <= 0 || !telegramVinculoSoportado()) return { ok: false, motivo: 'no_disponible' };
+  if (Number(key) >= 0) return { ok: false, motivo: 'no_aplica' }; // una cuenta de Telegram ya ES su Telegram
+  if (!clientes[key]) return { ok: false, motivo: 'sin_perfil' };
+
+  if (telegramYaTieneCuenta(tid)) return { ok: false, motivo: 'telegram_con_cuenta' };
+  const dueno = cuentaPorTelegramId(tid);
+  if (dueno && dueno !== key) return { ok: false, motivo: 'telegram_en_uso' };
+  if (clientes[key].telegramId && clientes[key].telegramId !== tid) return { ok: false, motivo: 'ya_vinculada_otra' };
+
+  clientes[key] = { ...clientes[key], telegramId: tid };
+  await guardarClientes(clientes, key);
+  return { ok: true };
+}
+
+async function desvincularTelegram(userId) {
+  const key = String(userId);
+  const c = clientes[key];
+  if (!c || !c.telegramId) return false;
+
+  const { telegramId: _quitado, ...resto } = c; // eslint-disable-line no-unused-vars
+  clientes[key] = resto;
+  fs_guardarLocal();
+  if (USE_SUPABASE && isAvailable()) {
+    const { error } = await getSupabase().from('profiles').update({ telegram_id: null }).eq('id', parseInt(key, 10));
+    if (error) console.error(`desvincularTelegram error (userId=${key}):`, error.message);
+  }
+  return true;
+}
+
 function fs_guardarLocal() {
   try {
     fs.writeFileSync(CLIENTES_FILE, JSON.stringify(clientes, null, 2));
@@ -479,6 +554,11 @@ module.exports = {
   buscarPorGoogleSub,
   vincularGoogle,
   desvincularGoogle,
+  telegramVinculoSoportado,
+  cuentaPorTelegramId,
+  telegramYaTieneCuenta,
+  vincularTelegram,
+  desvincularTelegram,
   getPermisos,
   setPermisos,
   buildProfileRow,

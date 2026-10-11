@@ -8,6 +8,7 @@ jest.mock('../src/services/notificaciones.service', () => ({
   borrarSuscripcion: jest.fn().mockResolvedValue(undefined),
   pushDisponible: jest.fn(),
   clavePublica: jest.fn(),
+  motivoSinPush: jest.fn(),
 }));
 
 const express = require('express');
@@ -35,6 +36,7 @@ beforeEach(() => {
   svc.listar.mockResolvedValue({ notificaciones: [{ id: 'n1', titulo: 'Hola' }], noLeidas: 1 });
   svc.pushDisponible.mockReturnValue(true);
   svc.clavePublica.mockReturnValue('PUB');
+  svc.motivoSinPush.mockReturnValue(null);
 });
 
 const req = (method, path, user, body) => fetch(`${base}${path}`, {
@@ -47,7 +49,7 @@ describe('GET /api/notificaciones', () => {
   test('devuelve la lista de la sesión y si hay push', async () => {
     const r = await req('GET', '/api/notificaciones', '77');
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ notificaciones: [{ id: 'n1', titulo: 'Hola' }], noLeidas: 1, push: { disponible: true, clavePublica: 'PUB' } });
+    expect(await r.json()).toEqual({ notificaciones: [{ id: 'n1', titulo: 'Hola' }], noLeidas: 1, push: { disponible: true, clavePublica: 'PUB', motivo: null } });
     expect(svc.listar).toHaveBeenCalledWith('77');
   });
 

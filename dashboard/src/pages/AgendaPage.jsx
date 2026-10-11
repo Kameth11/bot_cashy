@@ -99,6 +99,7 @@ function textoAvisoLlegada(turno, notif, web) {
     profesional_no_encontrado: `No se avisó: no hay ningún profesional registrado como "${prof}". Registralo en Configuración → Profesionales con ese nombre.`,
     envio_fallido: `No se pudo mandar el aviso a ${notif.profesional || prof}. Revisá que haya iniciado el bot en Telegram (/start) y no lo tenga bloqueado.`,
     tenant_no_resuelto: 'No se pudo mandar el aviso (consultorio sin configurar en la base).',
+    sin_telegram: `${notif.profesional || prof} no tiene Telegram vinculado, y en la web no hay un aviso para él. Tiene que entrar al dashboard (campanita) o vincular Telegram desde Configuración.`,
   }
   return { ok: false, texto: motivos[notif.error] || 'No se pudo mandar el aviso al profesional.' }
 }

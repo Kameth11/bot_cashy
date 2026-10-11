@@ -1824,6 +1824,13 @@ require('./invitaciones.routes').registrarRutasInvitaciones(app, {
   esDuenoOAdmin,
   dashboardUrl: () => config.DASHBOARD_URL,
 });
+const vinculoTelegramPorUsuario = createLimiter({ windowMs: 10 * 60 * 1000, max: 10 });
+require('./telegram.routes').registrarRutasTelegram(app, {
+  authMiddleware,
+  rateLimit,
+  limitador: vinculoTelegramPorUsuario,
+  obtenerUsernameBot,
+});
 require('./profesionales.routes').registrarRutasProfesionales(app, {
   authMiddleware,
   esDuenoOAdmin,

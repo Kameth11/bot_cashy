@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import CotizacionWidget from '../components/CotizacionWidget'
 import TabProfesionales from '../components/TabProfesionales'
 import TabInvitaciones from '../components/TabInvitaciones'
+import TelegramVinculo from '../components/TelegramVinculo'
 import { PERMISOS_LABELS, PRESET_LABELS } from '../utils/permisos'
 import { api } from '../services/api'
 
@@ -45,6 +46,8 @@ function TabGeneral({ user, onLogout }) {
 
   const userId    = user?.userId || '—'
   const userEmail = user?.email  || '—'
+  // Cuenta nacida en la web (invitación por email): ID negativo y sin Telegram, salvo que lo vincule.
+  const esCuentaWeb = String(userId).startsWith('-')
   const tokenMask = userId.length > 6
     ? `${userId.slice(0, 3)}${'•'.repeat(Math.max(4, userId.length - 6))}${userId.slice(-3)}`
     : userId
@@ -57,6 +60,9 @@ function TabGeneral({ user, onLogout }) {
 
   return (
     <>
+      {esCuentaWeb && <TelegramVinculo />}
+
+      {!esCuentaWeb && (
       <div className="config-card">
         <div className="config-card-header"><h2>Bot de Telegram</h2></div>
         <div className="config-card-body">
@@ -77,6 +83,7 @@ function TabGeneral({ user, onLogout }) {
           </p>
         </div>
       </div>
+      )}
 
       {/* Modo IA */}
       <div className="config-card">
@@ -117,7 +124,7 @@ function TabGeneral({ user, onLogout }) {
         <div className="config-card-header"><h2>Cuenta</h2></div>
         <div className="config-card-body" style={{ display: 'grid', gap: 10 }}>
           {[
-            ['Telegram ID', userId],
+            [esCuentaWeb ? 'ID de cuenta' : 'Telegram ID', userId],
             ['Email', userEmail],
             ['Rol', user?.isAdmin ? 'Administrador' : (presetNombre ? PRESET_LABELS[presetNombre] : 'Usuario')],
           ].map(([label, value]) => (

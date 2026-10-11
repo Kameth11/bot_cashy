@@ -3,6 +3,7 @@ const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_EVENTS, MAX_TEXT_LENGTH } = require('../config');
 const logger = require('../lib/logger');
+const clienteService = require('../services/cliente.service');
 
 const COMANDOS_PUBLICOS = new Set(['/start', '/unir', '/cancelar']);
 
@@ -15,6 +16,29 @@ function esComandoPublico(ctx) {
 
   const comando = text.split(/\s+/)[0].split('@')[0];
   return COMANDOS_PUBLICOS.has(comando);
+}
+
+// Un Telegram vinculado a una cuenta nacida en la web (ver cliente.service.vincularTelegram) ES esa
+// cuenta para todo el bot: se reemplaza ctx.from.id por el de la cuenta ANTES de cualquier otra cosa,
+// así los cientos de usos de ctx.from.id (permisos, sheets, estados) la ven sin tocarlos. El Telegram
+// real queda en ctx.state.telegramId (para vincular/desvincular). ctx.from es el MISMO objeto del
+// update, así que mutarlo vale para todo lo que sigue. Las respuestas no cambian: salen por ctx.chat.
+bot.use((ctx, next) => {
+  if (ctx.from) {
+    const cuenta = clienteService.cuentaPorTelegramId(ctx.from.id);
+    if (cuenta) {
+      ctx.state = ctx.state || {};
+      ctx.state.telegramId = ctx.from.id;
+      ctx.from.id = Number(cuenta);
+    }
+  }
+  return next();
+});
+
+// El botón de confirmación del vínculo lo toca alguien que todavía NO tiene cuenta (por definición).
+function esAccionPublica(ctx) {
+  const data = ctx.callbackQuery && typeof ctx.callbackQuery.data === 'string' ? ctx.callbackQuery.data : '';
+  return data.startsWith('vinculo_');
 }
 
 bot.use((ctx, next) => {
@@ -62,7 +86,7 @@ bot.use((ctx, next) => {
     return next();
   }
 
-  if (state.pendingRegistros.has(userId) || esComandoPublico(ctx)) {
+  if (state.pendingRegistros.has(userId) || esComandoPublico(ctx) || esAccionPublica(ctx)) {
     return next();
   }
 

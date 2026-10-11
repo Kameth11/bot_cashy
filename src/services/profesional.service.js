@@ -2,6 +2,7 @@ const { isAvailable } = require('../lib/supabase');
 const { forTenant } = require('../lib/tenant-db');
 const { escapeMarkdown } = require('../utils/formatter');
 const logger = require('../lib/logger');
+const { chatIdDe } = require('../lib/telegram-destino');
 
 async function registrarProfesional(tenantId, telegramUserId, nombre, consultorio = null) {
   if (!isAvailable()) return { ok: false, error: 'supabase_no_disponible' };
@@ -107,13 +108,18 @@ async function notificarLlegadaPaciente(tenantId, nombreProfesional, paciente, h
     return { ok: false, error: 'profesional_no_encontrado' };
   }
 
+  // Un profesional que se registró desde la web puede no tener Telegram (ID negativo sin vincular):
+  // no es un fallo, simplemente no hay a dónde mandarle por acá (le llega por la campanita/push).
+  const chatId = chatIdDe(profesional.telegram_user_id);
+  if (!chatId) return { ok: false, error: 'sin_telegram', profesional: profesional.nombre };
+
   try {
     const { bot } = require('../lib/telegraf');
     const partes = [`✅ *Llegó tu paciente*`];
     if (paciente) partes.push(`👤 ${escapeMarkdown(paciente)}`);
     if (hora) partes.push(`🕐 ${escapeMarkdown(hora)}`);
     if (servicio) partes.push(`🦷 ${escapeMarkdown(servicio)}`);
-    await bot.telegram.sendMessage(Number(profesional.telegram_user_id), partes.join('\n'), { parse_mode: 'Markdown' });
+    await bot.telegram.sendMessage(chatId, partes.join('\n'), { parse_mode: 'Markdown' });
     return { ok: true, profesional: profesional.nombre };
   } catch (err) {
     // Típico: el profesional nunca le escribió al bot o lo bloqueó (403).

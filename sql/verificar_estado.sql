@@ -57,7 +57,9 @@ SELECT * FROM (VALUES
      EXISTS (SELECT 1 FROM tabla WHERE n = 'notificaciones')
      AND EXISTS (SELECT 1 FROM tabla WHERE n = 'push_subscriptions')),
   ('021', 'tabla invitaciones_web',
-     EXISTS (SELECT 1 FROM tabla WHERE n = 'invitaciones_web'))
+     EXISTS (SELECT 1 FROM tabla WHERE n = 'invitaciones_web')),
+  ('022', 'profiles.telegram_id',
+     EXISTS (SELECT 1 FROM col WHERE t = 'profiles' AND c = 'telegram_id'))
 ) AS v(migracion, que_crea, aplicada)
 ORDER BY migracion;
 

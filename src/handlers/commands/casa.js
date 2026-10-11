@@ -18,6 +18,7 @@
 
 const { bot } = require('../../lib/telegraf');
 const logger = require('../../lib/logger');
+const { chatIdDe } = require('../../lib/telegram-destino');
 const { escapeMarkdown, sanitizarInput } = require('../../utils/formatter');
 const casaService = require('../../services/casa.service');
 const casaInvite = require('../../services/casa-invite.service');
@@ -128,7 +129,8 @@ async function canjearInvitacionCasa(ctx, rawCode, aliasTexto) {
       'Mirá el estado con `/casa`.');
 
     // Aviso a quien invitó (best-effort).
-    bot.telegram.sendMessage(Number(data.creadoPor), `👋 ${miembro.nombre} se unió a ${casa.nombre}.`).catch(() => {});
+    const avisarA = chatIdDe(data.creadoPor);
+    if (avisarA) bot.telegram.sendMessage(avisarA, `👋 ${miembro.nombre} se unió a ${casa.nombre}.`).catch(() => {});
     return true;
   } catch (err) {
     if (!(err instanceof CasaError)) throw err;

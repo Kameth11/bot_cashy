@@ -12,7 +12,7 @@ function registrarRutasNotificaciones(app, { authMiddleware }) {
   app.get('/api/notificaciones', authMiddleware, async (req, res) => {
     try {
       const { notificaciones: lista, noLeidas } = await notificaciones.listar(req.user.userId);
-      res.json({ notificaciones: lista, noLeidas, push: { disponible: notificaciones.pushDisponible(), clavePublica: notificaciones.clavePublica() } });
+      res.json({ notificaciones: lista, noLeidas, push: { disponible: notificaciones.pushDisponible(), clavePublica: notificaciones.clavePublica(), motivo: notificaciones.motivoSinPush() } });
     } catch (err) {
       logger.error('NOTIF', 'Error GET /api/notificaciones', { err: err.message });
       res.status(500).json({ error: 'No se pudieron leer las notificaciones' });

@@ -27,8 +27,13 @@ function SeccionPush({ push }) {
     return () => { activo = false }
   }, [])
 
-  // El servidor todavía no tiene las claves: no se ofrece nada que no va a funcionar.
-  if (!push.disponible) return null
+  // El servidor no puede mandar push: se dice por qué (antes la opción simplemente no aparecía).
+  if (!push.disponible) {
+    const motivo = push.motivo === 'claves_invalidas'
+      ? 'Las claves de avisos del servidor no son válidas: hay que revisar VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY en Railway.'
+      : 'Los avisos con la app cerrada todavía no están activados en el servidor (faltan las claves VAPID en Railway). Mientras tanto te llegan acá y por Telegram.'
+    return <div className="campana-push"><span>{motivo}</span></div>
+  }
   if (estado === 'cargando') return null
 
   async function alternar() {

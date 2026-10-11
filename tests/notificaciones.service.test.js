@@ -97,6 +97,20 @@ describe('Web Push', () => {
     expect(webpush.sendNotification).not.toHaveBeenCalled();
   });
 
+  test('explica por qué no hay push: faltan claves, o están pero no sirven; y tolera espacios al pegarlas', () => {
+    expect(svc.motivoSinPush()).toBe('sin_claves');
+
+    process.env.VAPID_PUBLIC_KEY = 'pub';
+    process.env.VAPID_PRIVATE_KEY = 'priv';
+    webpush.setVapidDetails.mockImplementationOnce(() => { throw new Error('Vapid public key must be URL safe Base 64'); });
+    expect(svc.motivoSinPush()).toBe('claves_invalidas');
+
+    process.env.VAPID_PUBLIC_KEY = '  pub\n';
+    process.env.VAPID_PRIVATE_KEY = 'priv \n';
+    expect(svc.motivoSinPush()).toBeNull();
+    expect(svc.clavePublica()).toBe('pub');
+  });
+
   test('con claves manda el push a cada dispositivo de la persona (y a nadie más)', async () => {
     conVapid();
     expect(svc.pushDisponible()).toBe(true);

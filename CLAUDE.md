@@ -394,8 +394,19 @@ email, un Gmail cualquiera NO entra (sigue el vínculo por el bot de siempre).
   `GOOGLE_CLIENT_ID`.
 - **API**: `GET`/`POST /api/invitaciones`, `DELETE /api/invitaciones/:id`
   (`src/api/invitaciones.routes.js`); el canje vive en `POST /api/auth/google`.
-- **Limitaciones**: estas cuentas no tienen Telegram, así que no usan el bot (sí agenda, chat web,
-  campanita y push). No hay todavía "quitar miembro" desde el dashboard ni forma de vincularles Telegram después.
+- **Vincular Telegram después**: en Config → General, una cuenta web ve "Vincular Telegram". Abre
+  `t.me/<bot>?start=vincular_<token>` (token de un solo uso, 10 min, en memoria:
+  `vinculo-telegram.service.js`); en el bot confirma viendo el email de la cuenta
+  (`handlers/vinculo-telegram.js`) y ESE Telegram queda en `profiles.telegram_id`
+  (`sql/migrations/022_profiles_telegram_id.sql`, **hay que correrla a mano**; sin ella el botón avisa).
+  Desde ahí el middleware del bot (`handlers/middleware.js`) reemplaza `ctx.from.id` por el ID de la
+  cuenta (el real queda en `ctx.state.telegramId`), así que todo el bot trata a ese Telegram como la
+  cuenta. **Regla para código nuevo**: todo `bot.telegram.sendMessage(<ID de una persona>)` pasa por
+  `chatIdDe()` (`src/lib/telegram-destino.js`): un ID negativo sin Telegram no tiene chat (devuelve null).
+  Un Telegram que ya tiene cuenta propia (dueño, invitado de otro) NO se puede vincular a otra.
+- **Limitaciones**: estas cuentas no usan el bot hasta vincular Telegram (sí agenda, chat web, campanita
+  y push). El login con código de 6 dígitos no vale para ellas (usan Google o "Entrar con Telegram").
+  No hay todavía "quitar miembro" desde el dashboard ni fusión de dos cuentas de la misma persona.
 
 ---
 
