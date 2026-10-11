@@ -66,6 +66,7 @@ Cada fase se puede cortar al terminar sin dejar nada a medias.
 | 0.2 | Correr `sql/verificar_estado.sql` (cada consulta por separado) y guardar el resultado | Saber con certeza qué migraciones tiene la base. Todas deberían dar `true` |
 | 0.3 | En Railway, confirmar que existe `SUPABASE_SERVICE_ROLE_KEY` | El backend cae a la `anon` key si falta; con las políticas actuales casi todo fallaría, pero conviene que sea explícito |
 | 0.4 | En Supabase, ver qué plan tenés y si hay **copias de seguridad automáticas** (y por cuánto tiempo) | Hay datos financieros de clientes. Sin backup verificado, un error es irreversible |
+| 0.5 | **Respaldo propio automático** (el plan gratuito no garantiza copias): seguir `RESPALDOS.md` | Copia diaria cifrada en GitHub, con restauración probada. Armado 2026-10-11; falta que cargues los secretos y hagas la primera corrida |
 
 ### Fase 1 — Trazabilidad y red de seguridad (chica; 1–2 sesiones; riesgo bajo)
 
@@ -191,7 +192,7 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
   `schema_v2_draft.sql` movido a `sql/borradores/`, `sql/README.md` con el orden;
   se sacó del dashboard el código muerto de Supabase. Quedó pendiente (opcional):
   unificar las dos definiciones de `profesionales` y el hash de `auth_codes`.
-- **Respaldo propio** (fase 0.4): workflow diario cifrado, ver `RESPALDOS.md`.
+- **Respaldo propio** (fase 0.5): workflow diario cifrado con rol de solo lectura y restauración probada, ver `RESPALDOS.md`. Los archivos del bucket `comprobantes` quedan pendientes (script listo, sin conectar).
 - **Dockerfile** (sección 7): imagen única bot + API + dashboard. No se pudo construir
   acá (sin daemon de Docker): probarlo con `docker build .` antes de depender de él.
 
@@ -199,7 +200,7 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
 
 **Lo que tiene que hacer el usuario (Claude no puede):**
 1. Correr `016` y `017` en Supabase y después `sql/verificar_estado.sql` (todo `true`).
-2. Cargar los 4 secretos de `RESPALDOS.md` en GitHub y correr el workflow una vez a mano.
+2. Seguir `RESPALDOS.md`: rol `backup_ro` (`sql/backup_rol_lectura.sql`), secretos `SUPABASE_DB_URL` y `BACKUP_PASSPHRASE`, primera corrida a mano y una restauración de prueba.
 3. Confirmar que Railway tenga `SUPABASE_SERVICE_ROLE_KEY`.
 4. Probar en producción: audio largo con nombre + monto + método (si sale cortado, mirar
    en el log de Railway la línea "transcripcion de audio … termino con …"); foto de

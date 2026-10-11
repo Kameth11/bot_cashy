@@ -122,7 +122,8 @@ Qué tiene realmente la base de Supabase: `sql/verificar_estado.sql` (solo lectu
 las migraciones se corren a mano, orden en `sql/README.md`; desde la 017 quedan
 registradas en `schema_migrations` y CI las prueba contra un Postgres real). Plan para volverla más
 sólida (RLS, trazabilidad de migraciones, fechas reales en `movimientos`,
-reconciliación Sheets↔Supabase): `PLAN_BASE_DE_DATOS.md`.
+reconciliación Sheets↔Supabase): `PLAN_BASE_DE_DATOS.md`. Respaldo diario cifrado de la
+base (GitHub Actions) y cómo restaurarlo: `RESPALDOS.md`.
 
 Esto es el modelo "legacy"/v1, fuente de verdad cuando `USE_SUPABASE=false`.
 Cuando Supabase está habilitado conviven este modelo y un modelo v2
