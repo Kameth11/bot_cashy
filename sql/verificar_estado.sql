@@ -46,7 +46,13 @@ SELECT * FROM (VALUES
   ('016', 'tabla auth_codes',
      EXISTS (SELECT 1 FROM tabla WHERE n = 'auth_codes')),
   ('017', 'tabla schema_migrations',
-     EXISTS (SELECT 1 FROM tabla WHERE n = 'schema_migrations'))
+     EXISTS (SELECT 1 FROM tabla WHERE n = 'schema_migrations')),
+  ('018', 'movimientos.fecha_iso',
+     EXISTS (SELECT 1 FROM col WHERE t = 'movimientos' AND c = 'fecha_iso')),
+  ('019', 'restricciones de movimientos',
+     EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'movimientos_estado_chk')
+     AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'movimientos_tipo_chk')
+     AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'movimientos_moneda_chk'))
 ) AS v(migracion, que_crea, aplicada)
 ORDER BY migracion;
 
@@ -65,10 +71,17 @@ GROUP BY c.relname, c.relrowsecurity
 ORDER BY c.relname;
 
 -- ── 3) Datos que deberían estar bien ─────────────────────────────────────────
--- Todos deberían dar 0.
+-- Todos deberían dar 0. (`tipo` se compara sin mayúsculas: el código escribe
+-- 'ingreso'/'egreso'.) Los tres "raro" tienen que ser 0 ANTES de correr la 019;
+-- fecha_sin_interpretar solo existe después de la 018 y tiene que ser 0 para poder
+-- confiar en fecha_iso.
 SELECT
-  (SELECT count(*) FROM profiles WHERE tenant_id IS NULL)                          AS perfiles_sin_tenant,
-  (SELECT count(*) FROM movimientos WHERE tenant_id IS NULL)                       AS movimientos_sin_tenant,
-  (SELECT count(*) FROM movimientos WHERE estado NOT IN ('Cobrado', 'Pendiente'))  AS movimientos_estado_raro,
-  (SELECT count(*) FROM movimientos WHERE tipo NOT IN ('Ingreso', 'Egreso'))       AS movimientos_tipo_raro,
-  (SELECT count(*) FROM movimientos WHERE fecha !~ '^\d{2}/\d{2}/\d{4}$')          AS movimientos_fecha_con_otro_formato;
+  (SELECT count(*) FROM profiles WHERE tenant_id IS NULL)                              AS perfiles_sin_tenant,
+  (SELECT count(*) FROM movimientos WHERE tenant_id IS NULL)                           AS movimientos_sin_tenant,
+  (SELECT count(*) FROM movimientos WHERE estado NOT IN ('Cobrado', 'Pendiente'))      AS movimientos_estado_raro,
+  (SELECT count(*) FROM movimientos WHERE lower(tipo) NOT IN ('ingreso', 'egreso'))    AS movimientos_tipo_raro,
+  (SELECT count(*) FROM movimientos WHERE moneda NOT IN ('Pesos', 'Dólares', 'Euros')) AS movimientos_moneda_rara,
+  (SELECT count(*) FROM movimientos WHERE fecha !~ '^\d{2}/\d{2}/\d{4}$' AND fecha !~ '^\d{4}-\d{2}-\d{2}') AS movimientos_fecha_con_otro_formato;
+
+-- Después de la 018 (correr aparte): filas cuya fecha no se pudo convertir.
+-- SELECT count(*) AS fecha_sin_interpretar FROM movimientos WHERE fecha_iso IS NULL;

@@ -203,6 +203,18 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
   punto 3 (leer primero de Supabase donde aún no sea así) y **correr `/reconciliar` en
   producción** para ver cuántas diferencias hay antes de decidir cómo corregirlas.
 
+- **Fase 2, puntos 1 a 3** (2026-10-11): migración **018** (`movimientos.fecha_iso DATE`,
+  calculada por un trigger desde `fecha` —acepta `AAAA-MM-DD` y `DD/MM/AAAA`—, rellenada
+  para las filas viejas, con índice `(tenant_id, fecha_iso)`; no cambia el código) y
+  migración **019** (CHECK `NOT VALID` en estado/tipo/moneda; `tipo` sin distinguir
+  mayúsculas porque el código escribe `ingreso`/`egreso`). `verificar_estado.sql` consulta 3
+  corregida (marcaba como raro el `tipo` en minúscula). Probado en Postgres 16 con datos
+  mezclados. **Orden para producción:** respaldo reciente → consulta 3 (estado/tipo/moneda
+  raros en 0) → 018 → 019 → `SELECT count(*) FROM movimientos WHERE fecha_iso IS NULL`
+  → cuando todo dé 0, los `VALIDATE CONSTRAINT` que están en el encabezado de la 019.
+  Falta el punto 4 (filtrar por mes en la base en vez de traer todo): recién conviene
+  hacerlo con `fecha_iso` ya verificada en producción.
+
 ## 6.b Pendiente de tu lado y decisiones abiertas (traspaso 2026-10-11)
 
 **Lo que tiene que hacer el usuario (Claude no puede):**
@@ -216,10 +228,9 @@ Las fases 1 a 3 se pueden hacer sin cambiar nada de lo que ve el cliente.
 
 **Decisiones abiertas:** ¿se vende pronto a otros consultorios (sube la fase 4)? ¿el
 repo es privado (migración 002 tiene IDs y un email reales)? ¿negarse a arrancar sin
-service key en producción (`SUPABASE_REQUIRE_SERVICE_KEY=true`) o solo avisar? ¿agregar
-`fecha_iso` y restricciones a `movimientos` (fase 2), previa copia de seguridad?
+service key en producción (`SUPABASE_REQUIRE_SERVICE_KEY=true`) o solo avisar? (`fecha_iso` y restricciones ya preparadas en 018/019: falta correrlas con respaldo previo.)
 
-**Siguiente:** fase 2 (fechas reales), punto 3 de la fase 3, fase 4
+**Siguiente:** punto 4 de la fase 2, punto 3 de la fase 3, fase 4
 (SaaS, solo si se decide vender). Producto: app en tiendas (Android primero, ver notas),
 push, login sin Telegram, deshacer en Personal/Casa/Agenda.
 
