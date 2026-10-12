@@ -1,4 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { api } from '../services/api'
+import { formatMontoConMoneda } from '../utils/format'
+import { MAX_CUOTAS, esFechaIso, fechaCorta, planDeCuotas } from '../utils/cuotas'
 
 // ── Shared helpers ─────────────────────────────────────────
 function Seg({ active, onClick, children }) {
@@ -7,6 +10,10 @@ function Seg({ active, onClick, children }) {
       {children}
     </button>
   )
+}
+
+function Hint({ children }) {
+  return <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '4px 0 0', lineHeight: 1.4 }}>{children}</p>
 }
 
 export const CATEGORIAS_INGRESO = [
@@ -47,6 +54,17 @@ const DESCRIPCIONES_EGRESO = [
 
 const OTRO_VALUE = '__otro__'
 
+// Hoy como AAAA-MM-DD en la zona del navegador (lo que usa <input type="date">).
+const hoyIso = () => new Date().toLocaleDateString('en-CA')
+
+// DD/MM/AAAA (lo que entrega la API) o AAAA-MM-DD -> AAAA-MM-DD para <input type="date">.
+function aInputFecha(valor) {
+  const t = String(valor || '').trim()
+  const m = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : ''
+}
+
 const initialState = {
   tipo: 'Ingreso',
   descripcionPreset: '',
@@ -56,43 +74,131 @@ const initialState = {
   metodoPago: '',
   estado: 'Cobrado',
   categoria: '',
-  paciente: '',
+  contraparte: '',        // paciente (ingreso) o proveedor (egreso)
   profesional: '',
   tratamiento: '',
-  proveedor: '',
+  fecha: '',
   fechaPrestacion: '',
   fechaVencimiento: '',
+  cuotaCantidad: '1',
+  cuotaPrimeraCobrada: true,
+  cuotaPrimerVencimiento: '',
 }
 
-export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCerrar }) {
-  const [form, setForm] = useState(initialState)
-  const [validationError, setValidationError] = useState(null)
+// Del movimiento que se edita al estado del formulario.
+function formularioDesde(m) {
+  const esEgreso = String(m.tipo).toLowerCase() === 'egreso'
+  const lista = esEgreso ? DESCRIPCIONES_EGRESO : DESCRIPCIONES_INGRESO
+  const descripcion = m.descripcion || ''
+  const enLista = lista.includes(descripcion)
+  const pendiente = String(m.estado).toLowerCase() === 'pendiente'
+  return {
+    ...initialState,
+    tipo: esEgreso ? 'Egreso' : 'Ingreso',
+    descripcionPreset: enLista ? descripcion : OTRO_VALUE,
+    descripcionLibre: enLista ? '' : descripcion,
+    monto: String(Math.abs(Number(m.monto || 0))),
+    moneda: m.moneda || 'Pesos',
+    metodoPago: m.metodoPago || '',
+    estado: pendiente ? 'Pendiente' : (esEgreso ? 'Pagado' : 'Cobrado'),
+    categoria: m.categoria || '',
+    contraparte: (esEgreso ? m.proveedor : m.paciente) || '',
+    profesional: m.profesional || '',
+    tratamiento: m.tratamiento || '',
+    fecha: aInputFecha(m.fecha),
+    fechaPrestacion: aInputFecha(m.fechaPrestacion),
+    fechaVencimiento: aInputFecha(m.fechaVencimiento),
+  }
+}
 
-  const categorias = useMemo(
-    () => (form.tipo === 'Egreso' ? CATEGORIAS_EGRESO : CATEGORIAS_INGRESO),
-    [form.tipo]
-  )
+/**
+ * Alta de un movimiento del consultorio o, si llega `inicial`, su edición COMPLETA (todos los campos).
+ * En edición `onGuardar` recibe solo lo que cambió; al crear, el movimiento entero (y, si es una cuota con
+ * más de una, el plan de cuotas: el monto es el total y se reparte, ver utils/cuotas.js).
+ */
+export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCerrar, inicial = null }) {
+  const editando = Boolean(inicial)
+  const [form, setForm] = useState(() => (inicial ? formularioDesde(inicial) : { ...initialState, cuotaPrimerVencimiento: hoyIso() }))
+  const [validationError, setValidationError] = useState(null)
+  const [profesionales, setProfesionales] = useState(null) // null = no se pudo leer: se escribe a mano
+
+  // Los profesionales ya registrados (y los que figuran en la agenda). Sin permiso de agenda, se escribe a mano.
+  useEffect(() => {
+    let activo = true
+    api.get('/api/profesionales')
+      .then(res => { if (activo) setProfesionales(Array.isArray(res.data?.profesionales) ? res.data.profesionales : null) })
+      .catch(() => {})
+    return () => { activo = false }
+  }, [])
+
+  const esIngreso = form.tipo === 'Ingreso'
+  const esPendiente = form.estado === 'Pendiente'
+
+  const categorias = useMemo(() => {
+    const base = form.tipo === 'Egreso' ? CATEGORIAS_EGRESO : CATEGORIAS_INGRESO
+    // Una categoría que no está en la lista (la puso el bot) se conserva en vez de perderse al editar.
+    return form.categoria && !base.some(c => c.value === form.categoria)
+      ? [...base, { value: form.categoria, label: form.categoria }]
+      : base
+  }, [form.tipo, form.categoria])
 
   const descripciones = useMemo(
     () => (form.tipo === 'Egreso' ? DESCRIPCIONES_EGRESO : DESCRIPCIONES_INGRESO),
     [form.tipo]
   )
 
+  const opcionesProfesional = useMemo(() => {
+    if (!profesionales) return null
+    const lista = [...profesionales]
+    if (form.profesional && !lista.includes(form.profesional)) lista.push(form.profesional)
+    return lista
+  }, [profesionales, form.profesional])
+
   const esOtraDescripcion = form.descripcionPreset === OTRO_VALUE
 
   const update = (field) => (e) => {
     const value = e.target.value
+    setForm(f => ({ ...f, [field]: value }))
+  }
+
+  // Cambiar el tipo: la categoría de uno no vale para el otro; el estado conserva si estaba pendiente;
+  // y una descripción que era una opción de la lista del otro tipo pasa a texto libre.
+  function cambiarTipo(tipo) {
     setForm(f => {
-      const next = { ...f, [field]: value }
-      // Si cambia el tipo, la categoría y descripción previas pueden no aplicar para el otro tipo
-      if (field === 'tipo') {
-        next.categoria = ''
-        next.descripcionPreset = ''
-        next.descripcionLibre = ''
+      if (f.tipo === tipo) return f
+      const nuevaLista = tipo === 'Egreso' ? DESCRIPCIONES_EGRESO : DESCRIPCIONES_INGRESO
+      const textoActual = f.descripcionPreset === OTRO_VALUE ? f.descripcionLibre : f.descripcionPreset
+      const sigueEnLista = nuevaLista.includes(f.descripcionPreset)
+      return {
+        ...f,
+        tipo,
+        categoria: '',
+        estado: f.estado === 'Pendiente' ? 'Pendiente' : (tipo === 'Egreso' ? 'Pagado' : 'Cobrado'),
+        descripcionPreset: sigueEnLista || !textoActual ? f.descripcionPreset : OTRO_VALUE,
+        descripcionLibre: sigueEnLista || !textoActual ? f.descripcionLibre : textoActual,
       }
-      return next
     })
   }
+
+  // ── Cuotas (solo al crear un ingreso de categoría "Cuota") ──
+  const cantidadCuotas = Math.trunc(Number(form.cuotaCantidad))
+  const mostrarCuotas = !editando && esIngreso && form.categoria === 'cuota'
+  const hayPlan = mostrarCuotas && cantidadCuotas > 1
+  const montoNum = parseFloat(form.monto)
+
+  const plan = useMemo(() => {
+    if (!hayPlan) return null
+    try {
+      return planDeCuotas({
+        total: montoNum,
+        cantidad: cantidadCuotas,
+        primerVencimiento: esFechaIso(form.cuotaPrimerVencimiento) ? form.cuotaPrimerVencimiento : hoyIso(),
+        primeraCobrada: form.cuotaPrimeraCobrada,
+      })
+    } catch {
+      return null
+    }
+  }, [hayPlan, montoNum, cantidadCuotas, form.cuotaPrimerVencimiento, form.cuotaPrimeraCobrada])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -104,12 +210,26 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
       return
     }
 
-    const montoNum = parseFloat(form.monto)
     if (!Number.isFinite(montoNum) || montoNum <= 0) {
       setValidationError('Ingresá un monto válido mayor a 0.')
       return
     }
 
+    if (editando) {
+      onGuardar(cambiosDeEdicion(descripcion))
+      return
+    }
+
+    if (mostrarCuotas && (!Number.isInteger(cantidadCuotas) || cantidadCuotas < 1 || cantidadCuotas > MAX_CUOTAS)) {
+      setValidationError(`La cantidad de cuotas va de 1 a ${MAX_CUOTAS}.`)
+      return
+    }
+    if (hayPlan && !esFechaIso(form.cuotaPrimerVencimiento)) {
+      setValidationError('Elegí el vencimiento de la primera cuota.')
+      return
+    }
+
+    const contraparte = form.contraparte.trim()
     const payload = {
       tipo: form.tipo,
       descripcion,
@@ -118,39 +238,67 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
       metodoPago: form.metodoPago,
       estado: form.estado,
       categoria: form.categoria,
-      paciente: form.paciente.trim(),
-      profesional: form.profesional.trim(),
-      tratamiento: form.tratamiento.trim(),
-      proveedor: form.proveedor.trim(),
+      paciente: esIngreso ? contraparte : '',
+      proveedor: esIngreso ? '' : contraparte,
+      profesional: esIngreso ? form.profesional.trim() : '',
+      tratamiento: esIngreso ? form.tratamiento.trim() : '',
       fechaPrestacion: form.fechaPrestacion,
       fechaVencimiento: form.fechaVencimiento,
     }
-
+    if (hayPlan) {
+      payload.cuotas = {
+        cantidad: cantidadCuotas,
+        primeraCobrada: form.cuotaPrimeraCobrada,
+        primerVencimiento: form.cuotaPrimerVencimiento,
+      }
+    }
     onGuardar(payload)
   }
 
-  const esIngreso   = form.tipo === 'Ingreso'
-  const esPendiente = form.estado === 'Pendiente'
+  // En edición solo viaja lo que el usuario cambió.
+  function cambiosDeEdicion(descripcion) {
+    const orig = formularioDesde(inicial)
+    const cambios = {}
+    if (form.tipo !== orig.tipo) cambios.tipo = form.tipo
+    if (descripcion !== (inicial.descripcion || '')) cambios.descripcion = descripcion
+    if (montoNum !== Number(orig.monto)) cambios.monto = montoNum
+    if (form.moneda !== orig.moneda) cambios.moneda = form.moneda
+    if (form.estado !== orig.estado) cambios.estado = form.estado
+    if (form.metodoPago !== orig.metodoPago) cambios.metodoPago = form.metodoPago
+    if (form.categoria !== orig.categoria) cambios.categoria = form.categoria
+    const contraparte = form.contraparte.trim()
+    if (form.tipo !== orig.tipo || contraparte !== orig.contraparte) {
+      cambios.paciente = esIngreso ? contraparte : ''
+      cambios.proveedor = esIngreso ? '' : contraparte
+    }
+    if (form.profesional.trim() !== orig.profesional) cambios.profesional = form.profesional.trim()
+    if (form.tratamiento.trim() !== orig.tratamiento) cambios.tratamiento = form.tratamiento.trim()
+    if (form.fecha && form.fecha !== orig.fecha) cambios.fecha = form.fecha
+    if (form.fechaPrestacion !== orig.fechaPrestacion) cambios.fechaPrestacion = form.fechaPrestacion
+    if (form.fechaVencimiento !== orig.fechaVencimiento) cambios.fechaVencimiento = form.fechaVencimiento
+    return cambios
+  }
+
   const mensajeError = validationError || error
 
   return (
     <div className="overlay" onClick={onCerrar}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-title">Nuevo movimiento</h2>
+        <h2 className="modal-title">{editando ? 'Editar movimiento' : 'Nuevo movimiento'}</h2>
 
         <form onSubmit={handleSubmit} className="modal-form">
           {/* Tipo */}
           <div>
             <label className="form-label">Tipo</label>
             <div className="seg-group">
-              <Seg active={form.tipo === 'Ingreso'} onClick={() => setForm(f => ({ ...f, tipo: 'Ingreso', estado: 'Cobrado', categoria: '' }))}>↑ Ingreso</Seg>
-              <Seg active={form.tipo === 'Egreso'}  onClick={() => setForm(f => ({ ...f, tipo: 'Egreso',  estado: 'Pagado',  categoria: '' }))}>↓ Egreso</Seg>
+              <Seg active={esIngreso} onClick={() => cambiarTipo('Ingreso')}>↑ Ingreso</Seg>
+              <Seg active={!esIngreso} onClick={() => cambiarTipo('Egreso')}>↓ Egreso</Seg>
             </div>
           </div>
 
           <div>
             <label className="form-label">Descripción *</label>
-            <select className="form-input" value={form.descripcionPreset} onChange={update('descripcionPreset')} autoFocus>
+            <select className="form-input" value={form.descripcionPreset} onChange={update('descripcionPreset')} autoFocus={!editando}>
               <option value="" disabled>Seleccioná una opción</option>
               {descripciones.map(d => <option key={d} value={d}>{d}</option>)}
               <option value={OTRO_VALUE}>Otro/s...</option>
@@ -161,9 +309,32 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
           </div>
 
           <div>
-            <label className="form-label">Paciente / Proveedor</label>
-            <input className="form-input" value={esIngreso ? form.paciente : form.proveedor} onChange={update(esIngreso ? 'paciente' : 'proveedor')} placeholder={esIngreso ? 'Ej: García, L.' : 'Ej: MediSupply'} maxLength={100} />
+            <label className="form-label">{esIngreso ? 'Paciente' : 'Proveedor'}</label>
+            <input className="form-input" value={form.contraparte} onChange={update('contraparte')} placeholder={esIngreso ? 'Ej: García, L.' : 'Ej: MediSupply'} maxLength={100} />
           </div>
+
+          {esIngreso && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label className="form-label">Profesional</label>
+                {opcionesProfesional ? (
+                  <select className="form-input" value={form.profesional} onChange={update('profesional')}>
+                    <option value="">Sin asignar</option>
+                    {opcionesProfesional.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                ) : (
+                  <input className="form-input" value={form.profesional} onChange={update('profesional')} placeholder="Ej: Laura" maxLength={100} />
+                )}
+              </div>
+              <div>
+                <label className="form-label">Tratamiento</label>
+                <input className="form-input" value={form.tratamiento} onChange={update('tratamiento')} placeholder="Ej: Ortodoncia" maxLength={100} />
+              </div>
+              <div style={{ gridColumn: '1 / -1', marginTop: -8 }}>
+                <Hint>El profesional se usa en el reporte por profesional (/por_profesional).</Hint>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
@@ -177,22 +348,25 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
               </div>
             </div>
             <div>
-              <label className="form-label">Monto *</label>
+              <label className="form-label">{hayPlan ? 'Monto total *' : 'Monto *'}</label>
               <input className="form-input" type="number" step="0.01" min="0.01" placeholder="0" value={form.monto} onChange={update('monto')} required />
             </div>
           </div>
 
-          <div>
-            <label className="form-label">Estado</label>
-            <div className="seg-group">
-              {esIngreso
-                ? (<><Seg active={form.estado === 'Cobrado'}   onClick={() => setForm(f => ({ ...f, estado: 'Cobrado' }))}>Cobrado</Seg>
-                      <Seg active={form.estado === 'Pendiente'} onClick={() => setForm(f => ({ ...f, estado: 'Pendiente' }))}>Pendiente</Seg></>)
-                : (<><Seg active={form.estado === 'Pagado'}    onClick={() => setForm(f => ({ ...f, estado: 'Pagado' }))}>Pagado</Seg>
-                      <Seg active={form.estado === 'Pendiente'} onClick={() => setForm(f => ({ ...f, estado: 'Pendiente' }))}>Pendiente</Seg></>)
-              }
+          {!hayPlan && (
+            <div>
+              <label className="form-label">Estado</label>
+              <div className="seg-group">
+                {esIngreso
+                  ? (<><Seg active={form.estado === 'Cobrado'}   onClick={() => setForm(f => ({ ...f, estado: 'Cobrado' }))}>Cobrado</Seg>
+                        <Seg active={form.estado === 'Pendiente'} onClick={() => setForm(f => ({ ...f, estado: 'Pendiente' }))}>Pendiente</Seg></>)
+                  : (<><Seg active={form.estado === 'Pagado'}    onClick={() => setForm(f => ({ ...f, estado: 'Pagado' }))}>Pagado</Seg>
+                        <Seg active={form.estado === 'Pendiente'} onClick={() => setForm(f => ({ ...f, estado: 'Pendiente' }))}>Pendiente</Seg></>)
+                }
+              </div>
+              {esPendiente && <Hint>Pendiente = todavía no se {esIngreso ? 'cobró' : 'pagó'}. Aparece en los pendientes hasta que lo marques.</Hint>}
             </div>
-          </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
@@ -212,15 +386,71 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
             </div>
           </div>
 
+          {/* Plan de cuotas */}
+          {mostrarCuotas && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 14, display: 'grid', gap: 12, background: 'var(--surface)' }}>
+              <div>
+                <label className="form-label">¿En cuántas cuotas?</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min="1"
+                  max={MAX_CUOTAS}
+                  step="1"
+                  value={form.cuotaCantidad}
+                  onChange={update('cuotaCantidad')}
+                  style={{ maxWidth: 120 }}
+                />
+                <Hint>El monto de arriba es el total y se reparte en partes iguales, una por mes. Con 1 se carga un solo pago.</Hint>
+              </div>
+
+              {hayPlan && (
+                <>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={form.cuotaPrimeraCobrada} onChange={e => setForm(f => ({ ...f, cuotaPrimeraCobrada: e.target.checked }))} />
+                    La primera cuota ya está cobrada
+                  </label>
+                  <div>
+                    <label className="form-label">Vencimiento de la primera cuota</label>
+                    <input className="form-input" type="date" value={form.cuotaPrimerVencimiento} onChange={update('cuotaPrimerVencimiento')} style={{ maxWidth: 180 }} />
+                    <Hint>Las siguientes vencen el mismo día de cada mes.</Hint>
+                  </div>
+                  {plan ? (
+                    <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>
+                      <strong>Se van a crear {plan.length} cuotas</strong> de {formatMontoConMoneda(plan[0].monto, form.moneda)}
+                      {plan[plan.length - 1].monto !== plan[0].monto && <> (la última, de {formatMontoConMoneda(plan[plan.length - 1].monto, form.moneda)})</>}
+                      , total {formatMontoConMoneda(montoNum, form.moneda)}.
+                      <br />
+                      {form.cuotaPrimeraCobrada ? `1ª cobrada hoy y ${plan.length - 1} pendientes` : `Las ${plan.length} quedan pendientes`}:{' '}
+                      {plan.filter(c => c.estado === 'Pendiente').slice(0, 3).map(c => `${c.numero}ª vence ${fechaCorta(c.vencimiento)}`).join(' · ')}
+                      {plan.filter(c => c.estado === 'Pendiente').length > 3 && ` · …y ${plan.filter(c => c.estado === 'Pendiente').length - 3} más`}.
+                    </div>
+                  ) : (
+                    <Hint>Ingresá el monto total para ver el detalle de las cuotas.</Hint>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {editando && (
+            <div>
+              <label className="form-label">Fecha del movimiento</label>
+              <input className="form-input" type="date" value={form.fecha} onChange={update('fecha')} style={{ maxWidth: 200 }} />
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label className="form-label">Fecha prestación</label>
+              <label className="form-label">Fecha de prestación</label>
               <input className="form-input" type="date" value={form.fechaPrestacion} onChange={update('fechaPrestacion')} />
+              <Hint>Cuándo se hizo el trabajo, si no fue hoy.</Hint>
             </div>
-            {esPendiente && (
+            {esPendiente && !hayPlan && (
               <div>
                 <label className="form-label">Vencimiento</label>
                 <input className="form-input" type="date" value={form.fechaVencimiento} onChange={update('fechaVencimiento')} />
+                <Hint>Hasta cuándo debería {esIngreso ? 'cobrarse' : 'pagarse'}.</Hint>
               </div>
             )}
           </div>
@@ -230,7 +460,7 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
           <div className="modal-footer">
             <button type="button" className="btn-secondary" onClick={onCerrar}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={guardando}>
-              {guardando ? 'Guardando...' : 'Guardar movimiento'}
+              {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : hayPlan ? `Crear ${cantidadCuotas} cuotas` : 'Guardar movimiento'}
             </button>
           </div>
         </form>

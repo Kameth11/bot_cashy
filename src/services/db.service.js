@@ -66,6 +66,11 @@ function mapDbTipoToLegacyDisplay(tipo) {
   return tipo || 'Ingreso';
 }
 
+// ¿Este valor de "Tipo" (de una fila del Sheet o de la base) es un egreso?
+function esTipoEgreso(tipo) {
+  return ['egreso', 'gasto'].includes(normalizeDbValue(tipo));
+}
+
 function mapDbStateToLegacyDisplay(estado) {
   const normalized = normalizeDbValue(estado).replace(/\s+/g, '_');
   if (normalized === 'pendiente') return 'Pendiente';
@@ -497,6 +502,11 @@ function formatLegacyDate(value) {
     return String(value);
   }
 
+  // Una fecha sola ("2026-10-07", como las columnas DATE) se reordena tal cual. Pasarla por new Date() la
+  // toma como medianoche UTC y, en una zona al oeste de UTC (Argentina), la muestra un día antes.
+  const soloFecha = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (soloFecha) return `${soloFecha[3]}/${soloFecha[2]}/${soloFecha[1]}`;
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
 
@@ -774,6 +784,15 @@ function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
         'montopesos': 'monto_pesos',
         'FechaCobro': 'fecha_cobro',
         'fechacobro': 'fecha_cobro',
+        'Tipo': 'tipo',
+        'Fecha': 'fecha',
+        'Categoria': 'categoria',
+        'Paciente': 'paciente',
+        'Profesional': 'profesional',
+        'Tratamiento': 'tratamiento',
+        'Proveedor': 'proveedor',
+        'FechaPrestacion': 'fecha_prestacion',
+        'FechaVencimiento': 'fecha_vencimiento',
       };
       if (map[field]) {
         this._updates = this._updates || {};
@@ -792,9 +811,25 @@ function buildLegacySupabaseRowWrapper(userId, tenantId, row) {
         if (updates.fecha_cobro !== undefined) {
           updates.fecha_cobro = toDbDate(updates.fecha_cobro) || null;
         }
+        // La base guarda el tipo en minúscula y las fechas como DATE; las columnas de texto opcionales,
+        // null cuando se vacían.
+        if (updates.tipo !== undefined) updates.tipo = getTipoMovimientoFromLegacy(updates.tipo);
+        for (const campo of ['fecha', 'fecha_prestacion', 'fecha_vencimiento']) {
+          if (updates[campo] !== undefined) updates[campo] = toDbDate(updates[campo]) || null;
+        }
+        if (updates.fecha === null) delete updates.fecha; // la fecha del movimiento no puede quedar vacía
+        for (const campo of ['categoria', 'paciente', 'profesional', 'tratamiento', 'proveedor']) {
+          if (updates[campo] !== undefined) updates[campo] = updates[campo] || null;
+        }
         if (!legacyCapabilities.extendedMovimientos) {
           delete updates.medio_pago;
           delete updates.referencia_id;
+          delete updates.categoria;
+        }
+        if (!legacyCapabilities.extendedCampos) {
+          for (const campo of ['paciente', 'profesional', 'tratamiento', 'proveedor', 'fecha_prestacion', 'fecha_vencimiento']) {
+            delete updates[campo];
+          }
         }
         if (!legacyCapabilities.fechaCobro) {
           delete updates.fecha_cobro;
@@ -1069,14 +1104,27 @@ async function syncRowUpdateToSheet(userId, rowIdUnico, updates = {}) {
     id_origen: 'ID_Origen',
     referencia_id: 'ReferenciaId',
     fecha_cobro: 'FechaCobro',
+    tipo: 'Tipo',
+    fecha: 'Fecha',
+    categoria: 'Categoria',
+    paciente: 'Paciente',
+    profesional: 'Profesional',
+    tratamiento: 'Tratamiento',
+    proveedor: 'Proveedor',
+    fecha_prestacion: 'FechaPrestacion',
+    fecha_vencimiento: 'FechaVencimiento',
   };
+  const columnasFecha = new Set(['fecha_cobro', 'fecha', 'fecha_prestacion', 'fecha_vencimiento']);
 
   for (const [key, value] of Object.entries(updates)) {
     if (fieldMap[key]) {
-      // fecha_cobro llega en ISO (o null) desde el wrapper de Supabase; el
-      // Sheet usa el mismo formato DD/MM/YYYY que el resto de las columnas
-      // de fecha.
-      const sheetValue = key === 'fecha_cobro' ? formatLegacyDate(value) : value;
+      // Las fechas llegan en ISO (o null) desde el wrapper de Supabase; el Sheet usa el mismo formato
+      // DD/MM/YYYY que el resto de las columnas de fecha. El tipo llega en minúscula: el Sheet usa
+      // "Ingreso"/"Egreso". Los textos vaciados (null) quedan como celda vacía.
+      let sheetValue = value;
+      if (columnasFecha.has(key)) sheetValue = formatLegacyDate(value);
+      else if (key === 'tipo') sheetValue = mapDbTipoToLegacyDisplay(value);
+      else if (value === null) sheetValue = '';
       sheetRow.set(fieldMap[key], sheetValue);
     }
   }
@@ -1429,7 +1477,34 @@ async function updateMovimiento(userId, idUnico, updates) {
       montoPesos:  'MontoPesos',
       fechaCobro:  'FechaCobro',
       fecha_cobro: 'FechaCobro',
+      // Campos que antes no se podían editar desde el dashboard.
+      tipo:            'Tipo',
+      fecha:           'Fecha',
+      categoria:       'Categoria',
+      paciente:        'Paciente',
+      profesional:     'Profesional',
+      tratamiento:     'Tratamiento',
+      proveedor:       'Proveedor',
+      fechaPrestacion: 'FechaPrestacion',
+      fechaVencimiento: 'FechaVencimiento',
     };
+
+    // El signo del monto sigue al TIPO, igual que al crear: los egresos se guardan en negativo. Sin esto,
+    // editar el monto de un egreso lo dejaba en positivo, y cambiar el tipo no daba vuelta el signo.
+    // Si la fila no trae tipo (datos muy viejos), se deduce del signo que ya tiene el monto.
+    const tipoGuardado = row.get('Tipo');
+    const tipoPrevio = tipoGuardado
+      ? (esTipoEgreso(tipoGuardado) ? 'Egreso' : 'Ingreso')
+      : (parseFloat(row.get('Monto')) < 0 ? 'Egreso' : 'Ingreso');
+    const tipoFinal = updates.tipo !== undefined ? (esTipoEgreso(updates.tipo) ? 'Egreso' : 'Ingreso') : tipoPrevio;
+    if (updates.tipo !== undefined) updates = { ...updates, tipo: tipoFinal };
+    if (updates.monto !== undefined) {
+      const abs = Math.abs(Number(updates.monto));
+      updates = { ...updates, monto: tipoFinal === 'Egreso' ? -abs : abs };
+    } else if (tipoFinal !== tipoPrevio) {
+      const actual = parseFloat(row.get('Monto'));
+      if (Number.isFinite(actual) && actual !== 0) updates = { ...updates, monto: tipoFinal === 'Egreso' ? -Math.abs(actual) : Math.abs(actual) };
+    }
 
     // Stampear/limpiar FechaCobro solo en la transición real de estado, no en
     // cualquier edición. Cobrado -> Pendiente limpia la fecha: si no, quedaría

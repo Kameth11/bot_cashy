@@ -19,7 +19,7 @@ import ConfigPage from './pages/ConfigPage'
 import PersonalPage from './pages/PersonalPage'
 import CasaPage from './pages/CasaPage'
 import { api } from './services/api'
-import { deshacerAlta } from './services/deshacer'
+import { deshacerAlta, deshacerAltas } from './services/deshacer'
 
 function LayoutWithModal() {
   const { showNuevo, closeNuevo, nuevoError, setNuevoError, creando, setCreando, triggerReload, mostrarToast } = useApp()
@@ -69,7 +69,12 @@ function LayoutWithModal() {
       triggerReload()
       // Solo los movimientos del consultorio tienen deshacer por ahora.
       const esConsultorio = !casaId && !enPersonal
-      mostrarToast('Movimiento guardado', esConsultorio ? deshacerAlta(data?.movimiento?.idUnico) : null)
+      const cuotas = Array.isArray(data?.movimientos) ? data.movimientos : null
+      if (esConsultorio && cuotas && cuotas.length > 1) {
+        mostrarToast(`${cuotas.length} cuotas creadas`, deshacerAltas(cuotas.map(c => c.idUnico)))
+      } else {
+        mostrarToast('Movimiento guardado', esConsultorio ? deshacerAlta(data?.movimiento?.idUnico) : null)
+      }
     } catch (err) {
       const msg = err?.response?.data?.error || err?.message || 'Error al guardar el movimiento'
       setNuevoError(msg)

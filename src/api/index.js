@@ -47,6 +47,7 @@ const { normalizarDescripcion, validarMonto } = require('../utils/validation');
 const { esFechaValidaDdmmaaaa } = require('../utils/date');
 const { obtenerCotizacionDolar } = require('../services/cotizacion.service');
 const eventsService = require('../services/events.service');
+const { planDeCuotas, esFechaIso, MAX_CUOTAS } = require('../utils/cuotas');
 const loginTelegram = require('../services/login-telegram.service');
 const { puedeUsarPersonal } = require('../auth/personal-acceso');
 const { obtenerUsernameBot } = require('../lib/bot-info');
@@ -294,6 +295,16 @@ function validarFechaOpcional(valor) {
     return { ok: false };
   }
   return { ok: true, valor: texto };
+}
+
+// Fecha de un formulario de edición: AAAA-MM-DD (input de fecha) o DD/MM/AAAA, o vacía. Devuelve
+// DD/MM/AAAA, que es como se guardan las fechas en el Sheet y se leen en todo el sistema.
+function fechaDeEdicion(valor) {
+  if (valor === null || valor === '' || valor === undefined) return { ok: true, valor: '' };
+  const texto = String(valor).trim();
+  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const ddmm = iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : texto;
+  return esFechaValidaDdmmaaaa(ddmm) ? { ok: true, valor: ddmm } : { ok: false };
 }
 
 // Códigos de acceso del dashboard. Supabase (auth_codes) es la fuente de verdad
@@ -685,20 +696,68 @@ app.post('/api/movimientos', authMiddleware, requierePermiso('cargar_movimientos
       await obtenerCotizacionDolar();
     }
 
-    const resultado = await guardarMovimiento(req.user.userId, {
-      descripcion: descripcionValidada.valor,
-      monto,
+    const datosComunes = {
       tipo,
       moneda,
-      metodoPago,
-      estado,
       categoria:         sanitizarInput(body.categoria, 40),
       pacienteNombre:    sanitizarInput(body.paciente, 100),
       profesionalNombre: sanitizarInput(body.profesional, 100),
       tratamientoNombre: sanitizarInput(body.tratamiento, 100),
       proveedorNombre:   sanitizarInput(body.proveedor, 100),
       fechaPrestacion:   fechaPrestacionValidada.valor,
-      fechaVencimiento:  fechaVencimientoValidada.valor,
+    };
+
+    // Plan de cuotas: el monto es el TOTAL y se reparte en N movimientos, uno por mes (ver utils/cuotas.js).
+    // La primera queda cobrada (salvo que se pida lo contrario) y las demás pendientes, con su vencimiento.
+    const pedidoCuotas = body.cuotas && typeof body.cuotas === 'object' ? body.cuotas : null;
+    const cantidadCuotas = pedidoCuotas ? Math.trunc(Number(pedidoCuotas.cantidad)) : 1;
+    if (pedidoCuotas && cantidadCuotas !== 1 && !(cantidadCuotas > 1)) {
+      return res.status(400).json({ error: `La cantidad de cuotas va de 1 a ${MAX_CUOTAS}` });
+    }
+    if (cantidadCuotas > 1) {
+      if (tipo !== 'Ingreso') return res.status(400).json({ error: 'Las cuotas son solo para ingresos' });
+      if (cantidadCuotas > MAX_CUOTAS) return res.status(400).json({ error: `La cantidad de cuotas va de 1 a ${MAX_CUOTAS}` });
+      const hoyIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+      const primerVencimiento = pedidoCuotas.primerVencimiento ? String(pedidoCuotas.primerVencimiento).trim() : hoyIso;
+      if (!esFechaIso(primerVencimiento)) return res.status(400).json({ error: 'El vencimiento de la primera cuota es inválido' });
+
+      const plan = planDeCuotas({ total: montoAbs, cantidad: cantidadCuotas, primerVencimiento, primeraCobrada: pedidoCuotas.primeraCobrada !== false });
+      const creados = [];
+      try {
+        for (const cuota of plan) {
+          const r = await guardarMovimiento(req.user.userId, {
+            ...datosComunes,
+            descripcion: `${descripcionValidada.valor} (cuota ${cuota.numero}/${cuota.de})`,
+            monto: cuota.monto,
+            estado: cuota.estado,
+            // El método de pago es el de lo que se cobró hoy: las pendientes todavía no se pagaron.
+            metodoPago: cuota.estado === 'Cobrado' ? metodoPago : '',
+            fechaVencimiento: cuota.vencimiento,
+          });
+          if (!r) throw new Error('movimiento_no_guardado');
+          creados.push(r);
+        }
+      } catch (err) {
+        // No se deja un plan a medias: se deshace lo que alcanzó a crearse.
+        for (const r of creados) {
+          try { await deleteMovimiento(req.user.userId, r.idUnico); } catch (e) { logger.error('API', 'No se pudo deshacer una cuota', { err: e.message }); }
+        }
+        invalidarCacheMovimientos(req.user.userId);
+        logger.error('API', 'Error creando cuotas', { err: err.message, creadas: creados.length, de: plan.length });
+        return res.status(500).json({ error: 'No se pudieron crear las cuotas. No se guardó ninguna.' });
+      }
+      invalidarCacheMovimientos(req.user.userId);
+      logger.audit('movimiento_cuotas_created', { userId: req.user.userId, total: montoAbs, cuotas: creados.length });
+      return res.status(201).json({ movimientos: creados, movimiento: creados[0], cuotas: creados.length });
+    }
+
+    const resultado = await guardarMovimiento(req.user.userId, {
+      ...datosComunes,
+      descripcion: descripcionValidada.valor,
+      monto,
+      metodoPago,
+      estado,
+      fechaVencimiento: fechaVencimientoValidada.valor,
     });
 
     if (!resultado) return res.status(500).json({ error: 'No se pudo guardar el movimiento' });
@@ -727,9 +786,31 @@ app.put('/api/movimientos/:idUnico', authMiddleware, requierePermiso('editar_mov
       if (!monto.ok) return res.status(400).json({ error: 'El monto es inválido' });
       updates.monto = monto.valor;
     }
-    if (body.estado      !== undefined) updates.estado      = ['Cobrado', 'Pendiente'].includes(body.estado) ? body.estado : undefined;
+    // "Pagado" es como se llama "Cobrado" en un egreso (así lo muestra el formulario): se guarda igual.
+    // Antes se descartaba en silencio y el cambio de estado de un egreso no se guardaba.
+    if (body.estado      !== undefined) updates.estado      = ['Cobrado', 'Pagado'].includes(body.estado) ? 'Cobrado' : body.estado === 'Pendiente' ? 'Pendiente' : undefined;
     if (body.metodoPago  !== undefined) updates.metodoPago  = ['efectivo', 'transferencia', 'tarjeta'].includes(body.metodoPago) ? body.metodoPago : '';
     if (body.moneda      !== undefined) updates.moneda      = ['Pesos', 'Dólares', 'Euros'].includes(body.moneda) ? body.moneda : undefined;
+
+    // El resto de los campos del movimiento. Cambiar el tipo da vuelta el signo del monto (lo resuelve
+    // db.updateMovimiento); los textos se pueden vaciar.
+    if (body.tipo !== undefined) {
+      if (!['Ingreso', 'Egreso'].includes(body.tipo)) return res.status(400).json({ error: 'El tipo es inválido' });
+      updates.tipo = body.tipo;
+    }
+    if (body.categoria   !== undefined) updates.categoria   = sanitizarInput(body.categoria, 40);
+    for (const campo of ['paciente', 'profesional', 'tratamiento', 'proveedor']) {
+      if (body[campo] !== undefined) updates[campo] = sanitizarInput(body[campo], 100);
+    }
+    // Fechas: llegan como AAAA-MM-DD (input de fecha) o DD/MM/AAAA, y se guardan como DD/MM/AAAA. La fecha
+    // del movimiento no puede quedar vacía; la de prestación y el vencimiento sí.
+    for (const [campo, etiqueta, puedeVaciarse] of [['fecha', 'La fecha', false], ['fechaPrestacion', 'La fecha de prestación', true], ['fechaVencimiento', 'La fecha de vencimiento', true]]) {
+      if (body[campo] === undefined) continue;
+      const f = fechaDeEdicion(body[campo]);
+      if (!f.ok) return res.status(400).json({ error: `${etiqueta} es inválida` });
+      if (f.valor === '' && !puedeVaciarse) continue;
+      updates[campo] = f.valor;
+    }
     Object.keys(updates).forEach(k => updates[k] === undefined && delete updates[k]);
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No hay campos validos para actualizar' });
 

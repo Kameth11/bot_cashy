@@ -163,6 +163,26 @@ servicio Endodoncia U$50 transferencia
 gasto Insumos $-500
 ```
 
+### Movimientos desde el dashboard: editar todo y plan de cuotas
+
+- **Un solo formulario** (`dashboard/src/components/NuevoMovimientoModal.jsx`) sirve para crear y para
+  **editar** (prop `inicial`), tanto en Movimientos como en el Dashboard. Antes la edición solo cambiaba
+  descripción, monto, estado y método de pago. Ahora se edita **todo**: tipo, descripción, paciente /
+  proveedor, profesional, tratamiento, moneda, monto, estado, método de pago, categoría, fecha del
+  movimiento, fecha de prestación y vencimiento. `PUT /api/movimientos/:id` manda a `db.updateMovimiento`, que
+  escribe en Supabase y en el Sheet (columnas en `fieldMap`, y mapeo en el wrapper de Supabase y en
+  `syncRowUpdateToSheet`); respeta qué columnas existen en la base (`extendedMovimientos`/`extendedCampos`).
+- **El signo del monto sigue al tipo** (egresos negativos, como al crear): editar el monto de un egreso lo
+  deja negativo y cambiar el tipo da vuelta el signo del monto y del monto en pesos. "Pagado" (el estado de
+  un egreso en el formulario) se guarda como "Cobrado".
+- **Plan de cuotas**: al elegir categoría "Cuota" el formulario pregunta cuántas son. El monto es el **TOTAL**
+  y se reparte en N movimientos (2 a 24), uno por mes, con "(cuota k/N)" en la descripción. La primera queda
+  cobrada hoy (casilla "ya está cobrada") y las demás pendientes con su vencimiento; la suma es siempre el
+  total exacto (la última absorbe el redondeo). Con 1 cuota es un movimiento normal. Si una cuota falla al
+  guardar, se deshacen las ya creadas (nunca queda un plan a medias). Lógica en `src/utils/cuotas.js`; la vista
+  previa de la pantalla (`dashboard/src/utils/cuotas.js`) es una copia: **si se cambia una, correr
+  `node scripts/verificar-paridad-cuotas.mjs`**.
+
 ### Resúmenes por período en lenguaje natural
 
 "cómo me fue ayer", "cuánto gasté el mes pasado", "resumen del año", "cuánto cobré en marzo",

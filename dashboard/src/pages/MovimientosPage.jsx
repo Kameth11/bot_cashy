@@ -13,6 +13,7 @@ import ComprobanteModal from '../components/ComprobanteModal'
 import SubirComprobanteModal from '../components/SubirComprobanteModal'
 import { useAuth } from '../hooks/useAuth'
 import DetalleMovimientoModal from '../components/DetalleMovimientoModal'
+import NuevoMovimientoModal from '../components/NuevoMovimientoModal'
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -201,9 +202,10 @@ export default function MovimientosPage() {
   return (
     <div className="page">
       {editando && (
-        <EditModal
-          mov={editando} guardando={guardando} error={modalError}
-          onGuardar={handleGuardar}
+        <NuevoMovimientoModal
+          inicial={editando} guardando={guardando} error={modalError}
+          // Sin cambios no hay nada que guardar (el servidor lo rechazaría): se cierra y listo.
+          onGuardar={(updates) => (Object.keys(updates).length ? handleGuardar(editando.idUnico, updates) : setEditando(null))}
           onCerrar={() => { setEditando(null); setModalError(null) }}
         />
       )}
@@ -441,61 +443,6 @@ export default function MovimientosPage() {
             </div>
           </>
         )}
-      </div>
-    </div>
-  )
-}
-
-// ── Edit modal ─────────────────────────────────────────────
-
-function EditModal({ mov, guardando, error, onGuardar, onCerrar }) {
-  const [descripcion, setDescripcion] = useState(mov.descripcion || '')
-  const [monto,       setMonto]       = useState(String(Math.abs(Number(mov.monto || 0))))
-  const [estado,      setEstado]      = useState(mov.estado || 'Cobrado')
-  const [metodoPago,  setMetodoPago]  = useState(mov.metodoPago || '')
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    const updates = {}
-    if (descripcion !== mov.descripcion) updates.descripcion = descripcion
-    const n = parseFloat(monto)
-    if (!isNaN(n) && n !== Math.abs(Number(mov.monto || 0))) updates.monto = n
-    if (estado !== mov.estado) updates.estado = estado
-    if (metodoPago !== (mov.metodoPago || '')) updates.metodoPago = metodoPago
-    if (!Object.keys(updates).length) return onCerrar()
-    onGuardar(mov.idUnico, updates)
-  }
-
-  return (
-    <div className="overlay" onClick={onCerrar}>
-      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-title" style={{ fontSize: 16 }}>Editar movimiento</h2>
-        <form onSubmit={handleSubmit} className="modal-form">
-          <div><label className="form-label">Descripción</label><input className="form-input" value={descripcion} onChange={e => setDescripcion(e.target.value)} required /></div>
-          <div><label className="form-label">Monto</label><input className="form-input" type="number" step="0.01" min="0" value={monto} onChange={e => setMonto(e.target.value)} required /></div>
-          <div>
-            <label className="form-label">Estado</label>
-            <select className="form-input" value={estado} onChange={e => setEstado(e.target.value)}>
-              <option value="Cobrado">Cobrado</option>
-              <option value="Pendiente">Pendiente</option>
-              <option value="Pagado">Pagado</option>
-            </select>
-          </div>
-          <div>
-            <label className="form-label">Método de pago</label>
-            <select className="form-input" value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
-              <option value="">Sin especificar</option>
-              <option value="efectivo">Efectivo</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="tarjeta">Tarjeta</option>
-            </select>
-          </div>
-          {error && <div className="error-box">{error}</div>}
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onCerrar}>Cancelar</button>
-            <button type="submit" className="btn-primary" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
-          </div>
-        </form>
       </div>
     </div>
   )
