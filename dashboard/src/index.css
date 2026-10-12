@@ -230,6 +230,14 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 }
 .action-btn:hover { opacity: 1; background: var(--surface); }
 
+.btn-cobrar {
+  background: none; border: 1px solid var(--green); color: var(--green);
+  border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 700;
+  white-space: nowrap; cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.btn-cobrar:hover:not(:disabled) { background: var(--green); color: #fff; }
+.btn-cobrar:disabled { opacity: 0.5; cursor: default; }
+
 /* ── Filter bar ──────────────────────────────────────────── */
 
 .filter-bar {

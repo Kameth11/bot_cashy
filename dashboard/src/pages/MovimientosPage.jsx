@@ -65,6 +65,7 @@ export default function MovimientosPage() {
   const [comprobantes,  setComprobantes]  = useState([])
   const [viendoComp,    setViendoComp]    = useState(null)
   const [viendo,        setViendo]        = useState(null)   // movimiento abierto en el detalle
+  const [cobrandoId,    setCobrandoId]    = useState(null)   // idUnico del pendiente que se está cobrando
 
   useEffect(() => {
     let active = true
@@ -136,6 +137,21 @@ export default function MovimientosPage() {
     } finally { setGuardando(false) }
   }, [editando, movimientos, mostrarToast])
 
+  // Cobrar (o pagar, si es egreso) un pendiente con un click: misma edición de estado que el formulario.
+  const handleCobrar = useCallback(async (mov) => {
+    if (!mov?.idUnico) { setError('Sin ID único — editalo en el Sheet.'); return }
+    setCobrandoId(mov.idUnico)
+    setError(null)
+    try {
+      await api.put(`/api/movimientos/${mov.idUnico}`, { estado: 'Cobrado' })
+      setReload(r => r + 1)
+      const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
+      mostrarToast(esEgreso ? 'Movimiento pagado' : 'Movimiento cobrado', deshacerEdicion(mov, { estado: 'Cobrado' }))
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Error al cobrar el movimiento')
+    } finally { setCobrandoId(null) }
+  }, [mostrarToast])
+
   const handleBorrar = useCallback(async (idUnico, mov) => {
     setModalError(null)
     setBorrando(true)
@@ -196,6 +212,21 @@ export default function MovimientosPage() {
       || (String(mov.referenciaId || '').startsWith('comp:') ? porId.get(mov.referenciaId.slice(5)) : null)
       || null
   }, [comprobantes])
+
+  // Botón "Cobrar" de los pendientes (o "Pagar" si es un egreso). Solo con permiso de editar.
+  const botonCobrar = (mov) => {
+    if (mov.estado?.toLowerCase() !== 'pendiente' || !mov.idUnico || !puede('editar_movimientos')) return null
+    const esEgreso = mov.tipo?.toLowerCase() === 'egreso'
+    return (
+      <button
+        className="btn-cobrar" disabled={cobrandoId === mov.idUnico}
+        title={esEgreso ? 'Marcar como pagado' : 'Marcar como cobrado'}
+        onClick={() => handleCobrar(mov)}
+      >
+        {cobrandoId === mov.idUnico ? '…' : `✓ ${esEgreso ? 'Pagar' : 'Cobrar'}`}
+      </button>
+    )
+  }
 
   const hasFilters = tipo !== 'todos' || estado !== 'todos' || moneda !== 'todas' || q.trim() || fecha
 
@@ -352,7 +383,7 @@ export default function MovimientosPage() {
                   <th>Moneda</th>
                   <th className="right">Monto</th>
                   <th>Estado</th>
-                  <th style={{ width: 90 }} />
+                  <th style={{ width: 150 }} />
                 </tr>
               </thead>
               <tbody>
@@ -387,6 +418,7 @@ export default function MovimientosPage() {
                       </td>
                       <td onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                          {botonCobrar(mov)}
                           {comprobantePorMov(mov) && (
                             <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantePorMov(mov))}>📎</button>
                           )}
@@ -430,7 +462,8 @@ export default function MovimientosPage() {
                   {(mov.paciente || mov.profesional) && <div className="mov-card-sub">{mov.paciente || mov.profesional}</div>}
                   <div className="mov-card-bottom">
                     <MontoCell mov={mov} />
-                    <div style={{ display: 'flex', gap: 2 }} onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', gap: 2, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                      {botonCobrar(mov)}
                       {comprobantePorMov(mov) && (
                         <button className="action-btn" title="Ver comprobante" onClick={() => setViendoComp(comprobantePorMov(mov))}>📎</button>
                       )}

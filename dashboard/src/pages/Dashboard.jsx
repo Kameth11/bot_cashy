@@ -7,6 +7,7 @@ import { CurrencyBadge, StatusBadge, MontoCell } from '../components/Money'
 import { formatFecha as fmtFecha } from '../utils/format'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 import { useApp } from '../contexts/AppContext'
+import { useAuth } from '../hooks/useAuth'
 import { ordenarPorFechaDesc } from '../utils/movimientos'
 import NuevoMovimientoModal from '../components/NuevoMovimientoModal'
 
@@ -21,6 +22,7 @@ const formatFecha = (v) => fmtFecha(v, 'dd/MM')
 export default function Dashboard() {
   const navigate = useNavigate()
   const { reloadSignal, mostrarToast } = useApp()
+  const { puede } = useAuth()
 
   const [period,      setPeriod]      = useState('este-mes')
   const [movimientos, setMovimientos] = useState([])
@@ -35,6 +37,7 @@ export default function Dashboard() {
   const [confirmDelete,  setConfirmDelete]  = useState(null)
   const [borrando,       setBorrando]       = useState(false)
   const [modalError,     setModalError]     = useState(null)
+  const [cobrandoId,     setCobrandoId]     = useState(null)
 
   const range = useMemo(() => {
     const now = new Date()
@@ -140,6 +143,20 @@ export default function Dashboard() {
     } finally { setGuardando(false) }
   }, [editando, movimientos, mostrarToast])
 
+  // Cobrar (o pagar, si es egreso) un pendiente con un click desde la tarjeta "Pendientes".
+  const handleCobrar = useCallback(async (mov) => {
+    if (!mov?.idUnico) return
+    setCobrandoId(mov.idUnico)
+    setError(null)
+    try {
+      await api.put(`/api/movimientos/${mov.idUnico}`, { estado: 'Cobrado' })
+      setReload(r => r + 1)
+      mostrarToast(mov.tipo?.toLowerCase() === 'egreso' ? 'Movimiento pagado' : 'Movimiento cobrado', deshacerEdicion(mov, { estado: 'Cobrado' }))
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Error al cobrar el movimiento')
+    } finally { setCobrandoId(null) }
+  }, [mostrarToast])
+
   const handleBorrar = useCallback(async (idUnico, mov) => {
     setModalError(null)
     setBorrando(true)
@@ -226,6 +243,8 @@ export default function Dashboard() {
           subtitle={metricas.pendientes === 1 ? 'total acumulado' : `${metricas.pendientes} total acumulado`}
           variant="pendientes"
           items={metricas.pendientesArr}
+          onCobrar={puede('editar_movimientos') ? handleCobrar : undefined}
+          cobrandoId={cobrandoId}
         />
         <MetricCard
           label="Neto del período"

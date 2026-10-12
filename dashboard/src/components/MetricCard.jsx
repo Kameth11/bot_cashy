@@ -16,7 +16,7 @@ function formatFechaCorta(value) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
 }
 
-export default function MetricCard({ label, value, subtitle, variant = 'default', breakdown, items }) {
+export default function MetricCard({ label, value, subtitle, variant = 'default', breakdown, items, onCobrar, cobrandoId }) {
   const [hovered, setHovered] = useState(false)
   const [pinned, setPinned] = useState(false)
   const cardRef = useRef(null)
@@ -103,8 +103,18 @@ export default function MetricCard({ label, value, subtitle, variant = 'default'
                 <span style={{ color: '#8993A4', fontSize: 11, marginRight: 6 }}>{formatFechaCorta(m.fecha)}</span>
                 {m.descripcion || m.paciente || m.proveedor || 'Sin descripción'}
               </span>
-              <span style={{ fontWeight: 600, flexShrink: 0 }}>
+              <span style={{ fontWeight: 600, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 {formatMontoMoneda(m.moneda || 'Pesos', Math.abs(Number(m.monto || 0)))}
+                {onCobrar && m.idUnico && (
+                  <button
+                    className="btn-cobrar" disabled={cobrandoId === m.idUnico}
+                    title={m.tipo?.toLowerCase() === 'egreso' ? 'Marcar como pagado' : 'Marcar como cobrado'}
+                    style={{ color: '#79F2C0', borderColor: '#79F2C0' }}
+                    onClick={(e) => { e.stopPropagation(); onCobrar(m) }}
+                  >
+                    {cobrandoId === m.idUnico ? '…' : '✓'}
+                  </button>
+                )}
               </span>
             </div>
           ))}
