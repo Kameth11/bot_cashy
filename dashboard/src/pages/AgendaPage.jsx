@@ -124,6 +124,31 @@ export default function AgendaPage() {
   const [creando, setCreando] = useState(false)
   const [fecha, setFecha] = useState(hoyMedianoche)
   const [dropdownAbierto, setDropdownAbierto] = useState(null)
+  const [menuPos, setMenuPos] = useState(null) // dónde dibujar el menú ⋮ (fijo en pantalla, ver abrirMenu)
+
+  // El menú ⋮ se dibuja con position: fixed para no quedar cortado por el borde de la columna
+  // (que tiene overflow: hidden). Como queda "suelto" de la tarjeta, se cierra si se hace scroll
+  // o se cambia el tamaño de la ventana, para que no flote en un lugar equivocado.
+  useEffect(() => {
+    if (!dropdownAbierto) return undefined
+    const cerrar = () => setDropdownAbierto(null)
+    window.addEventListener('scroll', cerrar, true)
+    window.addEventListener('resize', cerrar)
+    return () => { window.removeEventListener('scroll', cerrar, true); window.removeEventListener('resize', cerrar) }
+  }, [dropdownAbierto])
+
+  function abrirMenu(ev, idTurno) {
+    ev.stopPropagation()
+    if (dropdownAbierto === idTurno) { setDropdownAbierto(null); return }
+    const r = ev.currentTarget.getBoundingClientRect()
+    const ALTO_MENU = 90
+    const abreArriba = r.bottom + ALTO_MENU + 8 > window.innerHeight && r.top > ALTO_MENU
+    setMenuPos({
+      right: Math.max(8, window.innerWidth - r.right),
+      ...(abreArriba ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+    })
+    setDropdownAbierto(idTurno)
+  }
   const [sheetTurno, setSheetTurno] = useState(null) // hoja de acciones (celular)
   const [aviso, setAviso] = useState(null)
   const [registrados, setRegistrados] = useState([]) // profesionales dados de alta (dashboard o /profesional)
@@ -468,15 +493,15 @@ export default function AgendaPage() {
                                   className="action-btn"
                                   title="Más opciones"
                                   disabled={accionando === turno.idTurno}
-                                  onClick={ev => { ev.stopPropagation(); setDropdownAbierto(d => d === turno.idTurno ? null : turno.idTurno) }}
+                                  onClick={ev => abrirMenu(ev, turno.idTurno)}
                                   style={{ fontSize: 14, fontWeight: 700, padding: '0 6px' }}
                                 >
                                   ⋮
                                 </button>
-                                {dropdownAbierto === turno.idTurno && (
+                                {dropdownAbierto === turno.idTurno && menuPos && (
                                   <>
                                     <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setDropdownAbierto(null)} />
-                                    <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(9,30,66,.15)', zIndex: 100, minWidth: 130, overflow: 'hidden' }}>
+                                    <div style={{ position: 'fixed', ...menuPos, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(9,30,66,.15)', zIndex: 100, minWidth: 130, overflow: 'hidden' }}>
                                       <button
                                         style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}
                                         onClick={() => handleCancelar(turno)}
