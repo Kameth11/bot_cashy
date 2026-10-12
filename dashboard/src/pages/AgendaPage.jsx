@@ -3,6 +3,7 @@ import { Pencil, Trash2 } from 'lucide-react'
 import { api } from '../services/api'
 import DatePickerButton from '../components/DatePickerButton'
 import MotivoConsulta from '../components/MotivoConsulta'
+import { opcionesDeHora } from '../utils/horarios'
 import { useMovimientosEvents } from '../hooks/useMovimientosEvents'
 
 const pad2 = n => String(n).padStart(2, '0')
@@ -633,12 +634,14 @@ export default function AgendaPage() {
               </div>
               <div>
                 <label className="form-label">Hora</label>
-                <input
-                  type="time"
+                <select
                   className="form-input"
                   value={editForm.hora}
                   onChange={e => setEditForm(f => ({ ...f, hora: e.target.value }))}
-                />
+                >
+                  <option value="">Sin hora</option>
+                  {opcionesDeHora(editForm.hora).map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
               </div>
               <div>
                 <label className="form-label">Profesional</label>
@@ -685,12 +688,14 @@ export default function AgendaPage() {
               </div>
               <div>
                 <label className="form-label">Hora</label>
-                <input
-                  type="time"
+                <select
                   className="form-input"
                   value={nuevoForm.hora}
                   onChange={e => setNuevoForm(f => ({ ...f, hora: e.target.value }))}
-                />
+                >
+                  <option value="">Sin hora</option>
+                  {opcionesDeHora(nuevoForm.hora).map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
               </div>
               <div>
                 <label className="form-label">Motivo</label>
