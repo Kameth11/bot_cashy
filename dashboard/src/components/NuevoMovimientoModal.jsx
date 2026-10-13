@@ -122,11 +122,16 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
   const [validationError, setValidationError] = useState(null)
   const [profesionales, setProfesionales] = useState(null) // null = no se pudo leer: se escribe a mano
 
-  // Los profesionales ya registrados (y los que figuran en la agenda). Sin permiso de agenda, se escribe a mano.
+  // Los profesionales registrados (Config → Profesionales): cada uno que se suma aparece acá solo. Si todavía
+  // no hay ninguno registrado, los que figuran en la agenda. Sin permiso de agenda, se escribe a mano.
   useEffect(() => {
     let activo = true
     api.get('/api/profesionales')
-      .then(res => { if (activo) setProfesionales(Array.isArray(res.data?.profesionales) ? res.data.profesionales : null) })
+      .then(res => {
+        if (!activo) return
+        const registrados = Array.isArray(res.data?.registrados) ? res.data.registrados.map(p => p.nombre).filter(Boolean) : []
+        setProfesionales(registrados.length ? registrados : (Array.isArray(res.data?.profesionales) ? res.data.profesionales : null))
+      })
       .catch(() => {})
     return () => { activo = false }
   }, [])
@@ -323,7 +328,7 @@ export default function NuevoMovimientoModal({ guardando, error, onGuardar, onCe
                     {opcionesProfesional.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 ) : (
-                  <input className="form-input" value={form.profesional} onChange={update('profesional')} placeholder="Ej: Laura" maxLength={100} />
+                  <input className="form-input" value={form.profesional} onChange={update('profesional')} placeholder="Nombre del profesional" maxLength={100} />
                 )}
               </div>
               <div>

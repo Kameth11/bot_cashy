@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { api } from '../services/api'
 import DatePickerButton from '../components/DatePickerButton'
@@ -12,21 +12,34 @@ const toApiFormat = d => `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.get
 const toInputValue = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 const fromInputValue = v => { const [y, m, d] = v.split('-').map(Number); const date = new Date(y, m - 1, d); date.setHours(0, 0, 0, 0); return date }
 
-const CONSULTORIO_MAP = {
+// Consultorio -> profesional del consultorio original. Es solo el respaldo mientras nadie esté
+// registrado en Config → Profesionales (o no se pueda leer el registro): en cuanto hay profesionales
+// registrados, los nombres salen de ahí (ver `mapa` en AgendaPage), igual que en el servidor.
+const CONSULTORIO_MAP_RESPALDO = {
   'consultorio 1': 'Laura',
   'consultorio 2': 'Diego',
   'consultorio 3': '',
 }
 
-const CONSULTORIOS_CONFIG = [
-  { key: 'consultorio 1', label: 'Consultorio 1', nombre: 'Laura' },
-  { key: 'consultorio 2', label: 'Consultorio 2', nombre: 'Diego' },
-  { key: 'consultorio 3', label: 'Consultorio 3', nombre: '' },
-]
+// Siempre se muestran estas tres columnas; los nombres se completan con los profesionales registrados
+// que declararon su consultorio (y si declaran uno más, aparece también).
+const CONSULTORIOS_BASE = ['consultorio 1', 'consultorio 2', 'consultorio 3']
 
-const FILTROS_CONSULTORIO = Object.entries(CONSULTORIO_MAP)
-  .filter(([, nombre]) => nombre !== '')
-  .map(([, nombre]) => nombre)
+function etiquetaConsultorio(key) {
+  const m = key.match(/^consultorio (\d+)$/)
+  return m ? `Consultorio ${m[1]}` : key.charAt(0).toUpperCase() + key.slice(1)
+}
+
+// registrados: null = todavía cargando, [] = nadie registrado (o no se pudo leer) -> respaldo.
+function armarMapaConsultorios(registrados) {
+  if (registrados && registrados.length === 0) return CONSULTORIO_MAP_RESPALDO
+  const mapa = Object.fromEntries(CONSULTORIOS_BASE.map(k => [k, '']))
+  for (const p of registrados || []) {
+    const key = normalizarConsultorioKey(p.consultorio)
+    if (key && !mapa[key]) mapa[key] = p.nombre
+  }
+  return mapa
+}
 
 function normalizarConsultorioKey(value) {
   if (!value) return ''
@@ -41,7 +54,7 @@ function normalizarConsultorioKey(value) {
   return key
 }
 
-function resolverProfesional(profesional, consultorio) {
+function resolverProfesional(profesional, consultorio, CONSULTORIO_MAP = CONSULTORIO_MAP_RESPALDO) {
   if (consultorio) {
     const key = normalizarConsultorioKey(consultorio)
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return CONSULTORIO_MAP[key]
@@ -57,7 +70,7 @@ function resolverProfesional(profesional, consultorio) {
   return ''
 }
 
-function resolverConsultorioKey(turno) {
+function resolverConsultorioKey(turno, CONSULTORIO_MAP = CONSULTORIO_MAP_RESPALDO) {
   if (turno.consultorio) {
     const key = normalizarConsultorioKey(turno.consultorio)
     if (Object.prototype.hasOwnProperty.call(CONSULTORIO_MAP, key)) return key
@@ -152,22 +165,31 @@ export default function AgendaPage() {
   }
   const [sheetTurno, setSheetTurno] = useState(null) // hoja de acciones (celular)
   const [aviso, setAviso] = useState(null)
-  const [registrados, setRegistrados] = useState([]) // profesionales dados de alta (dashboard o /profesional)
+  const [registrados, setRegistrados] = useState(null) // profesionales dados de alta (dashboard o /profesional): [{ nombre, consultorio }]; null = cargando
 
-  // Los registrados son a quienes se les avisa de sus turnos: tienen que poder elegirse acá.
+  // Los registrados son a quienes se les avisa de sus turnos: tienen que poder elegirse acá, y de ellos
+  // salen los nombres de las columnas. Cada profesional que se registra aparece solo.
   useEffect(() => {
     let activo = true
     api.get('/api/profesionales')
-      .then(res => { if (activo) setRegistrados((res.data?.registrados || []).map(p => p.nombre)) })
-      .catch(() => {})
+      .then(res => { if (activo) setRegistrados(res.data?.registrados || []) })
+      .catch(() => { if (activo) setRegistrados([]) })
     return () => { activo = false }
   }, [])
 
+  const mapa = useMemo(() => armarMapaConsultorios(registrados), [registrados])
+  const columnas = useMemo(() => {
+    const keys = [...CONSULTORIOS_BASE, ...Object.keys(mapa).filter(k => !CONSULTORIOS_BASE.includes(k))]
+    return keys.map(key => ({ key, label: etiquetaConsultorio(key), nombre: mapa[key] || '' }))
+  }, [mapa])
+
   // Sin repetir (aunque difieran en mayúsculas) y conservando el valor actual aunque ya no figure.
+  // Con profesionales registrados, solo ellos; si no hay ninguno, los del consultorio original.
   function opcionesProfesional(actual) {
+    const base = registrados?.length ? registrados.map(p => p.nombre) : Object.values(CONSULTORIO_MAP_RESPALDO)
     const vistos = new Set()
     const lista = []
-    for (const nombre of [...FILTROS_CONSULTORIO, ...registrados, actual].filter(Boolean)) {
+    for (const nombre of [...base, actual].filter(Boolean)) {
       const k = nombre.trim().toLowerCase()
       if (!vistos.has(k)) { vistos.add(k); lista.push(nombre) }
     }
@@ -374,7 +396,7 @@ export default function AgendaPage() {
 
   const parseHora = h => { if (!h) return 9999; const [hh, mm] = h.split(':').map(Number); return hh * 60 + (mm || 0) }
   const turnosList = [...turnos].sort((a, b) => parseHora(a.hora) - parseHora(b.hora))
-  const sinAsignar = turnosList.filter(t => resolverConsultorioKey(t) === null)
+  const sinAsignar = turnosList.filter(t => resolverConsultorioKey(t, mapa) === null)
 
   return (
     <div className="page">
@@ -437,8 +459,8 @@ export default function AgendaPage() {
 
       {!loading && (
         <div className="agenda-cols">
-          {CONSULTORIOS_CONFIG.map(({ key, label, nombre }) => {
-            const colTurnos = turnosList.filter(t => resolverConsultorioKey(t) === key)
+          {columnas.map(({ key, label, nombre }) => {
+            const colTurnos = turnosList.filter(t => resolverConsultorioKey(t, mapa) === key)
             return (
               <div key={key} className="agenda-col">
                 <div className="agenda-col-header">
