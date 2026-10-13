@@ -157,9 +157,10 @@ agregado (que comparte ese sheet) no podía usarlo sin leer/escribir el del due�
 restricción a dueño/admin del 2026-09-23. Con `PERSONAL_STORE=supabase` cada persona
 tiene **su** Personal, guardado en tablas por `user_id` y sin Sheet.
 
-- **Interruptor `PERSONAL_STORE=sheets|supabase`** (default `sheets` = comportamiento de
-  siempre; `supabase` exige `USE_SUPABASE=true`, si no se ignora). Se despliega dormido y
-  se activa a mano después de migrar e importar (guía abajo). `src/lib/personal-store.js`.
+- **Interruptor `PERSONAL_STORE=sheets|supabase`**. **Producción corre en `supabase`** (ya
+  activado y migrado; `supabase` exige `USE_SUPABASE=true`, si no se ignora). `sheets` es el modo
+  anterior y es lo que toma el código si la variable falta. Se desplegó dormido y se activó a
+  mano después de migrar e importar (guía abajo). `src/lib/personal-store.js`.
 - **Quién puede usarlo** (`src/auth/personal-acceso.js`, un único criterio para bot, API y
   dashboard): modo `sheets`, dueño/admin; modo `supabase`, **cualquier usuario registrado**.
   `/api/auth/me` devuelve `puedePersonal` y el dashboard muestra la sección según eso.
@@ -298,7 +299,7 @@ preguntarse:
 - **Personal por persona en Supabase (`PERSONAL_STORE`)** — reemplaza, con
   condiciones, la restricción a dueño/admin de abajo (que sigue vigente en
   modo `sheets`). Ver la sección "Personal por persona" más adelante.
-- **Finanzas personales restringidas a dueño/admin** (modo `sheets`, el default) en las cuatro
+- **Finanzas personales restringidas a dueño/admin** (solo en modo `sheets`, que ya no es el de producción) en las cuatro
   superficies donde se podían tocar: `/api/personal/*` (`ownerOnly`),
   `/personal` y `/viaje` del bot (`requiereDuenoBot`), la detección
   automática de ámbito y el botón "Es personal" de la confirmación NLP, y
@@ -737,4 +738,4 @@ para soportar esto sin cambios (ya corre en `pull_request` además de `push`).
 | 2026-10-03 | Las fotos de comprobantes no van a CASA; un ingreso nunca va a CASA | El registro del comprobante colapsa el ámbito a consultorio/personal; CASA es solo para gastos compartidos |
 | 2026-10-03 | Un pago a una empresa de servicios (luz, gas, agua, telefonía, combustible) es gasto de `servicios` aunque venga de Mercado Pago/homebanking; catálogo en `src/utils/proveedores-servicios.js`, y una "transferencia" que no lo es se reintenta como factura | La captura de un pago a Edenor se parecía a una transferencia y se rechazaba; el nombre del emisor es más confiable que la interpretación del modelo |
 | 2026-10-05 | Login del dashboard "Entrar con Telegram" por deep link con confirmación en el bot; estado en memoria (TTL 5 min), `id` público + `secret` del navegador (hasheado), sesión de un solo uso, identidad = `ctx.from.id`; el código de 6 dígitos queda como alternativa | El login pedía el ID numérico de Telegram (casi nadie lo conoce) y copiar un código. Sin SQL nuevo; la confirmación con IP/navegador cubre el phishing de links ajenos. Limitaciones: una sola instancia y un login en curso se pierde en un redeploy |
-| 2026-10-05 | Personal por persona en Supabase detrás de `PERSONAL_STORE` (default `sheets`): tablas por `user_id`, acceso solo vía `forPersona`, abierto a todo usuario registrado en modo `supabase`; **reemplaza con condiciones** la restricción a dueño/admin del 2026-09-23 | Un agregado (la secretaria, los odontólogos) no podía tener Personal porque compartía el sheet del dueño. Con datos por persona en la base la fuga desaparece. Condiciones: `forPersona` obligatorio (`check:tenant`), identidad siempre del token, sin espejo al Sheet, errores propagados, FK en RESTRICT + baja lógica. Los comprobantes personales de agregados quedan fuera (viven en el sheet del consultorio) |
+| 2026-10-05 | Personal por persona en Supabase detrás de `PERSONAL_STORE` (hoy activo en producción como `supabase`; sin la variable el código usa `sheets`): tablas por `user_id`, acceso solo vía `forPersona`, abierto a todo usuario registrado en modo `supabase`; **reemplaza con condiciones** la restricción a dueño/admin del 2026-09-23 | Un agregado (la secretaria, los odontólogos) no podía tener Personal porque compartía el sheet del dueño. Con datos por persona en la base la fuga desaparece. Condiciones: `forPersona` obligatorio (`check:tenant`), identidad siempre del token, sin espejo al Sheet, errores propagados, FK en RESTRICT + baja lógica. Los comprobantes personales de agregados quedan fuera (viven en el sheet del consultorio) |

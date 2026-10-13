@@ -340,11 +340,13 @@ Además del cashflow del consultorio, el bot registra **finanzas personales**
   Siempre corregible con un botón en la confirmación.
 - **Categorías propias y cerradas** (18 egreso + 4 ingreso), distintas de las
   del consultorio.
-- **Quién lo usa**: depende de `PERSONAL_STORE` (`src/lib/personal-store.js`).
-  `sheets` (default): solo dueño/admin, en pestañas del sheet del dueño; un invitado
-  queda forzado a `consultorio`. `supabase`: **cada usuario registrado tiene el suyo**,
-  privado, en tablas por `user_id` y sin Sheet (acceso solo con `forPersona`, ver
-  `ARCHITECTURE.md` "Personal por persona"). Un único criterio en
+- **Quién lo usa**: depende de `PERSONAL_STORE` (`src/lib/personal-store.js`). **En
+  producción está en `supabase`** (con `USE_SUPABASE=true`): **cada usuario registrado tiene
+  el suyo**, privado, en tablas por `user_id` y sin Sheet (acceso solo con `forPersona`, ver
+  `ARCHITECTURE.md` "Personal por persona"). `sheets` es el modo anterior y solo queda como
+  respaldo del código si falta la variable (el valor del código sin env es `sheets`): solo
+  dueño/admin, en pestañas del sheet del dueño; un invitado queda forzado a `consultorio`.
+  Un único criterio en
   `src/auth/personal-acceso.js` (`puedeUsarPersonal`) para bot, API y dashboard.
   Los comprobantes personales de un agregado siguen yendo a consultorio.
 
