@@ -12,7 +12,7 @@ require('../tests/setup-env');
 
 const fs = require('fs');
 const path = require('path');
-const { SCOPED_TABLES } = require('../src/lib/tenant-db');
+const { SCOPED_TABLES, PERSONA_TABLES, GLOBAL_TABLES, DRAFT_TABLES } = require('../src/lib/tablas');
 
 const SRC_DIR = path.join(__dirname, '..', 'src');
 const ALLOWED_FILES = new Set([
@@ -23,7 +23,7 @@ const ALLOWED_FILES = new Set([
 ]);
 
 // Modelo "lista cerrada": TODA tabla que se consulte con .from(...) tiene que
-// estar clasificada acá o en SCOPED_TABLES (tenant-db.js). Antes el script solo
+// estar clasificada en el registro src/lib/tablas.js. Antes el script solo
 // miraba las tablas de SCOPED_TABLES, así que una tabla nueva de negocio (o las
 // de v2) quedaba fuera del control sin que nada avisara.
 //
@@ -32,19 +32,15 @@ const ALLOWED_FILES = new Set([
 //    sin tenant_id (ver comentarios en tenant-db.js y tenant.service.js).
 //  - DRAFT_TABLES: esquemas draft que no existen en producción todavía. Al
 //    activarlas hay que sumarles tenant_id y pasarlas a SCOPED_TABLES.
-// invitaciones_web: se busca por EMAIL al entrar con Google (todavía no se sabe de qué consultorio
-// es); por eso es global, con tenant_id explícito: invitacion-web.service.js filtra por él en
-// todo lo que lista, crea o revoca.
-const GLOBAL_TABLES = new Set(['profiles', 'tenants', 'tenant_requests', 'auth_codes', 'invitaciones_web']);
-const DRAFT_TABLES = new Set(['movimientos_v2', 'movimiento_eventos_v2']);
+// Clasificación de tablas: registro único en src/lib/tablas.js.
+
 
 // Las tablas del ámbito PERSONAL son de cada persona (no del consultorio): además de
 // forTenant() tienen que filtrar por user_id, y eso solo lo garantiza forPersona()
 // (src/lib/persona-db.js). personal.service.js usa forTenant() directo SOLO para el
 // espejo del modo PERSONAL_STORE=sheets (que filtra por user_id a mano) y es el único
 // archivo con esa excepción.
-// La lista vive en persona-db.js (una sola fuente): antes había una copia acá que podía desincronizarse.
-const { PERSONA_TABLES } = require('../src/lib/persona-db');
+// (las tablas personales también salen de src/lib/tablas.js)
 const PERSONA_LEGACY_FILES = new Set([path.join(SRC_DIR, 'services', 'personal.service.js')]);
 
 const FROM_LITERAL = /\.from\(\s*['"`]([a-z_0-9]+)['"`]\s*\)/g;
@@ -110,7 +106,7 @@ function analizarContenido(content, { scoped = SCOPED_TABLES, personaLegacy = fa
       } else if (GLOBAL_TABLES.has(tabla) || DRAFT_TABLES.has(tabla)) {
         continue;
       } else if (!ignorada) {
-        problemas.push({ linea: idx + 1, texto: line.trim(), motivo: `tabla '${tabla}' sin clasificar: agregarla a SCOPED_TABLES (tenant-db.js) o a GLOBAL_TABLES (este script)` });
+        problemas.push({ linea: idx + 1, texto: line.trim(), motivo: `tabla '${tabla}' sin clasificar: agregarla al registro src/lib/tablas.js` });
       }
     }
   });

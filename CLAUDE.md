@@ -147,9 +147,10 @@ detalle completo.
 - `dashboard/dist` está versionado: un `npm run build` lo modifica; restaurarlo con
   `git checkout -- dashboard/dist` antes de commitear. No dejar archivos sueltos de
   pruebas en la raíz. Hay que correr `npm ci` antes de `npm test` en una sesión nueva.
-- **Tabla nueva = dos listas**: `SCOPED_TABLES` (`tenant-db.js`) y, si es personal, `PERSONA_TABLES`
-  (`persona-db.js` y `scripts/check-tenant-isolation.js`). Faltar en una rompe en silencio la función
-  entera (así dejaron de andar la campanita y el push). Checklist y cómo detectar estos errores:
+- **Tabla nueva = una sola entrada en `src/lib/tablas.js`** (con su `ambito`: negocio, persona, global o borrador)
+  más su migración en `sql/migrations/` **aplicada a mano en Supabase**. `SCOPED_TABLES`, `PERSONA_TABLES` y el
+  script `check:tenant` se derivan de ahí. Al arrancar, `verificar-tablas.js` loguea `error` si falta alguna
+  tabla en Supabase, y un test exige que toda tabla creada por una migración esté registrada. Detalle:
   `NOTAS_2026-10-13_DIAGNOSTICO_NOTIFICACIONES_Y_PERMISOS.md`.
 - Si algo "no llega" o falla en producción, **mirar primero los logs de Railway** (`severity: error`, por `scope`).
 

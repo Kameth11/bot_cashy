@@ -95,6 +95,9 @@ let apiServer = null;
 // todo el mundo (dueños incluidos) parece "no autorizado".
 async function iniciar() {
   require('./lib/supabase').verificarClaveServicio(logger);
+  // Avisa (como error en los logs) si falta alguna tabla/migración; no bloquea ni tumba el arranque.
+  require('./lib/verificar-tablas').verificarTablas(logger)
+    .catch(err => logger.error('TABLAS', 'Falló la verificación de tablas', { err: err.message }));
   await clienteService.listo;
 
   // Start API (does not depend on bot).

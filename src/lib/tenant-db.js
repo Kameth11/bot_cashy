@@ -5,33 +5,8 @@ const { getSupabase } = require('./supabase');
 // (ver ARCHITECTURE.md seccion 3, Fase 2). scripts/check-tenant-isolation.js
 // falla el build si aparece getSupabase().from(...) fuera de este archivo.
 //
-// Solo incluye tablas que existen de verdad en produccion. movimientos_v2,
-// movimiento_eventos_v2, obras_sociales y prestaciones son esquemas draft
-// (schema_v2_draft.sql / schema_mvp_odontologia.sql) que nunca se crearon
-// — agregarlas aca cuando se activen, no antes.
-const SCOPED_TABLES = new Set([
-  'movimientos',
-  'profesionales',
-  // Ambito personal (sql/migrations/008): aisladas por tenant igual que el
-  // resto, pero ademas se filtran por user_id en el service — las finanzas
-  // personales son de la persona, no del consultorio.
-  'movimientos_personales',
-  'viajes_personales',
-  'presupuestos_personales',
-  // Memoria de correcciones de ámbito (sql/migrations/013). Como el resto de las
-  // personales, solo se consulta con forPersona() (lib/persona-db.js).
-  'preferencias_ambito_personales',
-  // Comprobantes leídos de fotos/PDFs (sql/migrations/011). El código sondea
-  // si la tabla existe antes de usarla (comprobante-archivo.service.js).
-  'comprobantes',
-  // Historial del chat web (sql/migrations/015). Una fila por persona: solo se
-  // consulta con forPersona() (lib/persona-db.js).
-  'chat_historial',
-  // Avisos de la campanita y suscripciones Web Push (sql/migrations/020). Una fila por
-  // persona: solo se consultan con forPersona() (lib/persona-db.js).
-  'notificaciones',
-  'push_subscriptions',
-]);
+// La lista de tablas vive en src/lib/tablas.js (registro único): ahí se agregan.
+const { SCOPED_TABLES } = require('./tablas');
 
 function wrapBuilder(builder, tenantId) {
   const originalSelect = builder.select.bind(builder);

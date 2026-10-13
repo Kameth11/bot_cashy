@@ -16,15 +16,8 @@
 
 const { forTenant } = require('./tenant-db');
 
-const PERSONA_TABLES = new Set([
-  'movimientos_personales',
-  'viajes_personales',
-  'presupuestos_personales',
-  'preferencias_ambito_personales',
-  'chat_historial',
-  'notificaciones',
-  'push_subscriptions',
-]);
+// La lista de tablas personales vive en src/lib/tablas.js (registro único).
+const { PERSONA_TABLES } = require('./tablas');
 
 function sinIdentidad(payload) {
   if (!payload || typeof payload !== 'object') return payload;

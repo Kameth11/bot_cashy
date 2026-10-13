@@ -59,21 +59,21 @@ Mejoras recomendadas, de más barata a más completa (las marcadas ✅ ya están
 |---|---|---|
 | ✅ | Test `PERSONA_TABLES ⊆ SCOPED_TABLES` | Este bug exacto |
 | ✅ 1 y 2 | `check-tenant-isolation.js` importa `PERSONA_TABLES` de `persona-db.js`; test de notificaciones con `forPersona` real sobre Supabase falso (`tests/notificaciones.service.supabase.test.js`) | Listas desincronizadas y camino de Supabase sin ejecutar |
-| 1 | Que `check-tenant-isolation.js` **importe** `PERSONA_TABLES` de `persona-db.js` en vez de duplicarla | Listas desincronizadas |
+| ✅ 1 | Registro único de tablas `src/lib/tablas.js`: de ahí se derivan `SCOPED_TABLES`, `PERSONA_TABLES` y las listas de `check-tenant-isolation.js` | Listas desincronizadas |
 | 2 | Tests de servicio que usen el **`forPersona`/`forTenant` reales** con un cliente Supabase falso (como ya hace `lib.tenant-db.test.js`), no `resolveTenantId → null` | Que el camino de Supabase quede sin ejecutar |
-| 3 | Un chequeo de arranque (o `/api/health` ampliado) que haga una consulta mínima a cada tabla nueva y loguee `error` si falla | Enterarse en el deploy y no cuando un usuario lo nota |
+| ✅ 3 | Chequeo de arranque `src/lib/verificar-tablas.js`: consulta cada tabla del registro y loguea `error` con la migración que falta (no tumba el servidor; una tabla `opcional` solo da `warn`) | Enterarse en el deploy y no cuando un usuario lo nota |
 | 4 | **Alerta en Railway** ante logs `severity=error` repetidos (o un resumen diario de errores por `scope`) | Errores que se repiten durante horas sin que nadie los vea |
 | 5 | Humo post-deploy: tras cada deploy, un script que cree un aviso de prueba y verifique que aparece en `GET /api/notificaciones` | Regresiones de flujos enteros |
-| 6 | Checklist de PR para tablas nuevas: migración SQL + `SCOPED_TABLES` + `PERSONA_TABLES` (si es personal) + `check-tenant-isolation.js` | Olvidos al agregar una tabla |
+| ✅ 6 | Test `tests/lib.tablas.test.js`: toda tabla creada por una migración tiene que estar en el registro (y viceversa) | Olvidos al agregar una tabla |
 | ✅ 7 | Que los `catch` con respaldo distingan error de programación/configuración (`logger.error`) de fallo transitorio (`logger.warn`): `src/lib/errores.js` → `logFallo()` | Degradación silenciosa |
 
-**Checklist al agregar una tabla nueva** (usarla tal cual):
+**Checklist al agregar una tabla nueva** (el CI cubre casi todo; lo manual está marcado):
 
-- [ ] Migración en `sql/migrations/NNN_*.sql` y **aplicada a mano en Supabase** (el deploy no la corre).
-- [ ] Tabla en `SCOPED_TABLES` (`src/lib/tenant-db.js`).
-- [ ] Si es de una sola persona: también en `PERSONA_TABLES` (`src/lib/persona-db.js`) y en el script `scripts/check-tenant-isolation.js`.
-- [ ] `npm run check:tenant` y `npm test` en verde.
-- [ ] Tras el deploy, mirar los logs de Railway un par de minutos.
+- [ ] Migración en `sql/migrations/NNN_*.sql`.
+- [ ] Una entrada en `src/lib/tablas.js` con su `ambito` (`negocio`, `persona`, `global` o `borrador`; `opcional: true` si el código funciona sin ella). Nada más: las demás listas se derivan.
+- [ ] **A mano:** aplicar la migración en el SQL Editor de Supabase (el deploy no la corre).
+- [ ] `npm run check:tenant` y `npm test` en verde (el test falla si falta el registro; el chequeo falla si se consulta con la puerta equivocada).
+- [ ] Tras el deploy, mirar los logs de Railway: si falta la tabla, aparece `Falta la tabla 'X' en Supabase` con `level=error`.
 
 ---
 
