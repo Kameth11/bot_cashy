@@ -14,6 +14,10 @@ jest.mock('../src/lib/tenant-db', () => ({
   forTenant: () => ({ from: () => ({ insert: (row) => { mockInserts.push(row); return { select: () => ({ single: async () => ({ data: { id: 'x', ...row }, error: null }) }) }; } }) }),
 }));
 jest.mock('../src/services/tenant.service', () => ({ resolveTenantId: jest.fn().mockResolvedValue('t1'), invalidateTenantCache: jest.fn() }));
+// Las fallas simuladas del Sheet acá se registran como fallos de dual-write; al llegar a 3 el servicio le avisaría
+// al admin con una llamada REAL a Telegram, cuya respuesta llega cuando el test ya terminó ("Cannot log after
+// tests are done") y hace que `npm test` salga con código 1 aunque todo pase.
+jest.mock('../src/services/dual-write-fallos.service', () => ({ registrar: jest.fn(), avisarSiCorresponde: jest.fn(), resumen: jest.fn(), _reiniciar: jest.fn() }));
 jest.mock('../src/services/sheet.service', () => ({ getSheetCliente: jest.fn().mockResolvedValue(null), ensureSheetStructure: jest.fn(), invalidateCache: jest.fn() }));
 
 const db = require('../src/services/db.service');

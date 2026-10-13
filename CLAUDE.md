@@ -154,6 +154,11 @@ detalle completo.
   script `check:tenant` se derivan de ahí. Al arrancar, `verificar-tablas.js` loguea `error` si falta alguna
   tabla en Supabase, y un test exige que toda tabla creada por una migración esté registrada. Detalle:
   `NOTAS_2026-10-13_DIAGNOSTICO_NOTIFICACIONES_Y_PERMISOS.md`.
+- **`npm test` puede salir con código 1 aunque todos los tests pasen**: un test que dispara una llamada real a Telegram
+  (u otra cosa asíncrona) deja un log que llega cuando el test ya terminó ("Cannot log after tests are done") y el CI
+  se pone rojo. Pasó con `db.service.referenciaUuid.test.js` (3 fallos simulados de dual-write → aviso real al admin).
+  Mockear `dual-write-fallos.service` / `lib/telegraf` en los tests que simulen fallos. Para verlo hay que mirar el
+  código de salida (`npm test; echo $?`), no solo el resumen de Jest.
 - Si algo "no llega" o falla en producción, **mirar primero los logs de Railway** (`severity: error`, por `scope`).
   Cada `logger.error` además le llega al admin por Discord (`src/lib/alertas.js`: mismo error 1 vez cada 15 min,
   tope 8 por hora). Por eso `error` es solo para cosas que hay que arreglar; lo transitorio va a `warn` (`lib/errores.js`).
