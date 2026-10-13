@@ -43,15 +43,8 @@ const DRAFT_TABLES = new Set(['movimientos_v2', 'movimiento_eventos_v2']);
 // (src/lib/persona-db.js). personal.service.js usa forTenant() directo SOLO para el
 // espejo del modo PERSONAL_STORE=sheets (que filtra por user_id a mano) y es el único
 // archivo con esa excepción.
-const PERSONA_TABLES = new Set([
-  'movimientos_personales',
-  'viajes_personales',
-  'presupuestos_personales',
-  'preferencias_ambito_personales',
-  'chat_historial',
-  'notificaciones',
-  'push_subscriptions',
-]);
+// La lista vive en persona-db.js (una sola fuente): antes había una copia acá que podía desincronizarse.
+const { PERSONA_TABLES } = require('../src/lib/persona-db');
 const PERSONA_LEGACY_FILES = new Set([path.join(SRC_DIR, 'services', 'personal.service.js')]);
 
 const FROM_LITERAL = /\.from\(\s*['"`]([a-z_0-9]+)['"`]\s*\)/g;

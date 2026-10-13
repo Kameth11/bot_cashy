@@ -3,7 +3,8 @@
 // unicidad que importan (legacy_id por tenant, un viaje activo por persona).
 // Registra cada consulta en `llamadas` para poder verificar qué filtros se aplicaron.
 
-function crearSupabaseFalso({ errorEn = null } = {}) {
+// `defaults`: valores por defecto de columnas por tabla, como los DEFAULT del SQL (ej. { notificaciones: { leida: false } }).
+function crearSupabaseFalso({ errorEn = null, defaults = {} } = {}) {
   const tablas = {};
   const llamadas = [];
   let seq = 0;
@@ -17,6 +18,7 @@ function crearSupabaseFalso({ errorEn = null } = {}) {
       llamadas.push(this);
     }
     eq(c, v) { this.filtros[c] = v; return this; }
+    gte(c, v) { this.minimos = { ...(this.minimos || {}), [c]: v }; return this; }
     order(c, o = {}) { this.ord = [c, o.ascending !== false]; return this; }
     range(a, b) { this.rng = [a, b]; return this; }
     limit(n) { this.lim = n; return this; }
@@ -25,7 +27,10 @@ function crearSupabaseFalso({ errorEn = null } = {}) {
     maybeSingle() { this.unica = true; return this; }
     then(res, rej) { return Promise.resolve().then(() => this.ejecutar()).then(res, rej); }
 
-    coincide(fila) { return Object.entries(this.filtros).every(([c, v]) => String(fila[c]) === String(v)); }
+    coincide(fila) {
+      return Object.entries(this.filtros).every(([c, v]) => String(fila[c]) === String(v))
+        && Object.entries(this.minimos || {}).every(([c, v]) => String(fila[c]) >= String(v));
+    }
     proyectar(filas) {
       if (!this.retorna || this.retorna === '*') return filas.map(f => ({ ...f }));
       const cols = this.retorna.split(',').map(c => c.trim());
@@ -64,7 +69,7 @@ function crearSupabaseFalso({ errorEn = null } = {}) {
           }
           const error = violaUnicidad(this.t, filas, fila);
           if (error) return { data: null, error };
-          const nueva = { id: `uuid-${++seq}`, created_at: new Date(2026, 0, 1, 0, 0, seq).toISOString(), ...fila };
+          const nueva = { id: `uuid-${++seq}`, created_at: new Date(2026, 0, 1, 0, 0, seq).toISOString(), ...(defaults[this.t] || {}), ...fila };
           filas.push(nueva);
           creadas.push(nueva);
         }
