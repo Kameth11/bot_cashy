@@ -106,8 +106,9 @@ COTIZACION_DEFAULT=               # Fallback si falla Bluelytics
 VAPID_PUBLIC_KEY=                 # Web Push (opcional): npx web-push generate-vapid-keys
 VAPID_PRIVATE_KEY=                # idem; sin las dos no hay push, la campanita anda igual
 VAPID_SUBJECT=                    # mailto:tu@email.com (o https://tu-dominio)
-ALERTAS_CHAT_ID=                  # (opcional) chat o grupo de Telegram que recibe los avisos de errores; default AUTHORIZED_USER_ID
-ALERTAS_ERRORES=                  # (opcional) 'off' apaga los avisos de errores por Telegram
+ALERTAS_DISCORD_WEBHOOK_URL=      # (opcional) webhook de un canal de Discord: los avisos de errores van ahí (es un secreto)
+ALERTAS_CHAT_ID=                  # (opcional) si no hay webhook de Discord: chat o grupo de Telegram de los avisos; default AUTHORIZED_USER_ID
+ALERTAS_ERRORES=                  # (opcional) 'off' apaga los avisos de errores (Discord y Telegram)
 ```
 
 ---
