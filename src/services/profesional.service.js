@@ -2,6 +2,7 @@ const { isAvailable } = require('../lib/supabase');
 const { forTenant } = require('../lib/tenant-db');
 const { escapeMarkdown } = require('../utils/formatter');
 const logger = require('../lib/logger');
+const { logFallo } = require('../lib/errores');
 const { chatIdDe } = require('../lib/telegram-destino');
 
 async function registrarProfesional(tenantId, telegramUserId, nombre, consultorio = null) {
@@ -122,8 +123,20 @@ async function notificarLlegadaPaciente(tenantId, nombreProfesional, paciente, h
     await bot.telegram.sendMessage(chatId, partes.join('\n'), { parse_mode: 'Markdown' });
     return { ok: true, profesional: profesional.nombre };
   } catch (err) {
-    // Típico: el profesional nunca le escribió al bot o lo bloqueó (403).
-    logger.error('Profesional', 'Error enviando aviso de llegada', { profesional: profesional.nombre, err: err.message });
+    // Telegram rechazó el mensaje: 403 = bloqueó el bot, 400 "chat not found" = nunca lo inició. Es algo
+    // esperable de la persona (no del código) y no merece una alerta: se deja como warn, con el motivo.
+    const codigo = err && err.response && err.response.error_code;
+    if (codigo === 403 || (codigo === 400 && /chat not found/i.test(err.response.description || ''))) {
+      logger.warn('Profesional', 'No se pudo avisar por Telegram: el profesional bloqueó el bot o nunca lo inició (le llega por la campanita/push)', {
+        profesional: profesional.nombre, codigo, err: String(err.response.description || err.message).slice(0, 120),
+      });
+      return { ok: false, error: 'telegram_inaccesible', profesional: profesional.nombre };
+    }
+    // Cualquier otra cosa (formato rechazado, error de código, red): logFallo decide la severidad y
+    // `codigo`/`descripcion` de Telegram quedan en el log para poder diagnosticarlo.
+    logFallo('Profesional', 'Error enviando aviso de llegada', err, {
+      profesional: profesional.nombre, codigo, descripcion: err && err.response ? String(err.response.description || '').slice(0, 120) : undefined,
+    });
     return { ok: false, error: 'envio_fallido', profesional: profesional.nombre };
   }
 }
