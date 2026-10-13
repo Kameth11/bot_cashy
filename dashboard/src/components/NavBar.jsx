@@ -1,4 +1,4 @@
-import { NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useApp } from '../contexts/AppContext'
 import CampanaNotificaciones from './CampanaNotificaciones'
@@ -11,6 +11,8 @@ export default function NavBar() {
 
   // El ámbito personal es una vista aparte, no un tab más: el BottomNav ya
   // tiene 4 items + FAB y un quinto no entra en pantallas de 375px.
+  // Los links (Dashboard, Movimientos, Agenda, Config) se ven en los tres ámbitos: tocar uno
+  // lleva a esa pantalla del consultorio y el selector de ámbito vuelve a "Consultorio".
   const enPersonal = location.pathname.startsWith('/personal')
   const enCasa = location.pathname.startsWith('/casa')
 
@@ -33,7 +35,7 @@ export default function NavBar() {
   return (
     <nav className="navbar">
       <div className="navbar-left">
-        <span className="navbar-logo">🦷 Cashy</span>
+        <Link to="/" className="navbar-logo" title="Ir al inicio">🦷 Cashy</Link>
         {(esDueno || puedePersonal) && (
           <div className="ambito-switch">
             <button
@@ -61,7 +63,7 @@ export default function NavBar() {
           </div>
         )}
         <div className="navbar-links">
-          {(enPersonal || enCasa ? [] : links).map(([to, label]) => (
+          {links.map(([to, label]) => (
             <NavLink
               key={to}
               to={to}
