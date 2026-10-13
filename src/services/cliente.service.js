@@ -1,3 +1,4 @@
+const { logFallo } = require('../lib/errores');
 const fs = require('fs');
 const { CLIENTES_FILE, USE_SUPABASE } = require('../config');
 const { getSupabase, isAvailable } = require('../lib/supabase');
@@ -473,7 +474,10 @@ async function getPermisos(ownerUserId, guestUserId) {
         .eq('id', parseInt(ownerKey, 10))
         .single();
       if (data?.permisos) return data.permisos[guestKey] || DEFAULT_PERMISOS;
-    } catch { /* fallthrough to in-memory */ }
+    } catch (err) {
+      // Si la base falla se usan los permisos en memoria (o los mínimos): que se vea, porque decide qué puede hacer cada persona.
+      logFallo('CLIENTES', 'No se pudieron leer los permisos desde Supabase: se usan los de memoria', err);
+    }
   }
   const owner = clientes[ownerKey];
   if (!owner) return DEFAULT_PERMISOS;

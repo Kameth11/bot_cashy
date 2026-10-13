@@ -57,3 +57,18 @@ describe('logFallo', () => {
     expect(logger.error).toHaveBeenCalledWith('CHAT_WEB', 'No se pudo leer', expect.objectContaining({ codigo: '42501' }));
   });
 });
+
+describe('logSiAccionable', () => {
+  const { logSiAccionable } = require('../src/lib/errores');
+
+  test('un error de código se loguea como error', () => {
+    expect(logSiAccionable('CASA', 'm', new TypeError('x'))).toBe(true);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  test('un fallo común no deja ni un warn (es lo esperable en lo best-effort)', () => {
+    expect(logSiAccionable('CASA', 'm', new Error('socket cerrado'))).toBe(false);
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+});

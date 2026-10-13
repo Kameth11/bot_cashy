@@ -25,6 +25,7 @@ const { calcularSaldos } = require('../lib/casa-saldos');
 const { fechaArgentinaStr, horaArgentinaStr, ahoraArgentina, fechaStrAIso, esFechaValidaDdmmaaaa } = require('../utils/date');
 const { emitMovimientosUpdated } = require('./events.service');
 const logger = require('../lib/logger');
+const { logSiAccionable } = require('../lib/errores');
 
 const TAB_CASAS = 'Casas';
 const TAB_MIEMBROS = 'CasaMiembros';
@@ -169,7 +170,7 @@ const activos = (miembros) => miembros.filter((m) => m.estado === 'activo');
 function notificarMiembros(miembros) {
   for (const m of activos(miembros || [])) {
     if (!m.userId) continue;
-    try { emitMovimientosUpdated(m.userId); } catch (_) { /* sin dashboard abierto */ }
+    try { emitMovimientosUpdated(m.userId); } catch (err) { logSiAccionable('CASA', 'No se pudo avisar al dashboard de un miembro', err); }
   }
 }
 
@@ -310,7 +311,7 @@ async function unirMiembro(userId, { ownerId, casaId, miembroId = null, alias })
   if (!actuales.some((c) => c.casaId === id)) {
     await clienteService.setCasas(userId, conCasaActiva(actuales, { casaId: id, ownerId: owner, nombre: casa.nombre }));
   }
-  try { notificarMiembros(await leerMiembros(owner, id)); } catch (_) { /* best-effort */ }
+  try { notificarMiembros(await leerMiembros(owner, id)); } catch (err) { logSiAccionable('CASA', 'No se pudo avisar a los miembros de la casa', err); }
   logger.audit('casa_miembro_unido', { userId, casaId: id, miembroId: miembro.id });
   return { casa, miembro };
 }

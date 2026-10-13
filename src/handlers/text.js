@@ -1,3 +1,4 @@
+const { logSiAccionable } = require('../lib/errores');
 const { bot } = require('../lib/telegraf');
 const { METODOS_VALIDOS, COMANDOS_INGRESO, COMANDOS_EGRESO } = require('../config');
 const state = require('../state');
@@ -330,7 +331,7 @@ async function marcarAmbito(userId, text, result, opts = {}) {
     entities.categoriaConsultorio = entities.categoria || null;
     entities.categoria = inferirCategoriaPersonal(entities.tipo, text);
 
-    const viaje = await personalService.obtenerViajeActivo(userId).catch(() => null);
+    const viaje = await personalService.obtenerViajeActivo(userId).catch(err => { logSiAccionable('Personal', 'No se pudo leer el viaje activo', err); return null; });
     const fechaMov = entities.fecha || personalService.fechaHoyStr();
     if (viaje && personalService.correspondeAlViaje(viaje, {
       fecha: fechaMov,

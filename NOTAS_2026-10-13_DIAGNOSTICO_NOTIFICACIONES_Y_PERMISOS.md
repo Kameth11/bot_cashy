@@ -197,3 +197,25 @@ Cada `logger.error` le llega al admin, por Discord si hay webhook configurado y 
   Webhooks con los eventos de deploy `Failed` y `Crashed`.
 - **Regla:** como cada `error` genera un aviso, usar `error` solo para lo que hay que arreglar y `warn` para
   lo transitorio (`logFallo`, ver sección 7).
+
+---
+
+## 9. Auditoría de arquitectura (2026-10-13)
+
+Reglas revisadas y resultado:
+
+| Regla | Resultado |
+|---|---|
+| Todas las tablas consultadas están clasificadas y las de negocio pasan por `forTenant` | OK (`npm run check:tenant`) |
+| Registro de tablas ↔ migraciones | OK, ahora con test (`tests/lib.tablas.test.js`) |
+| Toda ruta de `/api` tiene control de acceso o es pública a propósito | OK. Públicas: `/health`, `/api/cotizacion` (dólar, nada sensible), `/api/auth/*` (login) y el dashboard estático. `/api/casa/*` y `/api/chat/*` usan `authMiddleware` y comprueban pertenencia/permiso dentro del servicio. `/api/profesionales/registro`: el dueño gestiona a su equipo, los demás solo a sí mismos |
+| `catch` que esconden errores de código | Corregidos: `casa.service.js` (2), permisos en `cliente.service.js`, y `obtenerViajeActivo` en `text.js` y `nlp-confirm.js`. Ahora usan `logFallo` / `logSiAccionable` (`src/lib/errores.js`). Se dejaron a propósito los `JSON.parse` de respuestas de la IA, el apagado ordenado y los `ctx.reply(...).catch(() => {})` (responder a Telegram es opcional) |
+| Listas duplicadas entre servidor y dashboard | **Pendiente**, ver abajo |
+
+### Pendiente: etiquetas y presets de permisos duplicados en el dashboard
+- `dashboard/src/pages/AccesosPage.jsx` tiene su propio `LABELS` y `PRESET_LABELS`, y **no incluye `invitar_personas`**
+  (un permiso con esa clave se mostraría con su nombre técnico). Ya existe `dashboard/src/utils/permisos.js` con la
+  lista completa, usada por `ConfigPage.jsx` e Invitaciones: `AccesosPage` debería importarla.
+- `dashboard/src/pages/ConfigPage.jsx` (~línea 57) repite a mano los presets de `src/auth/permisos.js`. Si cambia
+  un preset en el servidor, esa pantalla muestra un rol equivocado.
+- Arreglarlo requiere reconstruir `dashboard/dist` (está versionado): hacerlo junto con el próximo cambio de dashboard.

@@ -1,3 +1,4 @@
+const { logSiAccionable } = require('../lib/errores');
 const { Markup } = require('telegraf');
 const { bot } = require('../lib/telegraf');
 const state = require('../state');
@@ -499,7 +500,7 @@ async function aplicarAmbito(ctx, target, comando) {
       `${entities.descripcion || ''} ${entities.textoOriginal || ''}`
     );
 
-    const viaje = await personalService.obtenerViajeActivo(userId).catch(() => null);
+    const viaje = await personalService.obtenerViajeActivo(userId).catch(err => { logSiAccionable('Personal', 'No se pudo leer el viaje activo', err); return null; });
     if (viaje && personalService.correspondeAlViaje(viaje, {
       fecha: entities.fecha || personalService.fechaHoyStr(),
       categoria: entities.categoria,

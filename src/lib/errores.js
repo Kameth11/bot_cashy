@@ -47,4 +47,10 @@ function logFallo(scope, mensaje, err, extra = {}) {
   return accionable;
 }
 
-module.exports = { esErrorDeProgramacion, esErrorDeConfiguracionSupabase, esErrorAccionable, logFallo };
+// Para lo "best-effort" donde un fallo común es esperable y no vale ni un warn (ej. avisar a un
+// dashboard que no está abierto), pero un error de código sí tiene que verse. Loguea solo si es accionable.
+function logSiAccionable(scope, mensaje, err, extra = {}) {
+  return esErrorAccionable(err) ? logFallo(scope, mensaje, err, extra) : false;
+}
+
+module.exports = { esErrorDeProgramacion, esErrorDeConfiguracionSupabase, esErrorAccionable, logFallo, logSiAccionable };
