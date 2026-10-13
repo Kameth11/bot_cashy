@@ -154,6 +154,10 @@ detalle completo.
   script `check:tenant` se derivan de ahí. Al arrancar, `verificar-tablas.js` loguea `error` si falta alguna
   tabla en Supabase, y un test exige que toda tabla creada por una migración esté registrada. Detalle:
   `NOTAS_2026-10-13_DIAGNOSTICO_NOTIFICACIONES_Y_PERMISOS.md`.
+- **Telegraf 4.16: `bot.launch()` no resuelve hasta que el bot se detiene** (el long polling corre adentro) y **ante un
+  409 no reintenta**. Por eso `src/index.js` lo arranca con `lanzarBot` (`src/lib/lanzar-bot.js`, reintenta el 409
+  cada 5 s; a partir de ~1 min lo reporta como `error`) y lo que va "al arrancar" (`initModel`, cotización inicial y su
+  refresco, `seedApprovedEmails`) está en `alConectarBot`, no en un `.then()` (ahí nunca se ejecutaba).
 - **`npm test` puede salir con código 1 aunque todos los tests pasen**: un test que dispara una llamada real a Telegram
   (u otra cosa asíncrona) deja un log que llega cuando el test ya terminó ("Cannot log after tests are done") y el CI
   se pone rojo. Pasó con `db.service.referenciaUuid.test.js` (3 fallos simulados de dual-write → aviso real al admin).

@@ -225,3 +225,32 @@ Reglas revisadas y resultado:
 - `dashboard/dist` reconstruido. **Con Node 18 el build falla** (`ReferenceError: crypto is not defined`, lo pide el
   generador del service worker); usar `NODE_OPTIONS=--experimental-global-webcrypto npm run build` o Node 20+.
   Si falla a mitad, `dist` queda a medio borrar: `git checkout -- dashboard/dist` y repetir.
+
+---
+
+## 10. Error 409 del bot de Telegram y arranque del bot (`src/lib/lanzar-bot.js`)
+
+**Síntoma:** alerta `[PROCESS] Error al iniciar bot — 409: Conflict: terminated by other getUpdates request; make sure
+that only one bot instance is running`.
+
+**Qué significa:** Telegram permite leer los mensajes de un bot a UNA sola instancia. Hay dos a la vez. Causas típicas:
+1. **Deploy de Railway:** la instancia vieja sigue viva unos segundos mientras arranca la nueva (solapamiento normal).
+2. **Otra copia corriendo** con el mismo `BOT_TOKEN`: una compu con `npm start`, otro servicio/réplica de Railway,
+   o `bot_cashy_test` si usa el mismo token. Si el 409 es persistente, es esto.
+
+**Lo que había mal (dos cosas):**
+- Telegraf 4.16 **no reintenta el 409**: `bot.launch()` termina con error. El código solo lo logueaba y la app
+  seguía con la API arriba y **sin leer mensajes**; como el health check pasa, Railway no la reiniciaba. Tras un
+  deploy con solapamiento el bot podía quedar muerto hasta el siguiente deploy.
+- `bot.launch()` **solo resuelve cuando el bot se detiene**, así que el bloque `.then(...)` de `src/index.js`
+  (`initModel`, cotización inicial y refresco cada 3 h, `seedApprovedEmails`, el log "Bot iniciado correctamente")
+  **nunca se ejecutaba**. Ahora está en `alConectarBot`, que Telegraf llama apenas conecta. Efecto visible: desde
+  este cambio la cotización del dólar se trae al arrancar y se refresca cada 3 h.
+
+**Arreglo:** `lanzarBot` reintenta el 409 cada 5 s. Durante un deploy es un `warn` (no avisa). Si pasa de ~12 intentos
+(~1 min) es un `error` (avisa por Discord) y sigue reintentando: significa que hay otra copia corriendo.
+`tests/lib.lanzar-bot.test.js`.
+
+**Si el aviso de "otra copia" sigue apareciendo:** buscar la otra instancia (Railway: servicios y réplicas del
+proyecto; la compu: `ps aux | grep "src/index.js"`; otros proyectos con el mismo token) o regenerar el token en
+@BotFather (invalida el viejo en todas partes) y actualizar `BOT_TOKEN` en Railway.

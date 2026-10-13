@@ -18,6 +18,8 @@ const clienteService = require('./services/cliente.service');
 const { ALLOWED_EMAILS } = require('./config');
 const state = require('./state');
 const logger = require('./lib/logger');
+const { lanzarBot } = require('./lib/lanzar-bot');
+const { logFallo } = require('./lib/errores');
 const { esperarPendientes, pendientes } = require('./lib/write-queue');
 
 // Load middleware (must be first, before commands)
@@ -107,18 +109,35 @@ async function iniciar() {
     .then(server => { apiServer = server; })
     .catch(err => logger.error('PROCESS', 'Error al iniciar API', { err: err.message }));
 
-  // Launch bot independently
-  bot.launch().then(async () => {
-    logger.info('BOT', 'Bot iniciado correctamente');
+  // Launch bot independently. OJO: bot.launch() no resuelve hasta que el bot se detiene (el long polling corre
+  // adentro), así que lo que va "al arrancar" no puede ir en un .then(): va en alConectarBot, que Telegraf llama
+  // apenas conecta. lanzarBot reintenta si hay otra instancia leyendo (409). Ver lib/lanzar-bot.js.
+  lanzarBot({
+    launch: (alConectar) => bot.launch({}, alConectar),
+    alConectar: alConectarBot,
+    logger,
+    estaApagando: () => apagando,
+  }).catch(err => {
+    logger.error('PROCESS', 'Error al iniciar bot', { err: err.message });
+  });
+}
+
+// Tareas de arranque que dependen de que el bot ya esté conectado. Se ejecuta una sola vez aunque se reintente el launch.
+let botConectado = false;
+async function alConectarBot() {
+  if (botConectado) return;
+  botConectado = true;
+  try {
+    logger.info('BOT', 'Bot conectado a Telegram');
     initModel();
     await obtenerCotizacionDolar();
     await seedApprovedEmails(ALLOWED_EMAILS);
     logger.info('BOT', `Cotizacion inicial: ${state.cotizacionDolar || 'No disponible'}`);
     const timer = setInterval(() => obtenerCotizacionDolar(), 3 * 60 * 60 * 1000);
     if (timer.unref) timer.unref();
-  }).catch(err => {
-    logger.error('PROCESS', 'Error al iniciar bot', { err: err.message });
-  });
+  } catch (err) {
+    logFallo('BOT', 'Falló una tarea de arranque del bot', err);
+  }
 }
 
 if (require.main === module) iniciar();
