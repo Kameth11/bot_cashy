@@ -106,9 +106,8 @@ COTIZACION_DEFAULT=               # Fallback si falla Bluelytics
 VAPID_PUBLIC_KEY=                 # Web Push (opcional): npx web-push generate-vapid-keys
 VAPID_PRIVATE_KEY=                # idem; sin las dos no hay push, la campanita anda igual
 VAPID_SUBJECT=                    # mailto:tu@email.com (o https://tu-dominio)
-ALERTAS_DISCORD_WEBHOOK_URL=      # (opcional) webhook de un canal de Discord: los avisos de errores van ahí (es un secreto)
-ALERTAS_CHAT_ID=                  # (opcional) si no hay webhook de Discord: chat o grupo de Telegram de los avisos; default AUTHORIZED_USER_ID
-ALERTAS_ERRORES=                  # (opcional) 'off' apaga los avisos de errores (Discord y Telegram)
+ALERTAS_DISCORD_WEBHOOK_URL=      # webhook de un canal de Discord: los avisos de errores van SOLO ahí (secreto). Sin él no hay avisos
+ALERTAS_ERRORES=                  # (opcional) 'off' apaga los avisos de errores
 ```
 
 ---
@@ -156,7 +155,7 @@ detalle completo.
   tabla en Supabase, y un test exige que toda tabla creada por una migración esté registrada. Detalle:
   `NOTAS_2026-10-13_DIAGNOSTICO_NOTIFICACIONES_Y_PERMISOS.md`.
 - Si algo "no llega" o falla en producción, **mirar primero los logs de Railway** (`severity: error`, por `scope`).
-  Cada `logger.error` además le llega al admin por Telegram (`src/lib/alertas.js`: mismo error 1 vez cada 15 min,
+  Cada `logger.error` además le llega al admin por Discord (`src/lib/alertas.js`: mismo error 1 vez cada 15 min,
   tope 8 por hora). Por eso `error` es solo para cosas que hay que arreglar; lo transitorio va a `warn` (`lib/errores.js`).
 
 ---

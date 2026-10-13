@@ -1,4 +1,4 @@
-// Avisa al admin (por Discord o por Telegram) cuando la app registra un `logger.error`.
+// Avisa al admin por Discord cuando la app registra un `logger.error`.
 //
 // Railway no tiene alertas sobre el contenido de los logs, y un error de código o de configuración
 // (como una tabla sin registrar) puede dejar una función rota durante horas sin que nadie lo vea.
@@ -10,11 +10,12 @@
 //     dice cuántas veces se repitió mientras tanto;
 //   - tope global de 8 avisos por hora; lo que queda afuera se cuenta y se informa en el próximo.
 //
-// Destino (Railway → Variables):
-//   - ALERTAS_DISCORD_WEBHOOK_URL: si está, los avisos van a ese canal de Discord (webhook entrante).
-//     La URL es un secreto (quien la tenga puede escribir en el canal): nunca se loguea.
-//   - si no está: Telegram, a ALERTAS_CHAT_ID (default AUTHORIZED_USER_ID; puede ser un grupo).
-//   - ALERTAS_ERRORES=off apaga todo. Si el proceso se cae del todo no puede avisar: para eso sirven los webhooks de
+// Destino: un canal de Discord, por webhook entrante (Railway → Variables):
+//   - ALERTAS_DISCORD_WEBHOOK_URL: la URL del webhook. Es un secreto (quien la tenga puede escribir en el
+//     canal): nunca se loguea. Sin ella (o si no es un webhook de Discord) NO hay avisos: se deja un warn al arrancar.
+//   - ALERTAS_ERRORES=off apaga todo.
+// Ya no se avisa por Telegram (se sacó a pedido: los errores van solo a Discord).
+// Si el proceso se cae del todo no puede avisar: para eso sirven los webhooks de
 // deploys fallidos de Railway (Settings → Webhooks).
 
 const logger = require('./logger');
@@ -99,34 +100,21 @@ function iniciarAlertas() {
   if (iniciado) return true;
   if (String(process.env.ALERTAS_ERRORES || '').toLowerCase() === 'off') return false;
 
-  let enviar;
-  let destino;
   const webhook = String(process.env.ALERTAS_DISCORD_WEBHOOK_URL || '').trim();
-  if (webhook) {
-    if (!esWebhookDiscord(webhook)) {
-      // Se avisa del problema (sin mostrar la URL) y se cae a Telegram, para no quedar sin avisos.
-      logger.warn('ALERTAS', 'ALERTAS_DISCORD_WEBHOOK_URL no es un webhook de Discord válido: se usa Telegram');
-    } else {
-      enviar = crearEnvioDiscord(webhook, (url, cuerpo) => require('axios').post(url, cuerpo, { timeout: 8000 }));
-      destino = 'Discord';
-    }
+  if (!webhook) {
+    logger.warn('ALERTAS', 'Sin ALERTAS_DISCORD_WEBHOOK_URL: los errores NO se avisan por ningún canal (solo quedan en los logs)');
+    return false;
+  }
+  if (!esWebhookDiscord(webhook)) {
+    // Sin mostrar la URL: aunque esté mal pegada, puede contener un token.
+    logger.warn('ALERTAS', 'ALERTAS_DISCORD_WEBHOOK_URL no es un webhook de Discord válido: los errores NO se avisan (solo quedan en los logs)');
+    return false;
   }
 
-  if (!enviar) {
-    const { AUTHORIZED_USER_ID } = require('../config'); // lazy: config valida el entorno al cargarse
-    const chatId = String(process.env.ALERTAS_CHAT_ID || '').trim() || AUTHORIZED_USER_ID;
-    if (!chatId) return false;
-    enviar = (texto) => {
-      const { bot } = require('./telegraf');
-      // warn y no error: un aviso que falla no puede disparar otro aviso.
-      bot.telegram.sendMessage(chatId, texto).catch(e => logger.warn('ALERTAS', 'No se pudo enviar el aviso', { err: e.message }));
-    };
-    destino = 'Telegram';
-  }
-
+  const enviar = crearEnvioDiscord(webhook, (url, cuerpo) => require('axios').post(url, cuerpo, { timeout: 8000 }));
   logger.suscribirErrores(crearAlertas({ enviar }));
   iniciado = true;
-  logger.info('ALERTAS', `Avisos de errores por ${destino} activados`);
+  logger.info('ALERTAS', 'Avisos de errores por Discord activados');
   return true;
 }
 

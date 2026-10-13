@@ -175,10 +175,10 @@ siempre requieren acción.
 
 ---
 
-## 8. Avisos de errores por Discord o Telegram (`src/lib/alertas.js`)
+## 8. Avisos de errores por Discord (`src/lib/alertas.js`)
 
-Cada `logger.error` le llega al admin, por Discord si hay webhook configurado y si no por Telegram. Railway solo alerta por estado del deploy y recursos
-(CPU/RAM), no por el contenido de los logs, y esto es lo que habría avisado del bug de las notificaciones.
+Cada `logger.error` le llega al admin **solo por Discord** (a pedido se sacó Telegram). Railway solo alerta por estado
+del deploy y recursos, no por el contenido de los logs, y esto es lo que habría avisado del bug de las notificaciones.
 
 - **Cómo:** `logger.js` expone `suscribirErrores(fn)`, que se dispara solo en `error` (nunca en warn/info, así
   un aviso que falla no genera otro). `iniciarAlertas()` se suscribe al arrancar (`src/index.js`).
@@ -186,17 +186,21 @@ Cada `logger.error` le llega al admin, por Discord si hay webhook configurado y 
   las repeticiones; tope global de 8 avisos por hora, y lo omitido se informa en el próximo.
 - **Qué manda:** scope, mensaje, `err`, código y status. Las cadenas largas parecidas a claves se reemplazan por `[…]`.
 - **Config (Railway → Variables):**
-  - `ALERTAS_DISCORD_WEBHOOK_URL`: webhook de un canal de Discord. Si está, los avisos van ahí y no a Telegram.
-    Es un **secreto** (quien lo tenga puede escribir en el canal): no se loguea ni se commitea. Solo se acepta una
-    URL `https://discord.com/api/webhooks/<id>/<token>` (o discordapp.com / ptb / canary); otra cosa se ignora y
-    se cae a Telegram. Los mensajes no mencionan a nadie (`allowed_mentions` vacío).
-  - Para crearlo: en Discord → Ajustes del servidor → Integraciones → Webhooks → Nuevo webhook → elegir el canal
-    → Copiar URL del webhook.
-  - `ALERTAS_CHAT_ID` (solo Telegram; default `AUTHORIZED_USER_ID`; sirve un grupo) y `ALERTAS_ERRORES=off` para apagar todo.
+  - `ALERTAS_DISCORD_WEBHOOK_URL`: webhook de un canal de Discord. Es un **secreto** (quien lo tenga puede escribir
+    en el canal): no se loguea ni se commitea. Solo se acepta `https://discord.com/api/webhooks/<id>/<token>`
+    (o discordapp.com / ptb / canary). **Sin esa variable, o con una URL inválida, no hay avisos por ningún
+    canal** (solo quedan los logs) y al arrancar se deja un `warn` en `ALERTAS`. No hay respaldo a Telegram.
+    Los mensajes no mencionan a nadie (`allowed_mentions` vacío).
+  - Para crearlo: Discord → Ajustes del servidor → Integraciones → Webhooks → Nuevo webhook → elegir el canal
+    → Copiar URL del webhook. Un webhook sirve para un solo canal; se puede reutilizar uno existente.
+  - `ALERTAS_ERRORES=off` apaga los avisos.
 - **Límite:** si el proceso se cae del todo no puede avisar. Complemento recomendado: Railway → Settings →
   Webhooks con los eventos de deploy `Failed` y `Crashed`.
 - **Regla:** como cada `error` genera un aviso, usar `error` solo para lo que hay que arreglar y `warn` para
-  lo transitorio (`logFallo`, ver sección 7).
+  lo transitorio (`logFallo`, ver sección 7). Ejemplo: un profesional que bloqueó el bot no puede recibir el
+  mensaje de Telegram de "Llegó tu paciente" (403): es `warn`, no `error`.
+- Los avisos de **turnos** a los profesionales (llegada, nuevo, cancelado) siguen saliendo por Telegram **y** por
+  campanita/push; eso no cambió.
 
 ---
 
