@@ -52,11 +52,8 @@ function TabGeneral({ user, onLogout }) {
     ? `${userId.slice(0, 3)}${'•'.repeat(Math.max(4, userId.length - 6))}${userId.slice(-3)}`
     : userId
 
-  const presetNombre = detectarPreset(user?.permisos || [], {
-    odontologo: ['ver_agenda', 'editar_agenda'],
-    recepcion:  ['ver_agenda', 'editar_agenda', 'ver_movimientos', 'cargar_movimientos', 'editar_movimientos', 'ver_balance'],
-    contadora:  ['ver_movimientos', 'ver_balance'],
-  })
+  // La plantilla de permisos la calcula el servidor (user.preset): no se copia la lista acá.
+  const presetNombre = user?.preset || null
 
   return (
     <>

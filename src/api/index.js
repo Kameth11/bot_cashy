@@ -151,13 +151,17 @@ function datosUsuario(userId) {
   const id = String(userId);
   const cliente = obtenerClientePorUserId(Number(id));
   const esAdmin = esAdminOriginal(Number(id));
+  const permisos = resolverPermisos(id);
   return {
     userId: id,
     isAdmin: esAdmin,
     isOwner: esAdmin || !!cliente?.isOwner,
     email: cliente?.email || null,
     sheetId: getSheetId(Number(id)),
-    permisos: resolverPermisos(id),
+    permisos,
+    // Nombre de la plantilla de permisos (odontologo, recepcion...) o null: lo calcula el servidor para que
+    // el dashboard no tenga que copiar la lista de plantillas.
+    preset: detectarPreset(permisos),
     modoFullIA: cliente?.modoFullIA || false,
     // ¿Ve la sección Personal? (dueño/admin, o cualquiera si Personal vive en Supabase)
     puedePersonal: puedeUsarPersonal(id),

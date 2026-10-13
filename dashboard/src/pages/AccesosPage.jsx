@@ -2,21 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { api } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
-
-const LABELS = {
-  ver_agenda:          'Ver agenda',
-  editar_agenda:       'Editar agenda',
-  ver_movimientos:     'Ver movimientos',
-  cargar_movimientos:  'Cargar movimientos',
-  editar_movimientos:  'Editar movimientos',
-  ver_balance:         'Ver balance / reportes',
-}
-
-const PRESET_LABELS = {
-  odontologo: 'Odontólogo',
-  recepcion:  'Recepción',
-  contadora:  'Contadora',
-}
+import { PERMISOS_LABELS, PRESET_LABELS } from '../utils/permisos'
 
 function PermisosEditor({ miembro, permisosDisponibles, presets, onGuardar }) {
   const [permisos, setPermisos]   = useState([...miembro.permisos])
@@ -93,7 +79,7 @@ function PermisosEditor({ miembro, permisosDisponibles, presets, onGuardar }) {
               checked={permisos.includes(p)}
               onChange={() => togglePermiso(p)}
             />
-            {LABELS[p] || p}
+            {PERMISOS_LABELS[p] || p}
           </label>
         ))}
       </div>
@@ -197,7 +183,7 @@ export default function AccesosPage() {
                     ? 'Todos los permisos'
                     : m.permisos.length === 0
                       ? 'Sin permisos'
-                      : m.permisos.map(p => LABELS[p] || p).join(', ')
+                      : m.permisos.map(p => PERMISOS_LABELS[p] || p).join(', ')
                   }
                 </span>
               </div>

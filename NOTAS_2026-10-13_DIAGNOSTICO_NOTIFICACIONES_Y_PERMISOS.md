@@ -212,10 +212,12 @@ Reglas revisadas y resultado:
 | `catch` que esconden errores de código | Corregidos: `casa.service.js` (2), permisos en `cliente.service.js`, y `obtenerViajeActivo` en `text.js` y `nlp-confirm.js`. Ahora usan `logFallo` / `logSiAccionable` (`src/lib/errores.js`). Se dejaron a propósito los `JSON.parse` de respuestas de la IA, el apagado ordenado y los `ctx.reply(...).catch(() => {})` (responder a Telegram es opcional) |
 | Listas duplicadas entre servidor y dashboard | **Pendiente**, ver abajo |
 
-### Pendiente: etiquetas y presets de permisos duplicados en el dashboard
-- `dashboard/src/pages/AccesosPage.jsx` tiene su propio `LABELS` y `PRESET_LABELS`, y **no incluye `invitar_personas`**
-  (un permiso con esa clave se mostraría con su nombre técnico). Ya existe `dashboard/src/utils/permisos.js` con la
-  lista completa, usada por `ConfigPage.jsx` e Invitaciones: `AccesosPage` debería importarla.
-- `dashboard/src/pages/ConfigPage.jsx` (~línea 57) repite a mano los presets de `src/auth/permisos.js`. Si cambia
-  un preset en el servidor, esa pantalla muestra un rol equivocado.
-- Arreglarlo requiere reconstruir `dashboard/dist` (está versionado): hacerlo junto con el próximo cambio de dashboard.
+### Resuelto: etiquetas y presets de permisos duplicados en el dashboard
+- `AccesosPage.jsx` ahora importa `PERMISOS_LABELS` / `PRESET_LABELS` de `dashboard/src/utils/permisos.js` (antes tenía
+  su copia, sin `invitar_personas`).
+- `ConfigPage.jsx` ya no repite los presets: `/api/auth/me` devuelve `user.preset` (calculado en el servidor con
+  `detectarPreset`). Test: `tests/api.auth-me-preset.test.js`. Una sesión guardada de antes no trae `preset` hasta que
+  `useAuth` la refresca con `/api/auth/me` (al abrir la app).
+- `dashboard/dist` reconstruido. **Con Node 18 el build falla** (`ReferenceError: crypto is not defined`, lo pide el
+  generador del service worker); usar `NODE_OPTIONS=--experimental-global-webcrypto npm run build` o Node 20+.
+  Si falla a mitad, `dist` queda a medio borrar: `git checkout -- dashboard/dist` y repetir.
