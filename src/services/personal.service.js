@@ -23,6 +23,7 @@ const { resolveTenantId } = require('./tenant.service');
 const { emitMovimientosUpdated } = require('./events.service');
 const { convertirAPesos } = require('./movimiento.service');
 const logger = require('../lib/logger');
+const { logFallo } = require('../lib/errores');
 const { personalEnSupabase } = require('../lib/personal-store');
 const repoSupabase = require('./personal-repo.supabase');
 const { normalizarCategoriaPersonal, CATEGORIAS_EGRESO_PERSONAL, CATEGORIAS_INGRESO_PERSONAL } = require('./personal-nlp.service');
@@ -339,7 +340,7 @@ async function evaluarPresupuesto(userId, categoria, fecha = fechaHoyStr()) {
   try {
     return await evaluarPresupuestoInterno(userId, categoria, fecha);
   } catch (error) {
-    logger.warn('Personal', 'No se pudo evaluar el presupuesto', { userId, err: error.message });
+    logFallo('Personal', 'No se pudo evaluar el presupuesto', error, { userId });
     return null;
   }
 }

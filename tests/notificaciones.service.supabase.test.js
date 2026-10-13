@@ -43,6 +43,7 @@ afterEach(() => {
 
 const tablasConsultadas = () => new Set(fake.llamadas.map(q => q.t));
 const noHuboFallos = () => {
+  expect(logger.error).not.toHaveBeenCalled();
   expect(logger.warn).not.toHaveBeenCalledWith('NOTIF', expect.stringContaining('No se pudo preparar'), expect.anything());
   expect(logger.warn).not.toHaveBeenCalledWith('NOTIF', expect.stringContaining('Error de Supabase'), expect.anything());
 };

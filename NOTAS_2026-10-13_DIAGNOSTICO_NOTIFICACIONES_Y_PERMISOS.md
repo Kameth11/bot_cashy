@@ -58,13 +58,14 @@ Mejoras recomendadas, de más barata a más completa (las marcadas ✅ ya están
 | # | Mejora | Qué evita |
 |---|---|---|
 | ✅ | Test `PERSONA_TABLES ⊆ SCOPED_TABLES` | Este bug exacto |
+| ✅ 1 y 2 | `check-tenant-isolation.js` importa `PERSONA_TABLES` de `persona-db.js`; test de notificaciones con `forPersona` real sobre Supabase falso (`tests/notificaciones.service.supabase.test.js`) | Listas desincronizadas y camino de Supabase sin ejecutar |
 | 1 | Que `check-tenant-isolation.js` **importe** `PERSONA_TABLES` de `persona-db.js` en vez de duplicarla | Listas desincronizadas |
 | 2 | Tests de servicio que usen el **`forPersona`/`forTenant` reales** con un cliente Supabase falso (como ya hace `lib.tenant-db.test.js`), no `resolveTenantId → null` | Que el camino de Supabase quede sin ejecutar |
 | 3 | Un chequeo de arranque (o `/api/health` ampliado) que haga una consulta mínima a cada tabla nueva y loguee `error` si falla | Enterarse en el deploy y no cuando un usuario lo nota |
 | 4 | **Alerta en Railway** ante logs `severity=error` repetidos (o un resumen diario de errores por `scope`) | Errores que se repiten durante horas sin que nadie los vea |
 | 5 | Humo post-deploy: tras cada deploy, un script que cree un aviso de prueba y verifique que aparece en `GET /api/notificaciones` | Regresiones de flujos enteros |
 | 6 | Checklist de PR para tablas nuevas: migración SQL + `SCOPED_TABLES` + `PERSONA_TABLES` (si es personal) + `check-tenant-isolation.js` | Olvidos al agregar una tabla |
-| 7 | Que `fallo()` y los `catch` silenciosos distingan "tabla faltante / error de configuración" (loguear `error`) de errores transitorios (`warn`) | Degradación silenciosa |
+| ✅ 7 | Que los `catch` con respaldo distingan error de programación/configuración (`logger.error`) de fallo transitorio (`logger.warn`): `src/lib/errores.js` → `logFallo()` | Degradación silenciosa |
 
 **Checklist al agregar una tabla nueva** (usarla tal cual):
 
@@ -150,3 +151,24 @@ Quién puede qué (ver `src/auth/permisos.js`): el default de un miembro es `['v
 - Las migraciones nuevas son la 015 a la 022 y se aplican a mano.
 - `CLAUDE.md` dice "No se tocan los tests por ahora (decisión del usuario)", pero el repo ya incorpora
   muchos tests; esa línea parece desactualizada. Revisarla.
+
+---
+
+## 7. Severidad de los logs: `error` vs `warn` (`src/lib/errores.js`)
+
+Los servicios con respaldo atrapan los fallos de Supabase para no romper la acción del usuario.
+Para que eso no esconda errores nuestros, `logFallo(scope, mensaje, err, extra)` decide la severidad:
+
+- **`logger.error`** (hay que arreglarlo): `TypeError`/`ReferenceError`/`RangeError`/`SyntaxError`, las guardas de
+  `tenant-db.js`/`persona-db.js` (tabla sin registrar, falta `userId`/`tenantId`), y errores de Supabase con código
+  de esquema o permisos (`42501`, `42703`, `42883`, `42P01`, `PGRST200/202/204/205`).
+- **`logger.warn`** (pasajero): red, timeouts y el resto.
+
+Además pasaron a `error`: tabla faltante (migración sin correr, una vez por arranque), claves VAPID inválidas
+(una vez por combinación de claves) y push rechazado con 401/403 (claves VAPID que no coinciden).
+
+Aplicado en notificaciones, chat-historial, personal (presupuesto), invitaciones y comprobante-archivo. Los demás
+`warn` de servicios son fallos esperados (duplicados, dual-write, datos de fecha ilegible, profesional no
+registrado) y se dejaron como estaban. **Regla para código nuevo:** en un `catch` con respaldo, usar `logFallo` y
+no `logger.warn(..., err.message)` a mano. Con esto, una alerta de Railway sobre `level=error` apunta a cosas que
+siempre requieren acción.

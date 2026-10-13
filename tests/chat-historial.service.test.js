@@ -87,12 +87,12 @@ describe('best-effort: nunca rompe el chat', () => {
     expect(await servicio.cargar(7)).toBeNull();
     const consultas = () => fake.llamadas.filter(q => q.t === 'chat_historial').length;
     expect(consultas()).toBe(1);
-    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledTimes(1);
 
     await servicio.cargar(7);
     await servicio.guardar(7, { mensajes: [], ultimoId: 0, rev: 0 });
     expect(consultas()).toBe(1); // no volvió a consultar
-    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledTimes(1);
 
     const ahora = Date.now();
     jest.spyOn(Date, 'now').mockReturnValue(ahora + servicio.REINTENTO_TABLA_MS + 1000);
@@ -100,5 +100,14 @@ describe('best-effort: nunca rompe el chat', () => {
     getSupabase.mockReturnValue(fake);
     expect(await servicio.guardar(7, { mensajes: [msg(1, 'x')], ultimoId: 1, rev: 1 })).toBe(true);
     Date.now.mockRestore();
+  });
+});
+
+describe('severidad de los fallos', () => {
+  test('un error de permisos/esquema de la base (42501) es de configuración → logger.error', async () => {
+    fake = crearSupabaseFalso({ errorEn: { tabla: 'chat_historial', op: 'upsert', mensaje: 'permission denied', code: '42501' } });
+    getSupabase.mockReturnValue(fake);
+    expect(await servicio.guardar(7, { mensajes: [], ultimoId: 0, rev: 0 })).toBe(false);
+    expect(logger.error).toHaveBeenCalled();
   });
 });

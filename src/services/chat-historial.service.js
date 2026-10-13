@@ -7,6 +7,7 @@
 const { forPersona } = require('../lib/persona-db');
 const { resolveTenantId } = require('./tenant.service');
 const logger = require('../lib/logger');
+const { logFallo } = require('../lib/errores');
 
 const REINTENTO_TABLA_MS = 5 * 60 * 1000; // si faltaba la tabla, se vuelve a probar de a ratos
 
@@ -21,7 +22,7 @@ function avisarTablaFaltante() {
   const primera = sinTablaHasta === 0;
   sinTablaHasta = Date.now() + REINTENTO_TABLA_MS;
   if (primera) {
-    logger.warn('CHAT_WEB', 'Falta la tabla chat_historial: el historial del chat no se guarda entre deploys (correr sql/migrations/015_chat_historial.sql)');
+    logger.error('CHAT_WEB', 'Falta la tabla chat_historial: el historial del chat no se guarda entre deploys (correr sql/migrations/015_chat_historial.sql)');
   }
 }
 
@@ -52,7 +53,7 @@ async function cargar(userId) {
       .maybeSingle();
     if (error) {
       if (tablaFaltante(error)) avisarTablaFaltante();
-      else logger.warn('CHAT_WEB', 'No se pudo leer el historial del chat', { err: error.message });
+      else logFallo('CHAT_WEB', 'No se pudo leer el historial del chat', error);
       return null;
     }
     if (!data) return null;
@@ -62,7 +63,7 @@ async function cargar(userId) {
       rev: Number(data.rev) || 0,
     };
   } catch (err) {
-    logger.warn('CHAT_WEB', 'No se pudo leer el historial del chat', { err: err.message });
+    logFallo('CHAT_WEB', 'No se pudo leer el historial del chat', err);
     return null;
   }
 }
@@ -82,12 +83,12 @@ async function guardar(userId, { mensajes, ultimoId, rev }) {
       }, { onConflict: 'user_id' });
     if (error) {
       if (tablaFaltante(error)) avisarTablaFaltante();
-      else logger.warn('CHAT_WEB', 'No se pudo guardar el historial del chat', { err: error.message });
+      else logFallo('CHAT_WEB', 'No se pudo guardar el historial del chat', error);
       return false;
     }
     return true;
   } catch (err) {
-    logger.warn('CHAT_WEB', 'No se pudo guardar el historial del chat', { err: err.message });
+    logFallo('CHAT_WEB', 'No se pudo guardar el historial del chat', err);
     return false;
   }
 }

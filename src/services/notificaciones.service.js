@@ -16,6 +16,7 @@ const { forPersona } = require('../lib/persona-db');
 const { resolveTenantId } = require('./tenant.service');
 const eventsService = require('./events.service');
 const logger = require('../lib/logger');
+const { logFallo } = require('../lib/errores');
 
 const MAX_NOTIFICACIONES = 30;      // lo que muestra la campanita
 const MAX_EN_MEMORIA = 50;
@@ -37,6 +38,7 @@ function configuracionPush() {
 }
 
 let vapidListo = null;
+let vapidInvalidoAvisado = null;
 function vapidConfigurado() {
   const c = configuracionPush();
   if (!c.activo) return false;
@@ -48,7 +50,12 @@ function vapidConfigurado() {
     vapidListo = `${c.publica}|${c.privada}|${c.asunto}`;
     return true;
   } catch (err) {
-    logger.warn('NOTIF', 'Claves VAPID inválidas: el push queda desactivado', { err: err.message });
+    // Error de configuración, pero esta función se llama en cada request: se avisa una vez por combinación de claves.
+    const clave = `${c.publica}|${c.privada}|${c.asunto}`;
+    if (vapidInvalidoAvisado !== clave) {
+      vapidInvalidoAvisado = clave;
+      logger.error('NOTIF', 'Claves VAPID inválidas: el push queda desactivado', { err: err.message });
+    }
     return false;
   }
 }
@@ -80,7 +87,7 @@ function avisarTablaFaltante() {
   const primera = sinTablaHasta === 0;
   sinTablaHasta = Date.now() + REINTENTO_TABLA_MS;
   if (primera) {
-    logger.warn('NOTIF', 'Faltan las tablas de notificaciones: se guardan en memoria y no hay push entre deploys (correr sql/migrations/020_notificaciones_web.sql)');
+    logger.error('NOTIF', 'Faltan las tablas de notificaciones: se guardan en memoria y no hay push entre deploys (correr sql/migrations/020_notificaciones_web.sql)');
   }
 }
 
@@ -99,7 +106,7 @@ async function personaDe(userId) {
     if (!tenantId) return null;
     return forPersona(tenantId, userId);
   } catch (err) {
-    logger.warn('NOTIF', 'No se pudo preparar el acceso a Supabase', { err: err.message });
+    logFallo('NOTIF', 'No se pudo preparar el acceso a Supabase', err);
     return null;
   }
 }
@@ -107,7 +114,7 @@ async function personaDe(userId) {
 // Devuelve true si el error era "tabla faltante" (y ya se avisó), para caer a memoria.
 function fallo(error, contexto) {
   if (tablaFaltante(error)) { avisarTablaFaltante(); return true; }
-  logger.warn('NOTIF', `Error de Supabase (${contexto})`, { err: error.message });
+  logFallo('NOTIF', `Error de Supabase (${contexto})`, error);
   return true;
 }
 
@@ -231,7 +238,11 @@ async function enviarPush(userId, notif) {
     } catch (err) {
       // 404/410: el navegador ya no existe o se revocó el permiso → se limpia.
       if (err.statusCode === 404 || err.statusCode === 410) await borrarSuscripcion(userId, sub.endpoint);
-      else logger.warn('NOTIF', 'Falló un push', { status: err.statusCode, err: String(err.message).slice(0, 120) });
+      else {
+        // 401/403: el servicio de push rechaza nuestras claves VAPID (configuración); el resto suele ser pasajero.
+        const log = err.statusCode === 401 || err.statusCode === 403 ? logger.error : logger.warn;
+        log('NOTIF', 'Falló un push', { status: err.statusCode, err: String(err.message).slice(0, 120) });
+      }
     }
   }));
   return { enviados };

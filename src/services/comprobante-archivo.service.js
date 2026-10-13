@@ -17,6 +17,7 @@ const { getSupabase, isAvailable } = require('../lib/supabase');
 const { forTenant } = require('../lib/tenant-db');
 const { resolveTenantId } = require('./tenant.service');
 const logger = require('../lib/logger');
+const { logFallo } = require('../lib/errores');
 const { normalizarFecha } = require('../utils/date');
 
 const BUCKET = 'comprobantes';
@@ -60,11 +61,11 @@ async function resolverCapacidades() {
     // trae filas), mismo criterio que personal.service.js.
     const check = await supabase.from('comprobantes').select('id', { head: true, count: 'exact' });
     if (!check.error) caps.tabla = true;
-    else if (!isMissingError(check.error)) logger.warn('Comprobantes', 'Chequeo de tabla comprobantes falló', { err: check.error.message });
+    else if (!isMissingError(check.error)) logFallo('Comprobantes', 'Chequeo de tabla comprobantes falló', check.error);
 
     const bucket = await supabase.storage.getBucket(BUCKET);
     if (!bucket.error) caps.bucket = true;
-    else if (!isMissingError(bucket.error)) logger.warn('Comprobantes', 'Chequeo de bucket comprobantes falló', { err: bucket.error.message });
+    else if (!isMissingError(bucket.error)) logFallo('Comprobantes', 'Chequeo de bucket comprobantes falló', bucket.error);
 
     if (!caps.tabla || !caps.bucket) {
       logger.info('Comprobantes', 'Supabase sin tabla/bucket de comprobantes (correr sql/migrations/011_comprobantes.sql); se usa solo Sheets + Telegram', caps);
@@ -191,9 +192,9 @@ async function vincularMovimientoEnSupabase(userId, idComprobante, idMovimiento)
       .from('comprobantes')
       .update({ id_movimiento: idMovimiento })
       .eq('legacy_id', idComprobante);
-    if (error) logger.warn('Comprobantes', 'No se pudo vincular el movimiento en Supabase', { userId, idComprobante, err: error.message });
+    if (error) logFallo('Comprobantes', 'No se pudo vincular el movimiento en Supabase', error, { userId, idComprobante });
   } catch (err) {
-    logger.warn('Comprobantes', 'No se pudo vincular el movimiento en Supabase', { userId, idComprobante, err: err.message });
+    logFallo('Comprobantes', 'No se pudo vincular el movimiento en Supabase', err, { userId, idComprobante });
   }
 }
 

@@ -28,6 +28,7 @@ const { sanitizarInput } = require('../utils/formatter');
 const clienteService = require('./cliente.service');
 const { resolveTenantId } = require('./tenant.service');
 const logger = require('../lib/logger');
+const { logFallo } = require('../lib/errores');
 
 const DIAS_DE_VIGENCIA = 7;
 const MAX_PENDIENTES = 25;
@@ -288,7 +289,7 @@ async function canjearPorGoogle(g) {
       if (r.ok) require('./agenda.service').invalidarConsultorioMap(inv.tenant_id);
       else logger.warn('INVITACION', 'No se pudo registrar al profesional invitado', { err: r.error });
     } catch (err) {
-      logger.warn('INVITACION', 'Error registrando al profesional invitado', { err: err.message });
+      logFallo('INVITACION', 'Error registrando al profesional invitado', err);
     }
   }
 
