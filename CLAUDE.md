@@ -147,6 +147,11 @@ detalle completo.
 - `dashboard/dist` está versionado: un `npm run build` lo modifica; restaurarlo con
   `git checkout -- dashboard/dist` antes de commitear. No dejar archivos sueltos de
   pruebas en la raíz. Hay que correr `npm ci` antes de `npm test` en una sesión nueva.
+- **Tabla nueva = dos listas**: `SCOPED_TABLES` (`tenant-db.js`) y, si es personal, `PERSONA_TABLES`
+  (`persona-db.js` y `scripts/check-tenant-isolation.js`). Faltar en una rompe en silencio la función
+  entera (así dejaron de andar la campanita y el push). Checklist y cómo detectar estos errores:
+  `NOTAS_2026-10-13_DIAGNOSTICO_NOTIFICACIONES_Y_PERMISOS.md`.
+- Si algo "no llega" o falla en producción, **mirar primero los logs de Railway** (`severity: error`, por `scope`).
 
 ---
 
@@ -295,6 +300,8 @@ le avisa a quien hizo el cambio si es el mismo profesional. Los disparan los end
 - **Datos**: tablas `notificaciones` y `push_subscriptions` (`sql/migrations/020_notificaciones_web.sql`,
   **hay que correrla a mano**), por persona con `forPersona`. Sin la tabla, o sin Supabase, se guardan
   en memoria (se pierden en cada deploy y las suscripciones push también).
+- **Diagnóstico y puesta en marcha** (un solo par VAPID para todo el servicio, iPhone, qué mirar en los
+  logs, por qué no avisa a quien hizo el cambio): `NOTAS_2026-10-13_DIAGNOSTICO_NOTIFICACIONES_Y_PERMISOS.md`.
 - **Push**: necesita `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` en Railway. Sin
   ellas el servidor no ofrece push (la campanita funciona igual). En iPhone solo anda con la PWA
   instalada en la pantalla de inicio (iOS 16.4+). Un dispositivo caído (404/410) se borra solo.
