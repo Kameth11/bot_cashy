@@ -5,6 +5,11 @@ jest.mock('telegraf', () => ({
     button: { callback: jest.fn((label, id) => ({ text: label, callback_data: id })) },
   },
 }));
+jest.mock('../src/auth/bot-permisos', () => ({
+  requierePermisoBot: jest.fn(() => true),
+  requierePersonalBot: jest.fn(() => true),
+  tienePermisoBot: jest.fn(() => true),
+}));
 jest.mock('../src/services/command.service', () => ({
   registrarMovimientoDesdeNLP: jest.fn(),
 }));

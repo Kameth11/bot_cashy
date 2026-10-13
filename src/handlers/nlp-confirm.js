@@ -423,12 +423,14 @@ async function aplicarAmbito(ctx, target, comando) {
 
   const personalService = require('../services/personal.service');
   const { inferirCategoriaPersonal } = require('../services/personal-nlp.service');
-  const { requierePersonalBot } = require('../auth/bot-permisos');
+  const { requierePersonalBot, requierePermisoBot } = require('../auth/bot-permisos');
 
   // En modo 'sheets' las pestañas personales son las del dueño: un invitado no puede
   // pasar un movimiento a ese ámbito tocando el botón. En modo 'supabase' cada persona
   // tiene el suyo (mismo criterio que marcarAmbito en text.js).
   if (target === 'personal' && !requierePersonalBot(ctx, comando)) return;
+  // Volver al consultorio sí es cargar en el consultorio: ahí rige cargar_movimientos.
+  if (target === 'consultorio' && !requierePermisoBot(ctx, 'cargar_movimientos', comando)) return;
 
   const entities = { ...pending.entities };
   const veniaDeConsultorio = !esAmbitoPersonal(entities) && !esAmbitoCasa(entities);
@@ -625,6 +627,10 @@ async function handleNlpSave(ctx) {
   if (esAmbitoPersonal(pending.entities)) {
     return guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, pending.entities);
   }
+
+  // Último control antes de escribir en el consultorio (el movimiento puede haber entrado
+  // como personal sin ese permiso).
+  if (!require('../auth/bot-permisos').requierePermisoBot(ctx, 'cargar_movimientos', 'nlp_save')) return;
 
   try {
     const resultado = await cmd.registrarMovimientoDesdeNLP(userId, pending.entities);

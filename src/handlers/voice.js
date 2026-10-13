@@ -10,6 +10,7 @@ const { procesarTextoConNlp } = require('./text');
 const { geminiMediaSemaphore } = require('../lib/semaphore');
 const aiQuota = require('../lib/ai-quota');
 const { requierePermisoBot } = require('../auth/bot-permisos');
+const { puedeUsarPersonal } = require('../auth/personal-acceso');
 
 bot.on('voice', async (ctx) => {
   const userId = ctx.from.id;
@@ -18,7 +19,9 @@ bot.on('voice', async (ctx) => {
     return ctx.reply('⚠️ No tienes una cuenta registrada.\n\nUsa /start para registrarte.');
   }
 
-  if (!requierePermisoBot(ctx, 'cargar_movimientos', 'nota_voz')) return;
+  // Quien puede usar Personal puede dictar un gasto personal aunque no cargue en el consultorio:
+  // el permiso del consultorio se exige más adelante, según el ámbito que salga del audio.
+  if (!puedeUsarPersonal(userId) && !requierePermisoBot(ctx, 'cargar_movimientos', 'nota_voz')) return;
 
   if (tieneProcesoPendiente(userId)) {
     return ctx.reply('⚠️ Tenés un proceso pendiente. Usá /cancelar primero.');

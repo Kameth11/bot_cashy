@@ -131,6 +131,21 @@ describe('handleNLPIntent — permiso por intent (lenguaje natural)', () => {
     expect(permitido.reply).not.toHaveBeenCalledWith(DENEGADO);
   });
 
+  test.each(['personal', 'casa'])('registrar_movimiento en ámbito "%s" NO requiere cargar_movimientos', async (ambito) => {
+    const ctx = ctxFor(3333);
+    await handleNLPIntent(ctx, { intent: 'registrar_movimiento', entities: { tipo: 'egreso', ambito } });
+    expect(ctx.reply).not.toHaveBeenCalledWith(DENEGADO);
+  });
+
+  test('registrar_movimiento en consultorio (o sin ámbito) sigue requiriéndolo', async () => {
+    const a = ctxFor(3333);
+    await handleNLPIntent(a, { intent: 'registrar_movimiento', entities: { ambito: 'consultorio' } });
+    expect(a.reply).toHaveBeenCalledWith(DENEGADO);
+    const b = ctxFor(3333);
+    await handleNLPIntent(b, { intent: 'registrar_movimiento', entities: {} });
+    expect(b.reply).toHaveBeenCalledWith(DENEGADO);
+  });
+
   const casosVerBalance = ['ver_balance', 'ver_semana', 'ver_mes'];
   test.each(casosVerBalance)('intent "%s" requiere ver_balance', async (intent) => {
     const ctx = ctxFor(3333);

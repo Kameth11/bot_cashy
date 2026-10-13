@@ -27,8 +27,8 @@ jest.mock('../src/services/cliente.service', () => ({
       '2222': {
         email: 'owner@test.com',
         sheetId: 'sheet-owner',
-        usuarios: [3333],
-        permisos: { '3333': ['ver_agenda', 'ver_movimientos', 'cargar_movimientos'] },
+        usuarios: [3333, 5555],
+        permisos: { '3333': ['ver_agenda', 'ver_movimientos', 'cargar_movimientos'], '5555': ['ver_agenda', 'editar_agenda'] },
       },
     };
   },
@@ -51,7 +51,7 @@ jest.mock('../src/services/personal-nlp.service', () => ({
 
 const state = require('../src/state');
 const personalService = require('../src/services/personal.service');
-const { handleNlpToggleAmbito } = require('../src/handlers/nlp-confirm');
+const { handleNlpToggleAmbito, handleNlpSave } = require('../src/handlers/nlp-confirm');
 
 function ctxFor(userId) {
   return {
@@ -113,5 +113,29 @@ describe('handleNlpToggleAmbito — pasar a "personal" es solo del dueño', () =
 
     expect(ctx.reply).not.toHaveBeenCalledWith(expect.stringContaining('solo para el dueño'));
     expect(state.pendingNlpMovimientos.get(3333).entities.ambito).toBe('consultorio');
+  });
+});
+
+describe('volver a consultorio y guardar exigen cargar_movimientos', () => {
+  const personal = { tipo: 'egreso', descripcion: 'nafta', monto: 20000, ambito: 'personal', categoriaConsultorio: null };
+
+  test('odontólogo (5555, sin cargar_movimientos) no puede pasar un movimiento personal a consultorio', async () => {
+    state.pendingNlpMovimientos.set(5555, { entities: { ...personal } });
+    const ctx = ctxFor(5555);
+
+    await handleNlpToggleAmbito(ctx);
+
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining('No tenés permiso'));
+    expect(state.pendingNlpMovimientos.get(5555).entities.ambito).toBe('personal');
+  });
+
+  test('odontólogo (5555) no puede guardar un movimiento de consultorio', async () => {
+    state.pendingNlpMovimientos.set(5555, { entities: { ...personal, ambito: 'consultorio' } });
+    const ctx = ctxFor(5555);
+
+    await handleNlpSave(ctx);
+
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining('No tenés permiso'));
+    expect(require('../src/services/command.service').registrarMovimientoDesdeNLP).not.toHaveBeenCalled();
   });
 });

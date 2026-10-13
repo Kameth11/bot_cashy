@@ -8,7 +8,7 @@ const { mostrarCobrar } = require('./cobrar-confirm');
 const { DASHBOARD_URL } = require('../config');
 const { requierePermisoBot } = require('../auth/bot-permisos');
 const { escapeMarkdown } = require('../utils/formatter');
-const { camposDeAmbito } = require('../lib/ambitos');
+const { camposDeAmbito, esAmbito, AMBITO_PERSONAL, AMBITO_CASA } = require('../lib/ambitos');
 
 // Permiso requerido por intent NLP. Mismo criterio que el mapa de comandos
 // del bot — un intent sin entrada acá se considera público/informativo
@@ -386,7 +386,12 @@ async function handleNLPIntent(ctx, nlpResult, mensajeOriginal) {
     return false;
   }
 
-  const permisoRequerido = INTENT_PERMISOS[intent];
+  // Personal y Casa no tienen que ver con el consultorio: cargar un gasto ahí no requiere
+  // cargar_movimientos. marcarAmbito ya dejó el ámbito en consultorio si la persona no puede
+  // usar Personal, y pasar el movimiento a consultorio desde el botón pide el permiso (nlp-confirm).
+  const fueraDelConsultorio = intent === 'registrar_movimiento'
+    && (esAmbito(entities, AMBITO_PERSONAL) || esAmbito(entities, AMBITO_CASA));
+  const permisoRequerido = fueraDelConsultorio ? null : INTENT_PERMISOS[intent];
   if (permisoRequerido && !requierePermisoBot(ctx, permisoRequerido, `nlp:${intent}`)) {
     return true;
   }

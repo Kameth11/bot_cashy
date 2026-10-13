@@ -12,6 +12,11 @@ jest.mock('telegraf', () => ({
 jest.mock('../src/lib/logger', () => ({ audit: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 jest.mock('../src/config', () => ({ AUTHORIZED_USER_ID: 1111, ALLOWED_EMAILS: [], CODIGO_EXPIRACION_HORAS: 24, DASHBOARD_URL: 'https://cashy.example.com/' }));
 
+jest.mock('../src/auth/bot-permisos', () => ({
+  requierePermisoBot: jest.fn(() => true),
+  requierePersonalBot: jest.fn(() => true),
+  tienePermisoBot: jest.fn(() => true),
+}));
 jest.mock('../src/services/command.service', () => ({ registrarMovimientoDesdeNLP: jest.fn() }));
 jest.mock('../src/services/personal.service', () => ({
   registrarMovimientoPersonal: jest.fn(),
