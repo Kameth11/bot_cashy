@@ -66,9 +66,11 @@ describe('lib/tenant-db forTenant', () => {
       'comprobantes',
       'movimientos',
       'movimientos_personales',
+      'notificaciones',
       'preferencias_ambito_personales',
       'presupuestos_personales',
       'profesionales',
+      'push_subscriptions',
       'viajes_personales',
     ]);
   });
@@ -117,5 +119,15 @@ describe('lib/tenant-db forTenant', () => {
     const original = { descripcion: 'x' };
     forTenant('tenant-1').from('movimientos').insert(original);
     expect(original).toEqual({ descripcion: 'x' }); // sin tenant_id agregado
+  });
+});
+
+describe('PERSONA_TABLES ⊆ SCOPED_TABLES', () => {
+  // forPersona() se apoya en forTenant(): una tabla personal que no esté también en
+  // SCOPED_TABLES lanza en cada consulta (así dejó de andar la campanita y el push).
+  test('toda tabla personal está también en SCOPED_TABLES', () => {
+    const { PERSONA_TABLES } = require('../src/lib/persona-db');
+    const faltantes = [...PERSONA_TABLES].filter(t => !SCOPED_TABLES.has(t));
+    expect(faltantes).toEqual([]);
   });
 });

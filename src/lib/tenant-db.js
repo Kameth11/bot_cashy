@@ -27,6 +27,10 @@ const SCOPED_TABLES = new Set([
   // Historial del chat web (sql/migrations/015). Una fila por persona: solo se
   // consulta con forPersona() (lib/persona-db.js).
   'chat_historial',
+  // Avisos de la campanita y suscripciones Web Push (sql/migrations/020). Una fila por
+  // persona: solo se consultan con forPersona() (lib/persona-db.js).
+  'notificaciones',
+  'push_subscriptions',
 ]);
 
 function wrapBuilder(builder, tenantId) {
