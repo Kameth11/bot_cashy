@@ -54,3 +54,31 @@ describe('lib/logger - niveles', () => {
     errSpy.mockRestore();
   });
 });
+
+describe('lib/logger - suscribirErrores', () => {
+  let espia;
+  beforeEach(() => { espia = jest.spyOn(console, 'error').mockImplementation(() => {}); });
+  afterEach(() => { espia.mockRestore(); });
+
+  test('avisa a los oyentes SOLO en error, con el meta ya redactado', () => {
+    const oyente = jest.fn();
+    logger.suscribirErrores(oyente);
+
+    logger.warn('S', 'solo warn', { err: 'x' });
+    logger.info('S', 'solo info');
+    expect(oyente).not.toHaveBeenCalled();
+
+    logger.error('S', 'se rompió', { err: 'boom', token: 'secreto' });
+    expect(oyente).toHaveBeenCalledWith('S', 'se rompió', { err: 'boom', token: '[REDACTED]' });
+  });
+
+  test('un oyente que lanza no rompe el logging ni a los demás', () => {
+    const roto = jest.fn(() => { throw new Error('oyente roto'); });
+    const sano = jest.fn();
+    logger.suscribirErrores(roto);
+    logger.suscribirErrores(sano);
+
+    expect(() => logger.error('S', 'm', {})).not.toThrow();
+    expect(sano).toHaveBeenCalled();
+  });
+});

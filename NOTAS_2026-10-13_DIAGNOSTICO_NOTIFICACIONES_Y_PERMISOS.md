@@ -62,7 +62,7 @@ Mejoras recomendadas, de más barata a más completa (las marcadas ✅ ya están
 | ✅ 1 | Registro único de tablas `src/lib/tablas.js`: de ahí se derivan `SCOPED_TABLES`, `PERSONA_TABLES` y las listas de `check-tenant-isolation.js` | Listas desincronizadas |
 | 2 | Tests de servicio que usen el **`forPersona`/`forTenant` reales** con un cliente Supabase falso (como ya hace `lib.tenant-db.test.js`), no `resolveTenantId → null` | Que el camino de Supabase quede sin ejecutar |
 | ✅ 3 | Chequeo de arranque `src/lib/verificar-tablas.js`: consulta cada tabla del registro y loguea `error` con la migración que falta (no tumba el servidor; una tabla `opcional` solo da `warn`) | Enterarse en el deploy y no cuando un usuario lo nota |
-| 4 | **Alerta en Railway** ante logs `severity=error` repetidos (o un resumen diario de errores por `scope`) | Errores que se repiten durante horas sin que nadie los vea |
+| ✅ 4 | **Aviso por Telegram** ante cada `logger.error` (`src/lib/alertas.js`). Railway no tiene alertas sobre el contenido de los logs, solo sobre estado del deploy y recursos | Errores que se repiten durante horas sin que nadie los vea |
 | 5 | Humo post-deploy: tras cada deploy, un script que cree un aviso de prueba y verifique que aparece en `GET /api/notificaciones` | Regresiones de flujos enteros |
 | ✅ 6 | Test `tests/lib.tablas.test.js`: toda tabla creada por una migración tiene que estar en el registro (y viceversa) | Olvidos al agregar una tabla |
 | ✅ 7 | Que los `catch` con respaldo distingan error de programación/configuración (`logger.error`) de fallo transitorio (`logger.warn`): `src/lib/errores.js` → `logFallo()` | Degradación silenciosa |
@@ -172,3 +172,22 @@ Aplicado en notificaciones, chat-historial, personal (presupuesto), invitaciones
 registrado) y se dejaron como estaban. **Regla para código nuevo:** en un `catch` con respaldo, usar `logFallo` y
 no `logger.warn(..., err.message)` a mano. Con esto, una alerta de Railway sobre `level=error` apunta a cosas que
 siempre requieren acción.
+
+---
+
+## 8. Avisos de errores por Telegram (`src/lib/alertas.js`)
+
+Cada `logger.error` le llega al admin por Telegram. Railway solo alerta por estado del deploy y recursos
+(CPU/RAM), no por el contenido de los logs, y esto es lo que habría avisado del bug de las notificaciones.
+
+- **Cómo:** `logger.js` expone `suscribirErrores(fn)`, que se dispara solo en `error` (nunca en warn/info, así
+  un aviso que falla no genera otro). `iniciarAlertas()` se suscribe al arrancar (`src/index.js`).
+- **Límites:** el mismo error (scope + mensaje) avisa como mucho 1 vez cada 15 min y el siguiente aviso cuenta
+  las repeticiones; tope global de 8 avisos por hora, y lo omitido se informa en el próximo.
+- **Qué manda:** scope, mensaje, `err`, código y status. Las cadenas largas parecidas a claves se reemplazan por `[…]`.
+- **Config (Railway → Variables):** `ALERTAS_CHAT_ID` (opcional; default `AUTHORIZED_USER_ID`; sirve un grupo,
+  con el bot agregado) y `ALERTAS_ERRORES=off` para apagarlo.
+- **Límite:** si el proceso se cae del todo no puede avisar. Complemento recomendado: Railway → Settings →
+  Webhooks con los eventos de deploy `Failed` y `Crashed`.
+- **Regla:** como cada `error` genera un aviso, usar `error` solo para lo que hay que arreglar y `warn` para
+  lo transitorio (`logFallo`, ver sección 7).

@@ -94,6 +94,8 @@ let apiServer = null;
 // sigue en vuelo) cualquier mensaje o request encuentra `clientes` vacío y
 // todo el mundo (dueños incluidos) parece "no autorizado".
 async function iniciar() {
+  // Cada logger.error le llega al admin por Telegram (con tope de frecuencia): ver lib/alertas.js.
+  require('./lib/alertas').iniciarAlertas();
   require('./lib/supabase').verificarClaveServicio(logger);
   // Avisa (como error en los logs) si falta alguna tabla/migración; no bloquea ni tumba el arranque.
   require('./lib/verificar-tablas').verificarTablas(logger)

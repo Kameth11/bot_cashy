@@ -25,7 +25,18 @@ function write(stream, level, scope, message, meta) {
 
 function info(scope, message, meta) { write(console.log, 'info', scope, message, meta); }
 function warn(scope, message, meta) { write(console.error, 'warn', scope, message, meta); }
-function error(scope, message, meta) { write(console.error, 'error', scope, message, meta); }
+// Quien quiera enterarse de cada error (ej. lib/alertas.js, que avisa por Telegram) se suscribe acá.
+// Solo se llama para `error`, nunca para warn/info: así un aviso que falla (que se loguea como warn)
+// no puede disparar otro aviso en bucle.
+const oyentesDeError = [];
+function suscribirErrores(fn) { oyentesDeError.push(fn); }
+
+function error(scope, message, meta) {
+  write(console.error, 'error', scope, message, meta);
+  for (const fn of oyentesDeError) {
+    try { fn(scope, message, redact(meta)); } catch (_) { /* un oyente roto nunca puede romper el logging */ }
+  }
+}
 function audit(event, meta) { write(console.error, 'audit', event, undefined, meta); }
 
-module.exports = { info, warn, error, audit, redact };
+module.exports = { info, warn, error, audit, redact, suscribirErrores };
