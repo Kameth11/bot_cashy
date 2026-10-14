@@ -1,6 +1,6 @@
 const state = require('../state');
 const db = require('./db.service');
-const { formatMonto, escapeMarkdown } = require('../utils/formatter');
+const textos = require('../messages');
 const { obtenerClientePorUserId } = require('../auth');
 const { fechaArgentinaStr, horaArgentinaStr } = require('../utils/date');
 
@@ -88,33 +88,9 @@ function construirRowData({
 }
 
 function crearMensajeMovimientoRegistrado({ tipo, descripcion, monto, moneda, metodoPago, fechaStr, idUnico, cotizacionUsada = null, montoPesos = null, estado = 'Cobrado' }) {
-  const tipoTexto = tipo === 'Ingreso' ? 'Ingreso' : 'Gasto';
-  const tipoEmoji = tipo === 'Ingreso' ? '💰' : '💸';
-  const estadoFinal = estado || 'Cobrado';
-  const titulo = estadoFinal === 'Pendiente' ? 'pendiente registrado' : `${tipoTexto.toLowerCase()} registrado`;
-
-  let montoTexto = formatMonto(monto, moneda);
-  if (moneda === 'Dólares' && cotizacionUsada) {
-    montoTexto = `U$${Math.abs(monto).toLocaleString('es-AR')} (cotización: $${cotizacionUsada.toLocaleString('es-AR')})`;
-    if (montoPesos !== null) {
-      montoTexto += `\n💵 En pesos: $${montoPesos.toLocaleString('es-AR')}`;
-    }
-  } else if (moneda === 'Euros' && cotizacionUsada) {
-    montoTexto = `€${Math.abs(monto).toLocaleString('es-AR')} (cotización: $${cotizacionUsada.toLocaleString('es-AR')})`;
-    if (montoPesos !== null) {
-      montoTexto += `\n💶 En pesos: $${montoPesos.toLocaleString('es-AR')}`;
-    }
-  }
-
-  return (
-    `${tipoEmoji} *¡${titulo.charAt(0).toUpperCase() + titulo.slice(1)}!*\n\n` +
-    `📝 Descripción: ${escapeMarkdown(descripcion)}\n` +
-    `💰 Monto: ${montoTexto}\n` +
-    `📊 Estado: ${estadoFinal}\n` +
-    (metodoPago ? `💳 Método: ${metodoPago}\n` : '') +
-    `📅 Fecha: ${fechaStr}\n` +
-    `🆔 ID: \`${idUnico}\``
-  );
+  // El texto vive en src/messages.js. fechaStr e idUnico siguen llegando por compatibilidad,
+  // pero la confirmación ya no los muestra (quedan guardados en el sheet).
+  return textos.movimiento.registrado({ tipo, descripcion, monto, moneda, metodoPago, cotizacionUsada, montoPesos, estado });
 }
 
 function vincularComprobante(userId, idComprobante, idMovimiento) {

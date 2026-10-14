@@ -3,7 +3,7 @@ const { bot } = require('../lib/telegraf');
 const { METODOS_VALIDOS, COMANDOS_INGRESO, COMANDOS_EGRESO } = require('../config');
 const state = require('../state');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
-const { formatMonto, sanitizarInput, escapeMarkdown } = require('../utils/formatter');
+const { formatMonto, sanitizarInput } = require('../utils/formatter');
 const geminiService = require('../services/gemini.service');
 const openrouterService = require('../services/openrouter.service');
 const aiQuota = require('../lib/ai-quota');
@@ -14,6 +14,7 @@ const { validarTextoUsuario, normalizarDescripcion, validarMonto, validarCotizac
 const { actualizarCampoNlp, crearMensajeConfirmacion, discardButtons } = require('./nlp-confirm');
 const { parsearFechaIngresada } = require('../utils/date');
 const { requierePermisoBot } = require('../auth/bot-permisos');
+const textos = require('../messages');
 
 const CATEGORIAS_INGRESO_PACIENTE = {
   consulta: 'consulta',
@@ -348,7 +349,7 @@ async function marcarAmbito(userId, text, result, opts = {}) {
 async function procesarTextoConNlp(ctx, text) {
   const userId = ctx.from.id;
   if (state.processingNlp.has(userId)) {
-    return ctx.reply('⏳ Espera, todavía estoy procesando tu mensaje anterior...');
+    return ctx.reply(textos.comun.procesandoMensajeAnterior);
   }
   state.processingNlp.add(userId);
   try {
@@ -367,13 +368,13 @@ async function procesarTextoConNlp(ctx, text) {
         iaPermitida = false;
         fullIA = false;
         if (cuota.avisar) {
-          await ctx.reply(`⚠️ Se alcanzó el límite diario de uso de IA de tu consultorio (${cuota.limite} mensajes). Seguís pudiendo cargar con formato claro, por ejemplo: consulta Juan $15000 efectivo. Mañana se renueva.`).catch(() => {});
+          await ctx.reply(textos.comun.limiteDiarioIA(cuota.limite)).catch(() => {});
         }
       }
     }
 
     if (fullIA) {
-      await ctx.reply('🧠 Procesando (Full IA)...').catch(() => {});
+      await ctx.reply(textos.comun.procesandoFullIA).catch(() => {});
 
       try {
         const nlpResult = await openrouterService.parseMessage(userId, text);
@@ -407,7 +408,7 @@ async function procesarTextoConNlp(ctx, text) {
       }
 
       if (iaPermitida && geminiService.canAttemptRemoteNlp()) {
-        await ctx.reply('🧠 Procesando...').catch(() => {});
+        await ctx.reply(textos.comun.procesando).catch(() => {});
 
         try {
           const nlpResult = await geminiService.parseMessage(userId, text);
@@ -430,14 +431,7 @@ async function procesarTextoConNlp(ctx, text) {
       }
     }
 
-    return ctx.reply(
-      'No entendí bien ese mensaje 🤔\n\n' +
-      'Podés intentar con un formato más claro, por ejemplo:\n' +
-      '  • consulta Juan $15000 efectivo\n' +
-      '  • gasto insumos $500 transferencia\n' +
-      '  • me deben €200 de García\n\n' +
-      'O usá /registrar para cargarlo paso a paso.'
-    );
+    return ctx.reply(textos.comun.noEntendi);
   } finally {
     state.processingNlp.delete(userId);
   }
@@ -450,7 +444,7 @@ bot.on('text', async (ctx) => {
 
   const textValidation = validarTextoUsuario(text);
   if (!textValidation.ok) {
-    return ctx.reply('⚠️ El mensaje es inválido o demasiado largo.');
+    return ctx.reply(textos.comun.mensajeInvalido);
   }
 
   if (text.startsWith('/')) return;
@@ -465,7 +459,7 @@ bot.on('text', async (ctx) => {
   }
 
   if (state.pendingReinicios.has(userId)) {
-    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+    return ctx.reply(textos.comun.confirmacionPendiente);
   }
 
   // NLP confirmation flow
@@ -499,43 +493,40 @@ bot.on('text', async (ctx) => {
     if (pendingIngreso.step === 'paciente') {
       const pacienteValidado = normalizarDescripcion(text);
       if (!pacienteValidado.ok) {
-        return ctx.reply('⚠️ El nombre del paciente es inválido. Escribí un nombre más claro:');
+        return ctx.reply(textos.flujoGuiado.errorPaciente);
       }
 
       payload.pacienteNombre = pacienteValidado.valor;
       pendingIngreso.step = 'profesional';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
 
-      return ctx.reply('2. Escribí el profesional responsable:');
+      return ctx.reply(textos.flujoGuiado.pedirProfesional);
     }
 
     if (pendingIngreso.step === 'profesional') {
       const profesionalValidado = normalizarDescripcion(text);
       if (!profesionalValidado.ok) {
-        return ctx.reply('⚠️ El profesional es inválido. Escribí un nombre más claro:');
+        return ctx.reply(textos.flujoGuiado.errorProfesional);
       }
 
       payload.profesionalNombre = profesionalValidado.valor;
       pendingIngreso.step = 'categoria';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
 
-      return ctx.reply(
-        '3. Indicá la categoría:\n\n' +
-        'consulta / tratamiento / anticipo / seña / cuota / saldo final'
-      );
+      return ctx.reply(textos.flujoGuiado.pedirCategoria);
     }
 
     if (pendingIngreso.step === 'categoria') {
       const categoria = normalizarCategoriaIngresoPaciente(text);
       if (!categoria) {
-        return ctx.reply('⚠️ Categoría inválida. Usá: consulta / tratamiento / anticipo / seña / cuota / saldo final');
+        return ctx.reply(textos.flujoGuiado.errorCategoria);
       }
 
       payload.categoria = categoria;
       pendingIngreso.step = 'detalle';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
 
-      return ctx.reply('4. Escribí el tratamiento o detalle adicional. Si no querés agregarlo, respondé `-`.', {
+      return ctx.reply(textos.flujoGuiado.pedirDetalle, {
         parse_mode: 'Markdown'
       });
     }
@@ -544,45 +535,45 @@ bot.on('text', async (ctx) => {
       if (text !== '-' && text !== '- -') {
         const detalleValidado = normalizarDescripcion(text);
         if (!detalleValidado.ok) {
-          return ctx.reply('⚠️ El detalle es inválido. Escribí algo más claro o `-` para omitirlo.');
+          return ctx.reply(textos.flujoGuiado.errorDetalle);
         }
         payload.tratamientoNombre = detalleValidado.valor;
       }
 
       pendingIngreso.step = 'monto';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
-      return ctx.reply('5. Escribí el monto:');
+      return ctx.reply(textos.flujoGuiado.pedirMonto);
     }
 
     if (pendingIngreso.step === 'monto') {
       const montoValidado = validarMonto(text.replace(',', '.'));
       if (!montoValidado.ok) {
-        return ctx.reply('⚠️ El monto es inválido. Ingresá un número razonable distinto de 0:');
+        return ctx.reply(textos.movimiento.errorMontoInvalido);
       }
 
       payload.monto = montoValidado.valor;
       pendingIngreso.step = 'moneda';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
-      return ctx.reply('6. Indicá la moneda: pesos, dólares o euros');
+      return ctx.reply(textos.flujoGuiado.pedirMoneda);
     }
 
     if (pendingIngreso.step === 'moneda') {
       const moneda = normalizarMonedaTexto(text);
       if (!moneda) {
-        return ctx.reply('⚠️ Moneda inválida. Respondé: pesos, dólares o euros');
+        return ctx.reply(textos.flujoGuiado.errorMoneda);
       }
 
       payload.moneda = moneda;
       pendingIngreso.step = 'cobrado';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
-      return ctx.reply('7. ¿Ya se cobró? Respondé si o no');
+      return ctx.reply(textos.flujoGuiado.pedirCobrado);
 
     }
 
     if (pendingIngreso.step === 'cobrado') {
       const cobrado = normalizarSiNo(text);
       if (cobrado === null) {
-        return ctx.reply('⚠️ Respuesta inválida. Respondé: si o no');
+        return ctx.reply(textos.flujoGuiado.errorCobrado);
       }
 
       payload.estado = cobrado ? 'Cobrado' : 'Pendiente';
@@ -613,13 +604,13 @@ bot.on('text', async (ctx) => {
 
       pendingIngreso.step = 'metodo';
       state.pendingIngresoPacientes.set(userId, pendingIngreso);
-      return ctx.reply('8. Indicá el método de pago: efectivo / transferencia / tarjeta');
+      return ctx.reply(textos.flujoGuiado.pedirMetodo);
     }
 
     if (pendingIngreso.step === 'metodo') {
       const metodo = text.toLowerCase().trim();
       if (!METODOS_VALIDOS.includes(metodo)) {
-        return ctx.reply('⚠️ Método inválido. Respondé: efectivo / transferencia / tarjeta');
+        return ctx.reply(textos.movimiento.errorMetodo);
       }
 
       payload.metodo_pago = metodo;
@@ -648,10 +639,7 @@ bot.on('text', async (ctx) => {
 
   const cliente = obtenerClientePorUserId(userId);
   if (!cliente && !esAdminOriginal(userId)) {
-    ctx.reply(
-      `⚠️ No tienes una cuenta registrada.\n\n` +
-      `Usa /start para registrarte.`
-    );
+    ctx.reply(textos.comun.sinCuenta);
     return;
   }
 
@@ -662,7 +650,7 @@ bot.on('text', async (ctx) => {
     const metodoPendiente = pendingDesc.metodo_pago || descripcionParseada.metodo || null;
 
     if (descripcion.length < 2) {
-      return ctx.reply('⚠️ La descripción es muy corta. Ingresá un nombre o concepto:');
+      return ctx.reply(textos.movimiento.errorDescripcionCorta);
     }
 
     state.pendingDescripcion.delete(ctx.from.id);
@@ -698,47 +686,47 @@ bot.on('text', async (ctx) => {
     if (resultado.success) {
       return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' }).catch(() => {});
     }
-    return ctx.reply('❌ Error al registrar movimiento.');
+    return ctx.reply(textos.comun.errorAlRegistrar);
     } catch (error) {
       console.error('Error en pendingDescripcion:', error.message);
-      ctx.reply('❌ Error al registrar movimiento. Intentá de nuevo o usa /ayuda.').catch(() => {});
+      ctx.reply(textos.comun.errorAlRegistrar).catch(() => {});
       return;
     }
   }
 
   if (state.pendingDeletes.has(ctx.from.id)) {
-    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+    return ctx.reply(textos.comun.confirmacionPendiente);
   }
 
   if (state.pendingLimpiezas.has(ctx.from.id)) {
-    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+    return ctx.reply(textos.comun.confirmacionPendiente);
   }
 
   if (state.pendingAgendaConfirm.has(ctx.from.id)) {
-    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+    return ctx.reply(textos.comun.confirmacionPendiente);
   }
 
   if (state.pendingAgendaFecha.has(ctx.from.id)) {
     const data = state.pendingAgendaFecha.get(ctx.from.id);
     if (!data.esperandoTexto) {
-      return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+      return ctx.reply(textos.comun.confirmacionPendiente);
     }
     const fecha = parsearFechaIngresada(text);
     if (!fecha) {
-      return ctx.reply('⚠️ Fecha inválida. Escribila como DD/MM o DD/MM/AAAA (ej: 25/09 o 25/09/2026):');
+      return ctx.reply(textos.movimiento.errorFecha);
     }
     return procesarFechaAgendaElegida(ctx, ctx.from.id, data.turnos, fecha);
   }
 
   if (state.pendingAgendaDuplicados.has(ctx.from.id)) {
-    return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+    return ctx.reply(textos.comun.confirmacionPendiente);
   }
 
   if (state.pendingCotizaciones.has(ctx.from.id)) {
     const cotizacionValidation = validarCotizacion(text.replace(',', '.'));
 
     if (!cotizacionValidation.ok) {
-      ctx.reply('⚠️ Cotización inválida. Ingresá un número positivo (ej: 1250):');
+      ctx.reply(textos.movimiento.errorCotizacion);
       return;
     }
 
@@ -847,11 +835,7 @@ bot.on('text', async (ctx) => {
           estado: datos.estado || 'Cobrado'
         });
 
-        ctx.reply(
-          `💳 *¿Cómo pagaste?*\n\n` +
-          `Responde: efectivo / transferencia / tarjeta`,
-          { parse_mode: 'Markdown' }
-        );
+        ctx.reply(textos.movimiento.preguntarMetodo, { parse_mode: 'Markdown' });
       }
     }
     return;
@@ -861,12 +845,12 @@ bot.on('text', async (ctx) => {
     const pending = state.pendingTurnoEdits.get(ctx.from.id);
     if (pending.step === 'ingresar_valor') {
       let valor = sanitizarInput(text, 120);
-      if (!valor) return ctx.reply('⚠️ El valor no puede estar vacío. Escribí de nuevo:');
+      if (!valor) return ctx.reply(textos.edicion.valorVacio);
 
       if (pending.campo.key === 'hora') {
         const resultado = validarHora(valor);
         if (!resultado.ok) {
-          return ctx.reply('⚠️ Formato inválido. Escribí la hora como HH:MM (ej: 10:00):');
+          return ctx.reply(textos.edicion.horaInvalida);
         }
         valor = resultado.valor;
       }
@@ -876,12 +860,12 @@ bot.on('text', async (ctx) => {
         const { actualizarDatosTurno } = require('../services/agenda.service');
         await actualizarDatosTurno(ctx.from.id, pending.turno.idTurno, { [pending.campo.key]: valor });
         return ctx.reply(
-          `✅ *${pending.campo.label}* actualizado a: \`${escapeMarkdown(valor)}\``,
+          textos.edicion.turnoActualizado(pending.campo.label, valor),
           { parse_mode: 'Markdown' }
         );
       } catch (err) {
         console.error('Error al editar turno:', err.message);
-        return ctx.reply('❌ No se pudo guardar el cambio. Intentá de nuevo con /editarturno.');
+        return ctx.reply(textos.edicion.errorTurno);
       }
     }
     return;
@@ -896,7 +880,7 @@ bot.on('text', async (ctx) => {
       } else {
         const descripcionValidada = normalizarDescripcion(text);
         if (!descripcionValidada.ok) {
-          return ctx.reply('⚠️ La descripción es inválida. Ingresá un texto más claro y corto:');
+          return ctx.reply(textos.edicion.errorDescripcion);
         }
         editData.descripcion = descripcionValidada.valor;
       }
@@ -904,8 +888,7 @@ bot.on('text', async (ctx) => {
       state.pendingEdits.set(ctx.from.id, editData);
 
       ctx.reply(
-        `💰 Monto actual: *${formatMonto(editData.montoOriginal, editData.moneda)}*\n\n` +
-        'Escribí el nuevo monto (o enviai "- -" para mantener)',
+        textos.edicion.pedirNuevoMonto(formatMonto(editData.montoOriginal, editData.moneda)),
         { parse_mode: 'Markdown' }
       );
       return;
@@ -918,7 +901,7 @@ bot.on('text', async (ctx) => {
       } else {
         const montoValidado = validarMonto(nuevoMonto);
         if (!montoValidado.ok) {
-          return ctx.reply('⚠️ El monto es inválido. Ingresá un número razonable distinto de 0:');
+          return ctx.reply(textos.movimiento.errorMontoInvalido);
         }
         editData.nuevoMonto = editData.tipo === 'Egreso' && montoValidado.valor > 0 ? -montoValidado.valor : montoValidado.valor;
       }
@@ -928,15 +911,13 @@ bot.on('text', async (ctx) => {
       const huboCambios = editData.descripcion !== editData.descripcionOriginal || editData.nuevoMonto !== editData.montoOriginal;
 
       if (!huboCambios) {
-        ctx.reply('ℹ️ No hiciste ningún cambio. Edición cancelada.');
+        ctx.reply(textos.edicion.sinCambios);
         state.pendingEdits.delete(ctx.from.id);
         return;
       }
 
       ctx.reply(
-        `📝 *Resumen de cambios:*\n\n` +
-        `Descripción: ${escapeMarkdown(editData.descripcion)}\n` +
-        `Monto: ${formatMonto(editData.nuevoMonto, editData.moneda)}`,
+        textos.edicion.resumenCambios(editData.descripcion, formatMonto(editData.nuevoMonto, editData.moneda)),
         {
           parse_mode: 'Markdown',
           ...confirmButtons('confirm_edit', 'cancel_edit')
@@ -947,7 +928,7 @@ bot.on('text', async (ctx) => {
     }
 
     if (editData.step === 'confirmar') {
-      return ctx.reply('⚠️ Tenés una confirmación pendiente. Usá los botones de arriba o /cancelar para descartar.');
+      return ctx.reply(textos.comun.confirmacionPendiente);
     }
   }
 
@@ -984,12 +965,12 @@ bot.on('text', async (ctx) => {
         state.pendingPayments.delete(ctx.from.id);
       } catch (error) {
         console.error('Error al guardar:', error.message);
-        ctx.reply('❌ Error al guardar en Google Sheets.');
+        ctx.reply(textos.comun.errorAlGuardar);
         state.pendingPayments.delete(ctx.from.id);
       }
       return;
     } else {
-      ctx.reply('⚠️ Método no válido. Responde: efectivo / transferencia / tarjeta');
+      ctx.reply(textos.movimiento.errorMetodo);
       return;
     }
   }
@@ -1008,12 +989,12 @@ bot.on('text', async (ctx) => {
   const comando = match[1].toLowerCase();
   const descripcionValidada = normalizarDescripcion(match[2]);
   if (!descripcionValidada.ok) {
-    return ctx.reply('⚠️ La descripción es inválida.');
+    return ctx.reply(textos.movimiento.errorDescripcion);
   }
   const descripcion = descripcionValidada.valor;
   const montoValidado = validarMonto(match[3].replace(',', '.'));
   if (!montoValidado.ok) {
-    return ctx.reply('❌ Error: el monto es inválido o demasiado grande.');
+    return ctx.reply(textos.movimiento.errorMontoInvalido);
   }
   let monto = montoValidado.valor;
 
@@ -1062,7 +1043,7 @@ bot.on('text', async (ctx) => {
 
   if (moneda === 'Euros') {
     try {
-      await ctx.reply('⏳ Registrando...');
+      await ctx.reply(textos.comun.registrando);
       const resultado = await cmd.guardarMovimiento(ctx.from.id, {
         descripcion,
         monto,
@@ -1078,7 +1059,7 @@ bot.on('text', async (ctx) => {
       return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('Error al guardar en euros:', error.message);
-      return ctx.reply('❌ Error al guardar en Google Sheets.');
+      return ctx.reply(textos.comun.errorAlGuardar);
     }
   }
 
@@ -1095,16 +1076,12 @@ bot.on('text', async (ctx) => {
       estado
     });
 
-    ctx.reply(
-      `💳 *¿Cómo pagaste?*\n\n` +
-      `Responde: efectivo / transferencia / tarjeta`,
-      { parse_mode: 'Markdown' }
-    );
+    ctx.reply(textos.movimiento.preguntarMetodo, { parse_mode: 'Markdown' });
     return;
   }
 
   try {
-    await ctx.reply('⏳ Registrando...');
+    await ctx.reply(textos.comun.registrando);
 
     const resultado = await cmd.guardarMovimiento(ctx.from.id, {
       descripcion,
@@ -1123,11 +1100,11 @@ bot.on('text', async (ctx) => {
 
   } catch (error) {
     console.error('Error al guardar:', error.message);
-    ctx.reply('❌ Error al guardar en Google Sheets.');
+    ctx.reply(textos.comun.errorAlGuardar);
   }
   } catch (error) {
     console.error('Error en text handler:', error);
-    ctx.reply('❌ Ocurrió un error inesperado. Intentá de nuevo.').catch(() => {});
+    ctx.reply(textos.comun.errorInesperado).catch(() => {});
   }
 });
 

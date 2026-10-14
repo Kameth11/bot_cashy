@@ -1,6 +1,7 @@
 const { bot } = require('../../lib/telegraf');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../../auth');
 const { getSheetId } = require('../../services/sheet.service');
+const textos = require('../../messages');
 
 function buildSheetUrl(sheetId) {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
@@ -12,9 +13,9 @@ async function handleSheetCommand(ctx) {
 
   if (!sheetId) {
     if (!obtenerClientePorUserId(userId) && !esAdminOriginal(userId)) {
-      return ctx.reply('⚠️ No tienes una cuenta registrada. Usa /start para configurarla.');
+      return ctx.reply(textos.comandos.sheet.noTienesUnaCuentaRegistrada);
     }
-    return ctx.reply('❌ No encontré un Google Sheet configurado para esta cuenta.');
+    return ctx.reply(textos.comandos.sheet.noEncontreUnGoogleSheet);
   }
 
   const url = buildSheetUrl(sheetId);

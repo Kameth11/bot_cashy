@@ -3,17 +3,18 @@ const { esAdminOriginal } = require('../../auth');
 const tenantRequestService = require('../../services/tenant-request.service');
 const { GOOGLE_SERVICE_ACCOUNT_EMAIL } = require('../../config');
 const state = require('../../state');
+const textos = require('../../messages');
 
 bot.command('aprobar', async (ctx) => {
   if (!esAdminOriginal(ctx.from.id)) {
-    return ctx.reply('⛔ Solo el administrador puede usar este comando.');
+    return ctx.reply(textos.comandos.aprobar.soloElAdministradorPuedeUsar);
   }
 
   const args = ctx.message.text.split(/\s+/).slice(1);
   const email = args[0]?.toLowerCase().trim();
 
   if (!email) {
-    return ctx.reply('⚠️ Uso: /aprobar email@dominio.com');
+    return ctx.reply(textos.comandos.aprobar.usoAprobarEmailDominioCom);
   }
 
   const resultado = await tenantRequestService.aprobarSolicitud(email, ctx.from.id);

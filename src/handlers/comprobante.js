@@ -17,6 +17,7 @@ const registro = require('../services/comprobante-registro.service');
 const cmd = require('../services/command.service');
 const { getRowDescripcion, getRowMonto, getRowMoneda } = require('../utils/sheet-row');
 const { formatMonto, escapeMarkdown } = require('../utils/formatter');
+const textos = require('../messages');
 
 async function procesarFactura(ctx, archivo, { desdeTransferencia = false } = {}) {
   const userId = ctx.from.id;
@@ -25,19 +26,19 @@ async function procesarFactura(ctx, archivo, { desdeTransferencia = false } = {}
   const hash = comprobanteService.hashArchivo(archivo.buffer);
   const resultado = await geminiMediaSemaphore.run(() => extraerFactura(archivo.buffer, archivo.mimeType));
 
-  if (!resultado) return ctx.reply('❌ No pude leer el comprobante. Probá con una foto más clara y derecha.');
-  if (resultado.error === 'vision_no_configurada') return ctx.reply('⚠️ La lectura de imágenes no está configurada. Revisá `GEMINI_API_KEY`.');
-  if (resultado.error === 'vision_dependencia_faltante') return ctx.reply('⚠️ Falta instalar la dependencia de Vision. Revisá `@google/generative-ai`.');
+  if (!resultado) return ctx.reply(textos.comprobante.noPudeLeerElComprobante);
+  if (resultado.error === 'vision_no_configurada') return ctx.reply(textos.comprobante.laLecturaDeImagenesNo);
+  if (resultado.error === 'vision_dependencia_faltante') return ctx.reply(textos.comprobante.faltaInstalarLaDependenciaDe);
   if (resultado.error === 'no_es_comprobante' && desdeTransferencia) {
-    return ctx.reply('⚠️ No parece un comprobante de transferencia ni una factura. Si es un cobro, escribilo, por ejemplo: `cobré 30000 de Juan por transferencia`; si es un gasto: `gasté 5000 en insumos`.', { parse_mode: 'Markdown' });
+    return ctx.reply(textos.comprobante.noPareceUnComprobanteDe, { parse_mode: 'Markdown' });
   }
   if (resultado.error === 'no_es_comprobante') {
-    return ctx.reply('⚠️ No parece una factura ni un ticket. Si es un gasto, probá con una foto más clara o escribilo, por ejemplo: `gasté 5000 en insumos`.', { parse_mode: 'Markdown' });
+    return ctx.reply(textos.comprobante.noPareceUnaFacturaNi, { parse_mode: 'Markdown' });
   }
 
   const factura = resultado.factura;
   if (!factura.total) {
-    return ctx.reply('⚠️ Leí el comprobante pero no encontré el total. Probá con una foto donde se vea el importe, o escribilo: `gasté 5000 en insumos`.', { parse_mode: 'Markdown' });
+    return ctx.reply(textos.comprobante.leiElComprobantePeroNo, { parse_mode: 'Markdown' });
   }
 
   const duplicado = await comprobanteService.buscarDuplicado(userId, {
@@ -85,9 +86,9 @@ async function procesarTransferencia(ctx, archivo) {
   const hash = comprobanteService.hashArchivo(archivo.buffer);
   const resultado = await geminiMediaSemaphore.run(() => extraerTransferencia(archivo.buffer, archivo.mimeType));
 
-  if (!resultado) return ctx.reply('❌ No pude leer el comprobante. Probá con una captura más clara.');
-  if (resultado.error === 'vision_no_configurada') return ctx.reply('⚠️ La lectura de imágenes no está configurada. Revisá `GEMINI_API_KEY`.');
-  if (resultado.error === 'vision_dependencia_faltante') return ctx.reply('⚠️ Falta instalar la dependencia de Vision. Revisá `@google/generative-ai`.');
+  if (!resultado) return ctx.reply(textos.comprobante.noPudeLeerElComprobante2);
+  if (resultado.error === 'vision_no_configurada') return ctx.reply(textos.comprobante.laLecturaDeImagenesNo);
+  if (resultado.error === 'vision_dependencia_faltante') return ctx.reply(textos.comprobante.faltaInstalarLaDependenciaDe);
   if (resultado.error === 'no_es_transferencia') {
     // Una captura de pago a Edenor, Movistar, YPF, etc. se parece a una
     // transferencia pero es un gasto: se prueba como factura antes de pedirle
@@ -97,7 +98,7 @@ async function procesarTransferencia(ctx, archivo) {
 
   const t = resultado.transferencia;
   if (!t.monto) {
-    return ctx.reply('⚠️ Leí el comprobante pero no encontré el monto. Probá con una captura donde se vea el importe, o escribilo: `cobré 30000 de Juan por transferencia`.', { parse_mode: 'Markdown' });
+    return ctx.reply(textos.comprobante.leiElComprobantePeroNo2, { parse_mode: 'Markdown' });
   }
 
   const dup = comprobanteService.datosDuplicadoTransferencia(t);
@@ -166,8 +167,8 @@ async function procesarTransferencia(ctx, archivo) {
     const label = `${desc.length > 22 ? desc.substring(0, 22) + '…' : desc} · ${formatMonto(getRowMonto(f, 0), getRowMoneda(f, 'Pesos'))}`;
     return [Markup.button.callback(label, `transf_cobrar_${i}`)];
   });
-  botones.push([Markup.button.callback('➕ Cargar como ingreso nuevo', 'transf_nuevo')]);
-  botones.push([Markup.button.callback('❌ Cancelar', 'transf_cancel')]);
+  botones.push([Markup.button.callback(textos.comprobante.cargarComoIngresoNuevo, 'transf_nuevo')]);
+  botones.push([Markup.button.callback(textos.comprobante.cancelar, 'transf_cancel')]);
 
   await ctx.reply(lineas.join('\n'), { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botones) });
   // El estado se setea recién después de que el mensaje salió bien.
@@ -178,10 +179,10 @@ bot.action(/^transf_cobrar_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingTransferencias.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ Sesión expirada. Mandá la foto de nuevo.');
+  if (!pending) return ctx.editMessageText(textos.comprobante.sesionExpiradaMandaLaFoto);
 
   const fila = pending.filas[Number(ctx.match[1])];
-  if (!fila) return ctx.editMessageText('❌ Elemento no encontrado.');
+  if (!fila) return ctx.editMessageText(textos.comprobante.elementoNoEncontrado);
   state.pendingTransferencias.delete(userId);
 
   try {
@@ -189,7 +190,7 @@ bot.action(/^transf_cobrar_(\d+)$/, async (ctx) => {
     return ctx.editMessageText(mensaje, { parse_mode: 'Markdown' });
   } catch (err) {
     logger.error('Comprobantes', 'Error al cobrar con transferencia', { userId, err: err.message });
-    return ctx.editMessageText('❌ Error al cobrar. Intentá de nuevo.');
+    return ctx.editMessageText(textos.comprobante.errorAlCobrarIntentaDe);
   }
 });
 
@@ -197,10 +198,10 @@ bot.action('transf_nuevo', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingTransferencias.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ Sesión expirada. Mandá la foto de nuevo.');
+  if (!pending) return ctx.editMessageText(textos.comprobante.sesionExpiradaMandaLaFoto);
   state.pendingTransferencias.delete(userId);
 
-  await ctx.editMessageText('➕ La cargo como ingreso nuevo.').catch(() => {});
+  await ctx.editMessageText(textos.comprobante.laCargoComoIngresoNuevo).catch(() => {});
   const { mostrarConfirmacion } = require('./nlp-confirm');
   return mostrarConfirmacion(ctx, pending.entities);
 });
@@ -208,7 +209,7 @@ bot.action('transf_nuevo', async (ctx) => {
 bot.action('transf_cancel', async (ctx) => {
   await ctx.answerCbQuery();
   state.pendingTransferencias.delete(ctx.from.id);
-  return ctx.editMessageText('❌ Cancelado.');
+  return ctx.editMessageText(textos.comprobante.cancelado);
 });
 
 // Se llama al guardar el movimiento (nlp-confirm.js). La lógica vive en

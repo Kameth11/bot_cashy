@@ -3,17 +3,18 @@ const { getSheetId, obtenerDatosSheet } = require('../../services/sheet.service'
 const { normalizarFecha, esHoy, esEsteMes } = require('../../utils/date');
 const { formatMonto } = require('../../utils/formatter');
 const { requiereDuenoBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 bot.command('debug', async (ctx) => {
   if (!requiereDuenoBot(ctx, '/debug')) return;
   try {
-    await ctx.reply('🔍 *DIAGNÓSTICO DEL SISTEMA*\n\n⏳ Analizando...');
+    await ctx.reply(textos.comandos.debug.diagnosticoDelSistemaAnalizando);
 
     const userId = ctx.from.id;
     const sheetId = getSheetId(userId);
 
     if (!sheetId) {
-      return ctx.reply('❌ No tienes un Sheet configurado. Usa /start.');
+      return ctx.reply(textos.comandos.debug.noTienesUnSheetConfigurado);
     }
 
     const datosRaw = await obtenerDatosSheet(userId);
@@ -116,7 +117,7 @@ bot.command('debug', async (ctx) => {
 
   } catch (error) {
     console.error('Error /debug:', error.message, error.stack);
-    await ctx.reply('❌ Error en el diagnóstico. Revisa los logs.');
+    await ctx.reply(textos.comandos.debug.errorEnElDiagnosticoRevisa);
   }
 });
 

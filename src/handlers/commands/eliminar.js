@@ -5,6 +5,7 @@ const { escapeMarkdown } = require('../../utils/formatter');
 const { getRowDescripcion, getRowMonto, getRowMoneda, getRowFecha, getRowIdUnico } = require('../../utils/sheet-row');
 const { buildDeleteListKeyboard } = require('../actions');
 const { requierePermisoBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 function rowToItem(fila) {
   return {
@@ -26,7 +27,7 @@ async function ejecutarEliminar(ctx, query) {
     const filas = await db.getRows(userId);
 
     if (filas.length === 0) {
-      return ctx.reply('📭 No hay movimientos registrados.').catch(() => {});
+      return ctx.reply(textos.comandos.eliminar.noHayMovimientosRegistrados).catch(() => {});
     }
 
     let items;
@@ -65,7 +66,7 @@ async function ejecutarEliminar(ctx, query) {
     ctx.reply(titulo, { parse_mode: 'Markdown', ...keyboard }).catch(() => {});
   } catch (err) {
     console.error('Error /eliminar:', err.message);
-    ctx.reply('❌ Error al cargar movimientos.').catch(() => {});
+    ctx.reply(textos.comandos.eliminar.errorAlCargarMovimientos).catch(() => {});
   }
 }
 

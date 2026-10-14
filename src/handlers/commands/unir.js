@@ -1,12 +1,13 @@
 const { bot } = require('../../lib/telegraf');
 const { beginInviteRegistration } = require('../../services/invite.service');
 const { canjearInvitacionCasa } = require('./casa');
+const textos = require('../../messages');
 
 bot.command('unir', async (ctx) => {
   const args = ctx.message.text.split(' ').slice(1);
 
   if (args.length === 0) {
-    return ctx.reply('⚠️ Uso: /unir [código]\n\nEjemplo: /unir ABC123');
+    return ctx.reply(textos.comandos.unir.usoUnirCodigoEjemploUnir);
   }
 
   // Un código de CASA se canjea sin tocar el consultorio ni la cuenta del usuario.

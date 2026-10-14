@@ -2,6 +2,7 @@ const { bot } = require('../../lib/telegraf');
 const personalService = require('../../services/personal.service');
 const { formatMonto, escapeMarkdown } = require('../../utils/formatter');
 const { requierePersonalBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 // Barra de progreso en texto, para el estado de los presupuestos.
 function barra(porcentaje) {
@@ -70,7 +71,7 @@ bot.command('personal', async (ctx) => {
     return ctx.reply(construirMensajeResumen(resumen), { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Error en /personal:', error.message);
-    return ctx.reply('❌ No pude armar el resumen personal. Intentá de nuevo.');
+    return ctx.reply(textos.comandos.personal.noPudeArmarElResumen);
   }
 });
 

@@ -2,6 +2,7 @@ const { bot } = require('../../lib/telegraf');
 const cmd = require('../../services/command.service');
 const state = require('../../state');
 const { requierePermisoBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 // Flujo del consultorio. Lo usa /editar y, desde gestion-gastos, la opción "Consultorio".
 async function ejecutarEditar(ctx, texto) {
@@ -20,7 +21,7 @@ async function ejecutarEditar(ctx, texto) {
     state.pendingEdits.set(ctx.from.id, result.state);
   } catch (error) {
     console.error('Error /editar:', error.message);
-    ctx.reply('❌ Error al buscar movimiento.');
+    ctx.reply(textos.comandos.editar.errorAlBuscarMovimiento);
   }
 }
 

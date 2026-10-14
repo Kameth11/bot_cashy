@@ -1,17 +1,18 @@
 const { bot } = require('../../lib/telegraf');
 const { esAdminOriginal } = require('../../auth');
 const tenantRequestService = require('../../services/tenant-request.service');
+const textos = require('../../messages');
 
 bot.command('rechazar', async (ctx) => {
   if (!esAdminOriginal(ctx.from.id)) {
-    return ctx.reply('⛔ Solo el administrador puede usar este comando.');
+    return ctx.reply(textos.comandos.rechazar.soloElAdministradorPuedeUsar);
   }
 
   const args = ctx.message.text.split(/\s+/).slice(1);
   const email = args[0]?.toLowerCase().trim();
 
   if (!email) {
-    return ctx.reply('⚠️ Uso: /rechazar email@dominio.com');
+    return ctx.reply(textos.comandos.rechazar.usoRechazarEmailDominioCom);
   }
 
   const resultado = await tenantRequestService.rechazarSolicitud(email, ctx.from.id);

@@ -31,6 +31,7 @@ const INTENT_PERMISOS = {
   eliminar_movimiento: 'editar_movimientos',
   consulta_agenda: 'ver_agenda',
 };
+const textos = require('../messages');
 
 function replyWithDashboard(ctx, msg) {
   const extra = { parse_mode: 'Markdown' };
@@ -55,10 +56,10 @@ const INTENT_HANDLERS = {
 
     const { fecha, ambigua } = resolverFechaAgenda(entities.fecha_ref);
     const turnos = await obtenerTurnosPorFecha(ctx.from.id, fecha);
-    const aviso = ambigua ? '⚠️ No entendí bien qué día pedías, te muestro hoy.\n\n' : '';
+    const aviso = ambigua ? textos.agendaConsulta.diaAmbiguo : '';
 
     if (!turnos.length) {
-      return ctx.reply(`${aviso}No tenés turnos cargados para el ${fecha}.`);
+      return ctx.reply(textos.agendaConsulta.sinTurnos(aviso, fecha));
     }
 
     const respuesta = await geminiService.generarRespuestaAgenda(mensajeOriginal || '', turnos);
@@ -71,21 +72,21 @@ const INTENT_HANDLERS = {
     // a Gemini en generarRespuestaAgenda — para no perder esa distinción
     // justo cuando el modelo no está disponible.
     const ordenados = turnos.slice().sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
-    const lineaTurno = t => `${t.hora || '??:??'} — ${t.cliente || 'Sin nombre'}`;
+    const lineaTurno = t => textos.agendaConsulta.turno(t.hora, t.cliente);
     const profesionales = [...new Set(ordenados.map(t => t.profesional).filter(Boolean))];
 
     const lista = profesionales.length > 1
       ? profesionales
-          .map(prof => `${prof}:\n${ordenados.filter(t => t.profesional === prof).map(lineaTurno).join('\n')}`)
+          .map(prof => textos.agendaConsulta.deProfesional(prof, ordenados.filter(t => t.profesional === prof).map(lineaTurno).join('\n')))
           .concat(
             ordenados.some(t => !t.profesional)
-              ? [`Sin profesional asignado:\n${ordenados.filter(t => !t.profesional).map(lineaTurno).join('\n')}`]
+              ? [textos.agendaConsulta.sinProfesional(ordenados.filter(t => !t.profesional).map(lineaTurno).join('\n'))]
               : []
           )
           .join('\n\n')
       : ordenados.map(lineaTurno).join('\n');
 
-    return ctx.reply(`${aviso}Turnos del ${fecha}:\n${lista}`);
+    return ctx.reply(textos.agendaConsulta.turnosDelDia(aviso, fecha, lista));
   },
 
   resumen_periodo: async (ctx, entities) => {
@@ -94,7 +95,7 @@ const INTENT_HANDLERS = {
     const periodo = resolverPeriodo(entities.periodo, ahoraArgentina());
     if (!periodo) {
       return ctx.reply(
-        'No entendí a qué período te referís. Probá con: "ayer", "el mes pasado", "marzo", "este año", "últimos 15 días" o "del 01/03 al 15/03".'
+        textos.nlp.noEntendiAQuePeriodo
       );
     }
     const msg = await cmd.ejecutarPeriodo(ctx.from.id, {
@@ -149,43 +150,7 @@ const INTENT_HANDLERS = {
   },
 
   ver_ayuda: async (ctx, entities) => {
-    return ctx.reply(
-      '📖 *Comandos disponibles:*\n\n' +
-      '📝 *Registrar movimiento:*\n' +
-      '`consulta Juan Perez $15000 efectivo` (ingreso pesos)\n' +
-      '`servicio Endodoncia U$50 transferencia` (ingreso dólares)\n' +
-      '`gasto Insumos $-500` (egreso)\n' +
-      '`pendiente Juan Perez $15000` (ingreso sin cobrar)\n' +
-      '`/ingreso_paciente` (carga guiada con paciente, profesional y categoría)\n\n' +
-      '💬 *También podés escribir en lenguaje natural:*\n' +
-      '`cobré 15000 de Juan Perez en efectivo`\n' +
-      '`gasté 5000 en alquiler`\n' +
-      '`cuánto tengo?`\n' +
-      '`pendientes`\n\n' +
-      '📊 *Reportes:*\n' +
-      '`/balance` - Resumen completo\n' +
-      '`/hoy` - Movimientos de hoy\n' +
-      '`/pendientes` - Sin cobrar\n' +
-      '`/semana` - Resumen semanal\n' +
-      '`/mes` - Balance del mes\n' +
-      '`/ingresos` - Solo ingresos\n' +
-      '`/egresos` - Solo gastos\n\n' +
-      '✅ *Cobrar:*\n' +
-      '`/cobrar ultimo` - Cobra el último pendiente\n' +
-      '`/cobrar [nombre]` - Cobra uno que coincida\n' +
-      '`/cobrar [nombre] [monto]` - Registra cobro parcial\n\n' +
-      '✏️ *Editar:*\n' +
-      '`/editar [nombre]` - Editar descripción y monto\n\n' +
-      '🗑️ *Eliminar:*\n' +
-      '`/eliminar [nombre]` - Eliminar movimiento\n' +
-      '`/listar` - Ver todos los movimientos\n\n' +
-      '💵 *Dólar:*\n' +
-      '`/dolar` - Ver cotización actual\n' +
-      '`/actualizardolar` - Actualizar cotización\n\n' +
-      '📄 *Sheet:*\n' +
-      '`/sheet` - Ver link de tu Google Sheet',
-      { parse_mode: 'Markdown' }
-    );
+    return ctx.reply(textos.ayuda.completa(), { parse_mode: 'Markdown' });
   },
 
   listar_movimientos: async (ctx, entities) => {
@@ -212,7 +177,7 @@ const INTENT_HANDLERS = {
       state.pendingEdits.set(ctx.from.id, result.state);
       return;
     }
-    return ctx.reply('❌ Error al buscar movimiento.');
+    return ctx.reply(textos.nlp.errorAlBuscarMovimiento);
   },
 
   eliminar_movimiento: async (ctx, entities) => {
@@ -229,7 +194,7 @@ const INTENT_HANDLERS = {
       state.pendingDeletes.set(ctx.from.id, result.state);
       return;
     }
-    return ctx.reply('❌ Error al buscar movimiento.');
+    return ctx.reply(textos.nlp.errorAlBuscarMovimiento);
   },
 
   registrar_movimiento: async (ctx, entities) => {
@@ -274,7 +239,7 @@ const INTENT_HANDLERS = {
     } = entities;
 
     if (!montoCobrado || !montoDeuda) {
-      return ctx.reply('⚠️ No pude determinar los dos montos. Intentá: `cobré 30000 y debe 30000`', { parse_mode: 'Markdown' });
+      return ctx.reply(textos.nlp.noPudeDeterminarLosDos, { parse_mode: 'Markdown' });
     }
 
     const { formatMonto } = require('../utils/formatter');
@@ -307,17 +272,20 @@ const INTENT_HANDLERS = {
       tratamientoNombre: tratamientoNombre || null,
     });
 
-    const nombreTexto = pacienteNombre ? ` — ${escapeMarkdown(pacienteNombre)}` : '';
+    const nombreTexto = pacienteNombre ? textos.parciales.nombreGuion(escapeMarkdown(pacienteNombre)) : '';
     const totalTexto = montoTotal
-      ? `\n📋 Total: ${formatMonto(montoTotal, monedaDeuda || 'Pesos')}`
+      ? textos.parciales.totalLinea(formatMonto(montoTotal, monedaDeuda || 'Pesos'))
       : '';
 
     return ctx.reply(
-      `✅ *Cobro parcial registrado*${nombreTexto}\n\n` +
-      `💰 Cobrado: ${formatMonto(montoCobrado, monedaCobrada || 'Pesos')}${metodo_pago ? ` (${metodo_pago})` : ''}\n` +
-      `⏳ Pendiente: ${formatMonto(montoDeuda, monedaDeuda || 'Pesos')}` +
-      `${totalTexto}\n\n` +
-      `_Cuando lo cobres usá:_ \`/cobrar${pacienteNombre ? ` ${pacienteNombre}` : ' ultimo'}\``,
+      textos.parciales.cobroParcial({
+        nombre: nombreTexto,
+        cobrado: formatMonto(montoCobrado, monedaCobrada || 'Pesos'),
+        metodo: metodo_pago ? textos.parciales.metodoEntreParentesis(metodo_pago) : '',
+        pendiente: formatMonto(montoDeuda, monedaDeuda || 'Pesos'),
+        total: totalTexto,
+        comandoCobrar: `/cobrar${pacienteNombre ? ` ${pacienteNombre}` : ' ultimo'}`,
+      }),
       { parse_mode: 'Markdown' }
     );
   },
@@ -337,7 +305,7 @@ const INTENT_HANDLERS = {
     } = entities;
 
     if (!montoPagado || !montoDeuda) {
-      return ctx.reply('⚠️ No pude determinar los dos montos. Intentá: `pagamos 30000 a Dental Sur, debemos 30000 más`', { parse_mode: 'Markdown' });
+      return ctx.reply(textos.nlp.noPudeDeterminarLosDos2, { parse_mode: 'Markdown' });
     }
 
     const { formatMonto } = require('../utils/formatter');
@@ -366,13 +334,16 @@ const INTENT_HANDLERS = {
       proveedorNombre: proveedorNombre || null,
     });
 
-    const nombreTexto = proveedorNombre ? ` — ${escapeMarkdown(proveedorNombre)}` : '';
+    const nombreTexto = proveedorNombre ? textos.parciales.nombreGuion(escapeMarkdown(proveedorNombre)) : '';
 
     return ctx.reply(
-      `✅ *Pago parcial registrado*${nombreTexto}\n\n` +
-      `💸 Pagado: ${formatMonto(montoPagado, monedaPagada || 'Pesos')}${metodo_pago ? ` (${metodo_pago})` : ''}\n` +
-      `⏳ Todavía debemos: ${formatMonto(montoDeuda, monedaDeuda || 'Pesos')}\n\n` +
-      `_Cuando termines de pagar, marcalo desde el dashboard o usá_ \`/cobrar${proveedorNombre ? ` ${proveedorNombre}` : ' ultimo'}\``,
+      textos.parciales.pagoParcial({
+        nombre: nombreTexto,
+        pagado: formatMonto(montoPagado, monedaPagada || 'Pesos'),
+        metodo: metodo_pago ? textos.parciales.metodoEntreParentesis(metodo_pago) : '',
+        deuda: formatMonto(montoDeuda, monedaDeuda || 'Pesos'),
+        comandoCobrar: `/cobrar${proveedorNombre ? ` ${proveedorNombre}` : ' ultimo'}`,
+      }),
       { parse_mode: 'Markdown' }
     );
   },
@@ -401,7 +372,7 @@ async function handleNLPIntent(ctx, nlpResult, mensajeOriginal) {
     return true;
   } catch (error) {
     console.error(`Error en handler NLP para intent "${intent}":`, error.message);
-    ctx.reply('❌ Ocurrió un error al procesar tu mensaje. Intentá de nuevo o usa /ayuda.');
+    ctx.reply(textos.nlp.ocurrioUnErrorAlProcesar);
     return true;
   }
 }

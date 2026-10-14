@@ -2,6 +2,7 @@ const { bot } = require('../../lib/telegraf');
 const cmd = require('../../services/command.service');
 const { mostrarCobrar } = require('../cobrar-confirm');
 const { requierePermisoBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 bot.command('cobrar', async (ctx) => {
   if (!requierePermisoBot(ctx, 'cargar_movimientos', '/cobrar')) return;
@@ -11,7 +12,7 @@ bot.command('cobrar', async (ctx) => {
     return mostrarCobrar(ctx, resultado);
   } catch (error) {
     console.error('Error /cobrar:', error.message);
-    ctx.reply('❌ Error al buscar pendientes.');
+    ctx.reply(textos.comandos.cobrar.errorAlBuscarPendientes);
   }
 });
 

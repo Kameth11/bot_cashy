@@ -1,16 +1,17 @@
 const { bot } = require('../../lib/telegraf');
 const { obtenerCotizacionDolar } = require('../../services/cotizacion.service');
 const state = require('../../state');
+const textos = require('../../messages');
 
 bot.command('dolar', async (ctx) => {
   try {
     console.log('Comando /dolar ejecutado. Cotización actual:', state.cotizacionDolar);
 
     if (!state.cotizacionDolar) {
-      await ctx.reply('⏳ Obteniendo cotización de Bluelytics...');
+      await ctx.reply(textos.comandos.dolar.obteniendoCotizacionDeBluelytics);
       const cotizacion = await obtenerCotizacionDolar();
       if (!cotizacion) {
-        return ctx.reply('❌ No se pudo obtener la cotización desde Bluelytics.\n\nPodés usar `/actualizardolar` para reintentar o configurar manualmente en .env con COTIZACION_DEFAULT.');
+        return ctx.reply(textos.comandos.dolar.noSePudoObtenerLa);
       }
     }
 
@@ -24,7 +25,7 @@ bot.command('dolar', async (ctx) => {
     );
   } catch (error) {
     console.error('Error /dolar:', error.message);
-    ctx.reply('❌ Error al obtener cotización.');
+    ctx.reply(textos.comandos.dolar.errorAlObtenerCotizacion);
   }
 });
 

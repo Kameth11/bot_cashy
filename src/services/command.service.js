@@ -2,6 +2,7 @@ const { obtenerDatosSheet, getSheetCliente, invalidateCache } = require('./sheet
 const { withUserWriteLock } = require('../lib/write-queue');
 const db = require('./db.service');
 const { aplicarColorMontoEnFila } = require('./sheet-format.service');
+const textos = require('../messages');
 
 const { esHoy, esEstaSemana, esEsteMes, normalizarFecha, fechaArgentinaStr, ahoraArgentina, fechaStrAIso } = require('../utils/date');
 
@@ -58,16 +59,7 @@ async function construirMensajeCotizacion(monto) {
     await obtenerCotizacionDolar();
   }
 
-  const promedioActual = state.cotizacionDolar
-    ? `Promedio actual: $${state.cotizacionDolar.toLocaleString('es-AR')}\n\n`
-    : '';
-
-  return (
-    `💵 *Movimiento en dólares*\n\n` +
-    `Monto: U$${Math.abs(monto).toLocaleString('es-AR')}\n\n` +
-    promedioActual +
-    `Ingresá la cotización del dólar (ej: 1250):`
-  );
+  return textos.movimiento.pedirCotizacion(monto, state.cotizacionDolar);
 }
 
 async function ejecutarBalance(userId) {
@@ -949,68 +941,7 @@ async function prepararEliminacion(userId, nombre) {
 }
 
 function buildHelpMessage() {
-  return (
-    '📖 *Comandos disponibles:*\n\n' +
-    '📝 *Registrar movimiento:*\n' +
-    '`consulta [paciente] $[monto] [metodo]`\n' +
-    '`servicio [tratamiento] $[monto] [metodo]`\n' +
-    '`gasto [descripcion] $-[monto]`\n' +
-    '`pendiente [paciente/concepto] $[monto]`\n' +
-    '`/pendiente [paciente/concepto] $[monto]`\n' +
-    '`/ingreso_paciente` - Carga guiada con paciente, profesional y categoría\n\n' +
-    '💬 *Primero intenta interpretar palabras clave sin IA.*\n' +
-    'Si no alcanza, recurre al parser remoto para lenguaje natural.\n\n' +
-    '📸 *Fotos y PDFs:*\n' +
-    'Mandá una foto de tu agenda o turnero para cargar turnos, o una foto/PDF de una factura o ticket para cargar el gasto (detecto solo qué es)\n' +
-    '`/editarturno` - Corregir datos de un turno de hoy\n\n' +
-    '💵 *Monedas:*\n' +
-    '$ - Pesos | U$ / USD - Dólares\n\n' +
-    '💳 *Método de pago:*\n' +
-    'efectivo / transferencia / tarjeta\n\n' +
-    '📊 *Reportes:*\n' +
-    '`/balance` - Resumen completo\n' +
-    '`/hoy` - Movimientos de hoy\n' +
-    '`/pendientes` - Sin cobrar\n' +
-    '`/semana` - Resumen semanal\n' +
-    '`/mes` - Balance del mes\n' +
-    '`/ingresos` - Solo ingresos\n' +
-    '`/egresos` - Solo gastos\n\n' +
-    '📈 *Reportes de gestión:*\n' +
-    '`/cobros_por_metodo` - Cobros del mes por método\n' +
-    '`/egresos_categoria` - Egresos del mes por categoría\n' +
-    '`/por_profesional` - Ingresos del mes por profesional\n' +
-    '`/deudores` - Saldos pendientes por paciente\n\n' +
-    '✅ *Cobrar:*\n' +
-    '`/cobrar ultimo` - Cobra el último pendiente\n' +
-    '`/cobrar [nombre]` - Cobra uno que coincida\n' +
-    '`/cobrar [nombre] [monto]` - Registra cobro parcial\n\n' +
-    '✏️ *Editar:*\n' +
-    '`/editar [nombre]` - Editar descripción y monto\n\n' +
-    '🗑️ *Eliminar:*\n' +
-    '`/eliminar [nombre]` - Eliminar movimiento\n' +
-    '`/listar` - Ver todos los movimientos\n\n' +
-    '💵 *Dólar:*\n' +
-    '`/dolar` - Ver cotización actual\n' +
-    '`/actualizardolar` - Actualizar cotización\n\n' +
-    '📄 *Sheet:*\n' +
-    '`/sheet` - Ver link de tu Google Sheet\n\n' +
-    '👥 *Invitaciones:*\n' +
-    '`/codigo` - Generar un código de invitación (solo owner)\n' +
-    '`/unir CODIGO` - Unirte a una cuenta con un código\n\n' +
-    '🏠 *Finanzas personales:*\n' +
-    'Escribí el gasto y lo categorizo solo: `nafta 20000`, `super 45000`\n' +
-    '`/personal` - Resumen del mes por categoría\n' +
-    '`/viaje nuevo Brasil 10/01 20/01` - Abrir un viaje\n' +
-    '`/viaje` - Ver el viaje activo y su total\n' +
-    '_Si me equivoco de ámbito, corregilo con el botón y lo recuerdo._\n\n' +
-    '🏡 *Casa (gastos compartidos):*\n' +
-    '`/casa nueva Casa` - Crear una casa · `/casa invitar` - Invitar\n' +
-    '`/casa` - Resumen y saldos · `/casa saldar Ana 5000` - Registrar un pago\n' +
-    '`/casa ayuda` - Todos los comandos de casa\n\n' +
-    '🧠 *Modo IA:*\n' +
-    '`/modoia` - Ver estado del modo Full IA\n' +
-    '`/modoia on` / `/modoia off` - Activar/desactivar'
-  );
+  return textos.ayuda.completa();
 }
 
 async function guardarMovimiento(userId, datos, opciones = {}) {
@@ -1195,7 +1126,7 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     : (tratamientoNombre || null);
 
   if (!monto || isNaN(monto) || monto === 0) {
-    return { necesitaInfo: true, campo: 'monto', mensaje: '💰 ¿De cuánto es el movimiento? Ingresá el monto:' };
+    return { necesitaInfo: true, campo: 'monto', mensaje: textos.movimiento.pedirMonto };
   }
 
   if (!descripcion) {
@@ -1218,7 +1149,7 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
       referenciaId: referenciaId || null,
       notas: notas || null,
     });
-    return { necesitaInfo: true, campo: 'descripcion', mensaje: '📝 ¿De quién o qué concepto es el movimiento?' };
+    return { necesitaInfo: true, campo: 'descripcion', mensaje: textos.movimiento.pedirDescripcion };
   }
 
   let montoFinal = parseFloat(monto);
@@ -1313,7 +1244,7 @@ async function registrarMovimientoDesdeNLP(userId, datos) {
     return {
       necesitaInfo: true,
       campo: 'metodo_pago',
-      mensaje: '💳 *¿Cómo pagaste?*\n\nResponde: efectivo / transferencia / tarjeta',
+      mensaje: textos.movimiento.preguntarMetodo,
      _pendingData: { tipo: tipoFinal, descripcion: descripcionFinal, monto: montoFinal, moneda: monedaFinal }
     };
   }

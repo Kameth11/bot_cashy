@@ -3,6 +3,7 @@ const { esAdminOriginal } = require('../../auth');
 const { USE_SUPABASE } = require('../../config');
 const reconciliacion = require('../../services/reconciliacion.service');
 const fallos = require('../../services/dual-write-fallos.service');
+const textos = require('../../messages');
 
 const fmt = n => `$${Number(n).toLocaleString('es-AR')}`;
 const lista = (ids, max = 5) => ids.slice(0, max).join(', ') + (ids.length > max ? ` … (+${ids.length - max})` : '');
@@ -23,11 +24,11 @@ function formatear(r) {
 }
 
 bot.command('reconciliar', async (ctx) => {
-  if (!esAdminOriginal(ctx.from.id)) return ctx.reply('⛔ Solo el administrador puede usar este comando.');
-  if (!USE_SUPABASE) return ctx.reply('ℹ️ Supabase no está activo: no hay nada que comparar con Sheets.');
+  if (!esAdminOriginal(ctx.from.id)) return ctx.reply(textos.comandos.reconciliar.soloElAdministradorPuedeUsar);
+  if (!USE_SUPABASE) return ctx.reply(textos.comandos.reconciliar.supabaseNoEstaActivoNo);
 
   try {
-    await ctx.reply('🔎 Comparando Google Sheets con Supabase… (solo lee, no cambia nada)');
+    await ctx.reply(textos.comandos.reconciliar.comparandoGoogleSheetsConSupabase);
     const partes = [];
     for (const ownerId of reconciliacion.listarDuenos()) {
       try {

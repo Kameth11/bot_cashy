@@ -5,6 +5,7 @@ const state = require('../state');
 const cmd = require('../services/command.service');
 const { escapeMarkdown, formatMonto } = require('../utils/formatter');
 const { DASHBOARD_URL } = require('../config');
+const textos = require('../messages');
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
@@ -38,34 +39,37 @@ function listaNombres(nombres) {
 function lineasComprobante(es) {
   const c = es.comprobante;
   if (!c) return '';
-  const tipoDoc = [c.tipoDocumento && c.tipoDocumento !== 'otro' ? c.tipoDocumento.replace(/_/g, ' ') : 'comprobante', c.letra]
+  const T = textos.confirmacion;
+  const tipoDoc = [c.tipoDocumento && c.tipoDocumento !== 'otro' ? c.tipoDocumento.replace(/_/g, ' ') : T.comprobanteGenerico, c.letra]
     .filter(Boolean).join(' ');
   const partes = [`🧾 ${escapeMarkdown(tipoDoc)}${c.numero ? ` ${escapeMarkdown(c.numero)}` : ''}`];
-  if (c.cuit) partes.push(`CUIT ${escapeMarkdown(c.cuit)}`);
-  let texto = `• Comprobante: ${partes.join(' · ')}\n`;
-  if (c.fechaEmision) texto += `• Fecha: ${escapeMarkdown(c.fechaEmision)}\n`;
-  if (es.fechaVencimiento) texto += `• Vence: ${escapeMarkdown(es.fechaVencimiento)}\n`;
-  if (Array.isArray(c.items) && c.items.length) texto += `• Ítems: ${c.items.length}\n`;
+  if (c.cuit) partes.push(T.cuit(escapeMarkdown(c.cuit)));
+  let texto = T.linea(T.etiqueta.comprobante, partes.join(' · '));
+  if (c.fechaEmision) texto += T.linea(T.etiqueta.fecha, escapeMarkdown(c.fechaEmision));
+  if (es.fechaVencimiento) texto += T.linea(T.etiqueta.vence, escapeMarkdown(es.fechaVencimiento));
+  if (Array.isArray(c.items) && c.items.length) texto += T.linea(T.etiqueta.items, c.items.length);
   if (c.duplicado) {
-    const cuando = c.duplicado.fechaCarga ? ` (cargado el ${escapeMarkdown(c.duplicado.fechaCarga)})` : '';
+    const cuando = c.duplicado.fechaCarga ? T.cargadoEl(escapeMarkdown(c.duplicado.fechaCarga)) : '';
     texto += c.duplicado.motivo === 'mismo_archivo'
-      ? `\n⚠️ _Esta misma imagen ya se cargó${cuando}. Si la guardás, queda duplicado._\n`
-      : `\n⚠️ _Ya hay un comprobante con el mismo emisor, número y total${cuando}. Revisá que no sea el mismo._\n`;
+      ? T.duplicadoMismaImagen(cuando)
+      : T.duplicadoMismoComprobante(cuando);
   }
   return texto;
 }
 
 function crearMensajeConfirmacion(entities) {
+  const T = textos.confirmacion;
   const es = entities || {};
   const tipoRaw = String(es.tipo || '').toLowerCase();
   const esEgreso = ['gasto', 'egreso'].includes(tipoRaw);
-  const tipoTexto = esEgreso ? 'Egreso 🔴' : 'Ingreso 💚';
+  const tipoTexto = esEgreso ? T.tipo.egreso : T.tipo.ingreso;
 
   const moneda = es.moneda || 'Pesos';
   const montoTexto = formatMontoConMoneda(es.monto, moneda);
-  const monedaLabel = moneda === 'Dólares' ? ' dólares' : moneda === 'Euros' ? ' euros' : ' pesos';
+  const monedaLabel = T.monedaLabel[moneda] || T.monedaLabel.Pesos;
+  const montoLinea = `${montoTexto}${es.monto ? monedaLabel : ''}`;
 
-  const estadoTexto = es.estado === 'Pendiente' ? 'Pendiente ⏳' : 'Cobrado';
+  const estadoTexto = es.estado === 'Pendiente' ? T.estado.pendiente : T.estado.cobrado;
   const metodo = es.metodo_pago
     ? es.metodo_pago.charAt(0).toUpperCase() + es.metodo_pago.slice(1)
     : null;
@@ -77,20 +81,20 @@ function crearMensajeConfirmacion(entities) {
   if (esAmbitoCasa(es)) {
     const reparto = es.repartoNombres && es.repartoNombres.length
       ? listaNombres(es.repartoNombres)
-      : `todos (${listaNombres((es.miembrosCasa || []).map((m) => m.nombre))})`;
+      : T.repartoTodos(listaNombres((es.miembrosCasa || []).map((m) => m.nombre)));
     return (
-      `📋 *Entendí esto:*\n\n` +
-      `• Ámbito: 🏡 Casa — ${v(es.casaNombre)}\n` +
-      `• Tipo: Egreso 🔴\n` +
-      `• Monto: ${montoTexto}${es.monto ? monedaLabel : ''}\n` +
-      `• Categoría: ${categoriaTexto}\n` +
-      `• Detalle: ${v(es.descripcion)}\n` +
-      `• Pagó: ${v(es.pagoPorNombre)}\n` +
-      `• Reparto: ${reparto}\n` +
-      `• Método: ${v(metodo)}\n` +
-      (es.fecha ? `• Fecha: ${escapeMarkdown(String(es.fecha))}\n` : '') +
-      (es.avisoReparto ? `\n⚠️ _${escapeMarkdown(es.avisoReparto)}_\n` : '') +
-      `\n_¿Es correcto?_`
+      T.encabezado +
+      T.linea(T.etiqueta.ambito, T.ambito.casa(v(es.casaNombre))) +
+      T.linea(T.etiqueta.tipo, T.tipo.egreso) +
+      T.linea(T.etiqueta.monto, montoLinea) +
+      T.linea(T.etiqueta.categoria, categoriaTexto) +
+      T.linea(T.etiqueta.detalle, v(es.descripcion)) +
+      T.linea(T.etiqueta.pago, v(es.pagoPorNombre)) +
+      T.linea(T.etiqueta.reparto, reparto) +
+      T.linea(T.etiqueta.metodo, v(metodo)) +
+      (es.fecha ? T.linea(T.etiqueta.fecha, escapeMarkdown(String(es.fecha))) : '') +
+      (es.avisoReparto ? T.avisoReparto(escapeMarkdown(es.avisoReparto)) : '') +
+      T.pie
     );
   }
 
@@ -98,45 +102,43 @@ function crearMensajeConfirmacion(entities) {
   // sí importan la categoría y el viaje al que se atribuye.
   if (esAmbitoPersonal(es)) {
     const viajeLinea = es.viajeNombre
-      ? `• Viaje: ✈️ ${escapeMarkdown(String(es.viajeNombre))}\n`
+      ? T.linea(T.etiqueta.viaje, T.viaje(escapeMarkdown(String(es.viajeNombre))))
       : '';
     return (
-      `📋 *Entendí esto:*\n\n` +
-      `• Ámbito: 🏠 Personal\n` +
-      `• Tipo: ${tipoTexto}\n` +
-      `• Monto: ${montoTexto}${es.monto ? monedaLabel : ''}\n` +
-      `• Categoría: ${categoriaTexto}\n` +
-      `• Detalle: ${v(es.descripcion)}\n` +
-      `• Método: ${v(metodo)}\n` +
-      (es.fecha ? `• Fecha: ${escapeMarkdown(String(es.fecha))}\n` : '') +
+      T.encabezado +
+      T.linea(T.etiqueta.ambito, T.ambito.personal) +
+      T.linea(T.etiqueta.tipo, tipoTexto) +
+      T.linea(T.etiqueta.monto, montoLinea) +
+      T.linea(T.etiqueta.categoria, categoriaTexto) +
+      T.linea(T.etiqueta.detalle, v(es.descripcion)) +
+      T.linea(T.etiqueta.metodo, v(metodo)) +
+      (es.fecha ? T.linea(T.etiqueta.fecha, escapeMarkdown(String(es.fecha))) : '') +
       viajeLinea +
       lineasComprobante(es) +
-      `\n_¿Es correcto?_`
+      T.pie
     );
   }
 
-  const nombreLabel = esEgreso ? 'Proveedor' : 'Paciente';
+  const nombreLabel = esEgreso ? T.etiqueta.proveedor : T.etiqueta.paciente;
   const nombreValor = esEgreso ? es.proveedorNombre : es.pacienteNombre;
 
   // Cuando el término es ambiguo (alquiler, luz, expensas...) se avisa, porque
   // el default es consultorio y quizá no sea lo que el usuario quiso.
-  const avisoAmbiguo = es.ambiguoAmbito
-    ? `\n⚠️ _Asumí que es del consultorio. Si es de tu casa, tocá el botón._\n`
-    : '';
+  const avisoAmbiguo = es.ambiguoAmbito ? T.avisoAmbiguo : '';
   // (Con casas compartidas el botón ofrece también cada casa.)
 
   return (
-    `📋 *Entendí esto:*\n\n` +
-    `• Ámbito: 🏥 Consultorio\n` +
-    `• Tipo: ${tipoTexto}\n` +
-    `• Monto: ${montoTexto}${es.monto ? monedaLabel : ''}\n` +
-    `• ${nombreLabel}: ${v(nombreValor)}\n` +
-    `• Método: ${v(metodo)}\n` +
-    `• Estado: ${estadoTexto}\n` +
-    (es.comprobante ? '' : `• Tratamiento: ${v(es.tratamientoNombre)}\n`) +
+    T.encabezado +
+    T.linea(T.etiqueta.ambito, T.ambito.consultorio) +
+    T.linea(T.etiqueta.tipo, tipoTexto) +
+    T.linea(T.etiqueta.monto, montoLinea) +
+    T.linea(nombreLabel, v(nombreValor)) +
+    T.linea(T.etiqueta.metodo, v(metodo)) +
+    T.linea(T.etiqueta.estado, estadoTexto) +
+    (es.comprobante ? '' : T.linea(T.etiqueta.tratamiento, v(es.tratamientoNombre))) +
     lineasComprobante(es) +
     avisoAmbiguo +
-    `\n_¿Es correcto?_`
+    T.pie
   );
 }
 
@@ -148,11 +150,11 @@ function botonesDeAmbito(entities) {
   const es = entities || {};
   const actual = esAmbitoCasa(es) ? `casa:${es.casaId}` : (esAmbitoPersonal(es) ? 'personal' : 'consultorio');
   const opciones = [
-    { target: 'consultorio', label: '🏥 Consultorio' },
-    { target: 'personal', label: '🏠 Personal' },
+    { target: 'consultorio', label: textos.nlpConfirm.botonConsultorio },
+    { target: 'personal', label: textos.nlpConfirm.botonPersonal },
   ];
   if (esEgresoEntities(es)) {
-    for (const c of es.casasDisponibles) opciones.push({ target: `casa:${c.casaId}`, label: `🏡 ${c.nombre}` });
+    for (const c of es.casasDisponibles) opciones.push({ target: `casa:${c.casaId}`, label: textos.nlpConfirm.botonCasa(c.nombre) });
   }
   const botones = opciones
     .filter((o) => o.target !== actual)
@@ -167,13 +169,13 @@ function confirmationButtons(entities) {
   const tieneCasas = Array.isArray((entities || {}).casasDisponibles) && entities.casasDisponibles.length > 0;
   const filas = [
     [
-      Markup.button.callback('✅ Guardar', 'nlp_save'),
-      Markup.button.callback('❌ Cancelar', 'nlp_cancel'),
+      Markup.button.callback(textos.nlpConfirm.guardar, 'nlp_save'),
+      Markup.button.callback(textos.nlpConfirm.cancelar, 'nlp_cancel'),
     ],
     ...(tieneCasas
       ? botonesDeAmbito(entities)
       : [[Markup.button.callback(
-        personal ? '🏥 Es del consultorio' : '🏠 Es personal',
+        personal ? textos.nlpConfirm.botonEsDelConsultorio : textos.nlpConfirm.botonEsPersonal,
         'nlp_toggle_ambito'
       )]]),
   ];
@@ -181,10 +183,10 @@ function confirmationButtons(entities) {
   // Un gasto atribuido a un viaje se puede desatribuir sin tocar nada más: es
   // el caso de pagar la luz mientras estás de viaje.
   if (personal && (entities || {}).viajeId) {
-    filas.push([Markup.button.callback('🚫 No es del viaje', 'nlp_quitar_viaje')]);
+    filas.push([Markup.button.callback(textos.nlpConfirm.noEsDelViaje, 'nlp_quitar_viaje')]);
   }
 
-  filas.push([Markup.button.callback('✏️ Editar un campo', 'nlp_edit')]);
+  filas.push([Markup.button.callback(textos.nlpConfirm.editarUnCampo, 'nlp_edit')]);
   return Markup.inlineKeyboard(filas);
 }
 
@@ -192,28 +194,28 @@ function editFieldButtons(entities) {
   if (esAmbitoCasa(entities)) {
     return Markup.inlineKeyboard([
       [
-        Markup.button.callback('💰 Monto', 'nlp_edit_monto'),
-        Markup.button.callback('💳 Método', 'nlp_edit_metodo'),
+        Markup.button.callback(textos.nlpConfirm.monto, 'nlp_edit_monto'),
+        Markup.button.callback(textos.nlpConfirm.metodo, 'nlp_edit_metodo'),
       ],
       [
-        Markup.button.callback('👤 Pagó', 'nlp_edit_pago'),
-        Markup.button.callback('👥 Entre quiénes', 'nlp_edit_reparto'),
+        Markup.button.callback(textos.nlpConfirm.pago, 'nlp_edit_pago'),
+        Markup.button.callback(textos.nlpConfirm.entreQuienes, 'nlp_edit_reparto'),
       ],
-      [Markup.button.callback('🔄 Reescribir', 'nlp_edit_reescribir')],
+      [Markup.button.callback(textos.nlpConfirm.reescribir, 'nlp_edit_reescribir')],
     ]);
   }
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('💰 Monto', 'nlp_edit_monto'),
-      Markup.button.callback('👤 Paciente', 'nlp_edit_paciente'),
+      Markup.button.callback(textos.nlpConfirm.monto, 'nlp_edit_monto'),
+      Markup.button.callback(textos.nlpConfirm.paciente, 'nlp_edit_paciente'),
     ],
     [
-      Markup.button.callback('💳 Método', 'nlp_edit_metodo'),
-      Markup.button.callback('📊 Tipo', 'nlp_edit_tipo'),
+      Markup.button.callback(textos.nlpConfirm.metodo, 'nlp_edit_metodo'),
+      Markup.button.callback(textos.nlpConfirm.tipo, 'nlp_edit_tipo'),
     ],
     [
-      Markup.button.callback('📋 Estado', 'nlp_edit_estado'),
-      Markup.button.callback('🔄 Reescribir', 'nlp_edit_reescribir'),
+      Markup.button.callback(textos.nlpConfirm.estado, 'nlp_edit_estado'),
+      Markup.button.callback(textos.nlpConfirm.reescribir, 'nlp_edit_reescribir'),
     ],
   ]);
 }
@@ -221,8 +223,8 @@ function editFieldButtons(entities) {
 function discardButtons() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('✅ Guardar', 'nlp_keep_old'),
-      Markup.button.callback('❌ Descartar', 'nlp_discard_old'),
+      Markup.button.callback(textos.nlpConfirm.guardar, 'nlp_keep_old'),
+      Markup.button.callback(textos.nlpConfirm.descartar, 'nlp_discard_old'),
     ],
   ]);
 }
@@ -248,7 +250,7 @@ async function actualizarCampoNlp(ctx, userId, pending, text) {
       const clean = String(text).trim().replace(/\./g, '').replace(',', '.');
       const n = parseFloat(clean);
       if (!Number.isFinite(n) || n <= 0) {
-        return ctx.reply('⚠️ Monto inválido. Ingresá un número positivo (ej: 15000):');
+        return ctx.reply(textos.nlpConfirm.montoInvalidoIngresaUnNumero);
       }
       entities.monto = n;
       break;
@@ -261,8 +263,8 @@ async function actualizarCampoNlp(ctx, userId, pending, text) {
       const r = buscarMiembro(entities.miembrosCasa, text);
       if (!r.miembro) {
         return ctx.reply(r.error === 'ambiguo'
-          ? `⚠️ Hay más de uno que coincide: ${r.candidatos.map((c) => c.nombre).join(', ')}. Escribí el nombre completo:`
-          : '⚠️ No encontré a esa persona en la casa. Escribí el nombre como figura en /casa miembros:');
+          ? textos.nlpConfirm.hayMasDeUno(r.candidatos.map((c) => c.nombre).join(', '))
+          : textos.nlpConfirm.noEncontrePersona);
       }
       entities.pagoPorId = r.miembro.id;
       entities.pagoPorNombre = r.miembro.nombre;
@@ -284,7 +286,7 @@ async function actualizarCampoNlp(ctx, userId, pending, text) {
         if (r.miembro) { if (!ids.includes(r.miembro.id)) ids.push(r.miembro.id); } else desconocidos.push(tok);
       }
       if (ids.length === 0 || desconocidos.length > 0) {
-        return ctx.reply(`⚠️ No reconocí a: ${desconocidos.join(', ') || text}. Escribí los nombres separados por "y" (ej: Ana y Beto) o "todos":`);
+        return ctx.reply(textos.nlpConfirm.noReconoci(desconocidos.join(', ') || text));
       }
       entities.repartoIds = ids;
       entities.repartoNombres = ids.map((id) => entities.miembrosCasa.find((m) => m.id === id).nombre);
@@ -294,7 +296,7 @@ async function actualizarCampoNlp(ctx, userId, pending, text) {
     case 'metodo_pago': {
       const m = text.toLowerCase().trim();
       if (!['efectivo', 'transferencia', 'tarjeta'].includes(m)) {
-        return ctx.reply('⚠️ Método inválido. Usá: efectivo / transferencia / tarjeta');
+        return ctx.reply(textos.nlpConfirm.metodoInvalidoUsaEfectivoTransferencia);
       }
       entities.metodo_pago = m;
       break;
@@ -306,7 +308,7 @@ async function actualizarCampoNlp(ctx, userId, pending, text) {
       } else if (['gasto', 'egreso', 'salida'].includes(t)) {
         entities.tipo = 'gasto';
       } else {
-        return ctx.reply('⚠️ Tipo inválido. Usá: ingreso / gasto');
+        return ctx.reply(textos.nlpConfirm.tipoInvalidoUsaIngresoGasto);
       }
       break;
     }
@@ -317,7 +319,7 @@ async function actualizarCampoNlp(ctx, userId, pending, text) {
       } else if (['pendiente', 'no', 'sin cobrar'].includes(e)) {
         entities.estado = 'Pendiente';
       } else {
-        return ctx.reply('⚠️ Estado inválido. Usá: cobrado / pendiente');
+        return ctx.reply(textos.nlpConfirm.estadoInvalidoUsaCobradoPendiente);
       }
       break;
     }
@@ -359,7 +361,7 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
     }
 
     const categoriaTexto = escapeMarkdown(String(movimiento.categoria || '').replace(/_/g, ' '));
-    const viajeTexto = viaje ? `\n✈️ Viaje: ${escapeMarkdown(viaje.nombre)}` : '';
+    const viajeTexto = viaje ? textos.nlpConfirm.viajeLinea(escapeMarkdown(viaje.nombre)) : '';
 
     // Aviso de presupuesto: solo para egresos y solo si hay uno definido.
     let alerta = '';
@@ -367,12 +369,15 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
       const estado = await personalService.evaluarPresupuesto(userId, movimiento.categoria, movimiento.fecha);
       if (estado && estado.enAlerta) {
         const icono = estado.excedido ? '🔴' : '⚠️';
-        alerta =
-          `\n\n${icono} *${categoriaTexto}*: ${formatMonto(estado.gastado, estado.moneda)} ` +
-          `de ${formatMonto(estado.limite, estado.moneda)} (${estado.porcentaje}%)` +
-          (estado.excedido
-            ? `\n_Te pasaste del presupuesto del mes._`
-            : `\n_Te quedan ${formatMonto(estado.restante, estado.moneda)} este mes._`);
+        alerta = textos.nlpConfirm.alertaPresupuesto({
+          icono,
+          categoria: categoriaTexto,
+          gastado: formatMonto(estado.gastado, estado.moneda),
+          limite: formatMonto(estado.limite, estado.moneda),
+          porcentaje: estado.porcentaje,
+          excedido: estado.excedido,
+          restante: formatMonto(estado.restante, estado.moneda),
+        });
       }
     }
 
@@ -381,7 +386,7 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
     // barra): el link tiene que llevar ahí, no a la pantalla del consultorio,
     // donde estos movimientos nunca aparecen.
     if (DASHBOARD_URL) {
-      extra.reply_markup = { inline_keyboard: [[{ text: '🏠 Ver en Personal', url: `${DASHBOARD_URL.replace(/\/+$/, '')}/personal` }]] };
+      extra.reply_markup = { inline_keyboard: [[{ text: textos.nlpConfirm.botonVerEnPersonal, url: `${DASHBOARD_URL.replace(/\/+$/, '')}/personal` }]] };
     }
 
     // El resumen personal (bot y dashboard) muestra un mes por vez: si la fecha
@@ -390,26 +395,31 @@ async function guardarMovimientoPersonalDesdeConfirmacion(ctx, userId, entities)
     // buscándolo.
     const iso = personalService.fechaStrAIso(movimiento.fecha) || '';
     const avisoMes = iso && !iso.startsWith(personalService.mesActualIso())
-      ? `\n\n📆 _Ojo: la fecha es de otro mes (${iso.slice(0, 7)}). Lo vas a ver en Personal → ese mes, no en el actual._`
+      ? textos.nlpConfirm.avisoOtroMes(iso.slice(0, 7))
       : '';
     const esIngreso = String(movimiento.tipo).toLowerCase() === 'ingreso';
     return ctx.editMessageText(
-      `✅ *${esIngreso ? 'Ingreso' : 'Gasto'} personal registrado*\n\n` +
-      `🏠 ${escapeMarkdown(movimiento.descripcion)}\n` +
-      `💰 ${formatMonto(movimiento.monto, movimiento.moneda)}\n` +
-      `📅 ${escapeMarkdown(String(movimiento.fecha))}\n` +
-      `🏷️ ${categoriaTexto}${viajeTexto}${alerta}${avisoMes}`,
+      textos.nlpConfirm.personalRegistrado({
+        esIngreso,
+        descripcion: escapeMarkdown(movimiento.descripcion),
+        monto: formatMonto(movimiento.monto, movimiento.moneda),
+        fecha: escapeMarkdown(String(movimiento.fecha)),
+        categoria: categoriaTexto,
+        viaje: viajeTexto,
+        alerta,
+        avisoMes,
+      }),
       extra
     );
   } catch (error) {
     if (error.message === 'monto_invalido') {
-      return ctx.editMessageText('⚠️ El monto no es válido. Mandá el movimiento de nuevo.');
+      return ctx.editMessageText(textos.nlpConfirm.elMontoNoEsValido);
     }
     if (error.message === 'descripcion_invalida') {
-      return ctx.editMessageText('⚠️ Falta una descripción más clara. Mandalo de nuevo.');
+      return ctx.editMessageText(textos.nlpConfirm.faltaUnaDescripcionMasClara);
     }
     console.error('Error al guardar movimiento personal:', error.message);
-    return ctx.editMessageText('❌ Error al guardar el gasto personal. Intentá de nuevo.');
+    return ctx.editMessageText(textos.nlpConfirm.errorAlGuardarElGasto);
   }
 }
 
@@ -420,7 +430,7 @@ async function aplicarAmbito(ctx, target, comando) {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingNlpMovimientos.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
+  if (!pending) return ctx.editMessageText(textos.nlpConfirm.elMovimientoExpiroMandaloDe);
 
   const personalService = require('../services/personal.service');
   const { inferirCategoriaPersonal } = require('../services/personal-nlp.service');
@@ -455,9 +465,9 @@ async function aplicarAmbito(ctx, target, comando) {
 
     // El callback viene del cliente: se valida contra el servidor, nunca se confía.
     if (!casaService.listarMisCasas(userId).some((c) => c.casaId === casaId)) {
-      return ctx.reply('🔒 No pertenecés a esa casa.');
+      return ctx.reply(textos.nlpConfirm.noPertenecesAEsaCasa);
     }
-    if (!esEgresoEntities(entities)) return ctx.reply('⚠️ En una casa solo se cargan gastos.');
+    if (!esEgresoEntities(entities)) return ctx.reply(textos.nlpConfirm.enUnaCasaSoloSe);
 
     let miembros;
     try {
@@ -467,7 +477,7 @@ async function aplicarAmbito(ctx, target, comando) {
       throw err;
     }
     const yo = miembros.find((m) => m.userId === String(userId));
-    if (!yo) return ctx.reply('🔒 No pertenecés a esa casa.');
+    if (!yo) return ctx.reply(textos.nlpConfirm.noPertenecesAEsaCasa);
 
     const { extraerPagoYReparto } = require('../lib/casa-parse');
     const pr = extraerPagoYReparto(entities.textoOriginal || entities.descripcion || '', miembros, yo.id);
@@ -542,7 +552,7 @@ async function handleNlpSetAmbito(ctx) {
   const target = String((ctx.match && ctx.match[1]) || '');
   if (target !== 'consultorio' && target !== 'personal' && !/^casa:[A-Za-z0-9_]+$/.test(target)) {
     await ctx.answerCbQuery();
-    return ctx.reply('⚠️ Opción no válida.');
+    return ctx.reply(textos.nlpConfirm.opcionNoValida);
   }
   return aplicarAmbito(ctx, target, 'nlp_set_ambito');
 }
@@ -551,7 +561,7 @@ async function handleNlpQuitarViaje(ctx) {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingNlpMovimientos.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
+  if (!pending) return ctx.editMessageText(textos.nlpConfirm.elMovimientoExpiroMandaloDe);
 
   const entities = { ...pending.entities, viajeId: null, viajeNombre: null };
   state.pendingNlpMovimientos.set(userId, { entities, editingCampo: null });
@@ -581,7 +591,7 @@ async function guardarGastoCasaDesdeConfirmacion(ctx, userId, entities) {
 
     const nombre = (id) => (miembros.find((m) => m.id === id) || {}).nombre || id;
     const reparto = movimiento.repartoEntre.length === miembros.length
-      ? 'todos'
+      ? textos.nlpConfirm.repartoTodos
       : listaNombres(movimiento.repartoEntre.map(nombre));
 
     // Saldos actualizados (best-effort: el gasto ya quedó guardado).
@@ -594,18 +604,21 @@ async function guardarGastoCasaDesdeConfirmacion(ctx, userId, entities) {
     }
 
     return ctx.editMessageText(
-      `✅ *Gasto registrado en ${escapeMarkdown(entities.casaNombre || 'la casa')}*\n\n` +
-      `🏡 ${escapeMarkdown(movimiento.descripcion)}\n` +
-      `💰 ${fmt(movimiento.monto, movimiento.moneda)}\n` +
-      `👤 Pagó: ${escapeMarkdown(nombre(movimiento.pagoPor))}\n` +
-      `👥 Reparto: ${reparto}\n` +
-      `🏷️ ${escapeMarkdown(String(movimiento.categoria || '').replace(/_/g, ' '))}${saldos}`,
+      textos.nlpConfirm.casaRegistrado({
+        casa: escapeMarkdown(entities.casaNombre || textos.nlpConfirm.casaLaCasa),
+        descripcion: escapeMarkdown(movimiento.descripcion),
+        monto: fmt(movimiento.monto, movimiento.moneda),
+        pago: escapeMarkdown(nombre(movimiento.pagoPor)),
+        reparto,
+        categoria: escapeMarkdown(String(movimiento.categoria || '').replace(/_/g, ' ')),
+        saldos,
+      }),
       { parse_mode: 'Markdown' }
     );
   } catch (error) {
     if (error instanceof casaService.CasaError) return ctx.editMessageText(mensajeError(error));
     console.error('Error al guardar gasto de casa:', error.message);
-    return ctx.editMessageText('❌ Error al guardar el gasto de la casa. Intentá de nuevo.');
+    return ctx.editMessageText(textos.nlpConfirm.errorAlGuardarElGasto2);
   }
 }
 
@@ -616,7 +629,7 @@ async function handleNlpSave(ctx) {
   const userId = ctx.from.id;
   const pending = state.pendingNlpMovimientos.get(userId);
   if (!pending) {
-    return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
+    return ctx.editMessageText(textos.nlpConfirm.elMovimientoExpiroMandaloDe);
   }
   state.pendingNlpMovimientos.delete(userId);
 
@@ -642,7 +655,7 @@ async function handleNlpSave(ctx) {
       await require('./comprobante').registrarComprobanteDesdeEntities(userId, pending.entities, { idMovimiento: resultado.idUnico || null });
     }
     if (resultado.necesitaInfo) {
-      await ctx.editMessageText('⏳ Completando datos...');
+      await ctx.editMessageText(textos.nlpConfirm.completandoDatos);
       return ctx.reply(resultado.mensaje, { parse_mode: 'Markdown' });
     }
     if (resultado.success) {
@@ -650,26 +663,26 @@ async function handleNlpSave(ctx) {
       if (DASHBOARD_URL) extra.reply_markup = { inline_keyboard: [[{ text: '📊 Ver Dashboard', url: DASHBOARD_URL }]] };
       return ctx.editMessageText(resultado.mensaje, extra);
     }
-    return ctx.editMessageText('❌ No se pudo registrar. Intentá de nuevo.');
+    return ctx.editMessageText(textos.nlpConfirm.noSePudoRegistrarIntenta);
   } catch (error) {
     console.error('Error al guardar NLP:', error.message);
-    return ctx.editMessageText('❌ Error al guardar. Intentá de nuevo.');
+    return ctx.editMessageText(textos.nlpConfirm.errorAlGuardarIntentaDe);
   }
 }
 
 async function handleNlpCancel(ctx) {
   await ctx.answerCbQuery();
   state.pendingNlpMovimientos.delete(ctx.from.id);
-  return ctx.editMessageText('❌ Cancelado. Podés volver a escribirlo cuando quieras.');
+  return ctx.editMessageText(textos.nlpConfirm.canceladoPodesVolverAEscribirlo);
 }
 
 async function handleNlpEdit(ctx) {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   if (!state.pendingNlpMovimientos.has(userId)) {
-    return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
+    return ctx.editMessageText(textos.nlpConfirm.elMovimientoExpiroMandaloDe);
   }
-  return ctx.editMessageText('✏️ *¿Qué campo querés editar?*', {
+  return ctx.editMessageText(textos.nlpConfirm.queCampoQueresEditar, {
     parse_mode: 'Markdown',
     ...editFieldButtons((state.pendingNlpMovimientos.get(userId) || {}).entities),
   });
@@ -680,7 +693,7 @@ function makeEditCampoHandler(campo, prompt) {
     await ctx.answerCbQuery();
     const userId = ctx.from.id;
     const pending = state.pendingNlpMovimientos.get(userId);
-    if (!pending) return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
+    if (!pending) return ctx.editMessageText(textos.nlpConfirm.elMovimientoExpiroMandaloDe);
     pending.editingCampo = campo;
     state.pendingNlpMovimientos.set(userId, pending);
     await ctx.reply(prompt);
@@ -690,14 +703,14 @@ function makeEditCampoHandler(campo, prompt) {
 async function handleNlpEditReescribir(ctx) {
   await ctx.answerCbQuery();
   state.pendingNlpMovimientos.delete(ctx.from.id);
-  return ctx.editMessageText('🔄 Movimiento descartado. Escribí el movimiento de nuevo con todos los detalles.');
+  return ctx.editMessageText(textos.nlpConfirm.movimientoDescartadoEscribiElMovimiento);
 }
 
 async function handleNlpKeepOld(ctx) {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingNlpMovimientos.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ El movimiento expiró. Mandalo de nuevo.');
+  if (!pending) return ctx.editMessageText(textos.nlpConfirm.elMovimientoExpiroMandaloDe);
   pending.editingCampo = null;
   state.pendingNlpMovimientos.set(userId, pending);
   return ctx.editMessageText(crearMensajeConfirmacion(pending.entities), {
@@ -709,16 +722,16 @@ async function handleNlpKeepOld(ctx) {
 async function handleNlpDiscardOld(ctx) {
   await ctx.answerCbQuery();
   state.pendingNlpMovimientos.delete(ctx.from.id);
-  return ctx.editMessageText('✅ Movimiento descartado. Mandá el nuevo mensaje de nuevo para procesarlo.');
+  return ctx.editMessageText(textos.nlpConfirm.movimientoDescartadoMandaElNuevo);
 }
 
-const handleNlpEditMonto    = makeEditCampoHandler('monto',         '💰 Ingresá el nuevo monto (ej: 15000):');
-const handleNlpEditPaciente = makeEditCampoHandler('pacienteNombre','👤 Ingresá el nombre del paciente:');
-const handleNlpEditMetodo   = makeEditCampoHandler('metodo_pago',   '💳 Ingresá el método: efectivo / transferencia / tarjeta');
-const handleNlpEditTipo     = makeEditCampoHandler('tipo',          '📊 Ingresá el tipo: ingreso / gasto');
-const handleNlpEditEstado   = makeEditCampoHandler('estado',        '📋 Ingresá el estado: cobrado / pendiente');
-const handleNlpEditPago     = makeEditCampoHandler('pagoPor',       '👤 ¿Quién pagó? Escribí el nombre (ej: Ana):');
-const handleNlpEditReparto  = makeEditCampoHandler('reparto',       '👥 ¿Entre quiénes? Escribí los nombres separados por "y" (ej: Ana y Beto) o "todos":');
+const handleNlpEditMonto    = makeEditCampoHandler('monto',         textos.nlpConfirm.pedirMonto);
+const handleNlpEditPaciente = makeEditCampoHandler('pacienteNombre',textos.nlpConfirm.pedirPaciente);
+const handleNlpEditMetodo   = makeEditCampoHandler('metodo_pago',   textos.nlpConfirm.pedirMetodo);
+const handleNlpEditTipo     = makeEditCampoHandler('tipo',          textos.nlpConfirm.pedirTipo);
+const handleNlpEditEstado   = makeEditCampoHandler('estado',        textos.nlpConfirm.pedirEstado);
+const handleNlpEditPago     = makeEditCampoHandler('pagoPor',       textos.nlpConfirm.pedirPago);
+const handleNlpEditReparto  = makeEditCampoHandler('reparto',       textos.nlpConfirm.pedirReparto);
 
 // ── Register bot actions ──────────────────────────────────────────────────────
 

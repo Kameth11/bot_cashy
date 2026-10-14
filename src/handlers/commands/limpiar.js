@@ -4,6 +4,7 @@ const state = require('../../state');
 const { confirmButtons } = require('../actions');
 const { toMovimiento, isValidMovimientoRow, getRowMontoRaw } = require('../../utils/sheet-row');
 const { requiereDuenoBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 bot.command('limpiar', async (ctx) => {
   if (!requiereDuenoBot(ctx, '/limpiar')) return;
@@ -12,10 +13,10 @@ bot.command('limpiar', async (ctx) => {
     const sheetId = getSheetId(userId);
 
     if (!sheetId) {
-      return ctx.reply('❌ No tienes un Sheet configurado. Usa /start.');
+      return ctx.reply(textos.comandos.limpiar.noTienesUnSheetConfigurado);
     }
 
-    await ctx.reply('🧹 *LIMPIEZA DEL SHEET*\n\n⏳ Analizando filas...');
+    await ctx.reply(textos.comandos.limpiar.limpiezaDelSheetAnalizandoFilas);
 
     const sheet = await getSheetCliente(userId);
     const filasRaw = await sheet.getRows();
@@ -30,7 +31,7 @@ bot.command('limpiar', async (ctx) => {
     });
 
     if (filasInvalidas.length === 0) {
-      return ctx.reply('✅ *¡Todo limpio!*\n\nNo hay filas inválidas en tu Sheet.');
+      return ctx.reply(textos.comandos.limpiar.todoLimpioNoHayFilas);
     }
 
     state.pendingLimpiezas.set(userId, { filas: filasInvalidas, sheet });
@@ -68,7 +69,7 @@ bot.command('limpiar', async (ctx) => {
 
   } catch (error) {
     console.error('Error /limpiar:', error.message, error.stack);
-    await ctx.reply('❌ Error al analizar el Sheet. Revisa los logs.');
+    await ctx.reply(textos.comandos.limpiar.errorAlAnalizarElSheet);
   }
 });
 

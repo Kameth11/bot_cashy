@@ -1,6 +1,7 @@
 const { bot } = require('../../lib/telegraf');
 const { esAdminOriginal, obtenerClientePorUserId } = require('../../auth');
 const { eliminarCliente } = require('../../services/cliente.service');
+const textos = require('../../messages');
 
 // /salir — el usuario se da de baja del bot
 bot.command('salir', async (ctx) => {
@@ -16,7 +17,7 @@ bot.command('salir', async (ctx) => {
 
     const cliente = obtenerClientePorUserId(userId);
     if (!cliente) {
-      return ctx.reply('No estás registrado en el sistema.').catch(() => {});
+      return ctx.reply(textos.comandos.salir.noEstasRegistradoEnEl).catch(() => {});
     }
 
     await ctx.reply(
@@ -34,7 +35,7 @@ bot.command('salir', async (ctx) => {
     pendingReinicios.set(`salir_${userId}`, true);
   } catch (err) {
     console.error('Error /salir:', err.message);
-    ctx.reply('❌ Error al procesar el comando.').catch(() => {});
+    ctx.reply(textos.comandos.salir.errorAlProcesarElComando).catch(() => {});
   }
 });
 
@@ -48,7 +49,7 @@ async function procesarConfirmacionSalir(ctx) {
   const texto = (ctx.message?.text || '').trim().toUpperCase();
   if (texto !== 'SI') {
     pendingReinicios.delete(`salir_${userId}`);
-    await ctx.reply('❌ Cancelado. Seguís registrado en el bot.').catch(() => {});
+    await ctx.reply(textos.comandos.salir.canceladoSeguisRegistradoEnEl).catch(() => {});
     return true;
   }
 
@@ -62,7 +63,7 @@ async function procesarConfirmacionSalir(ctx) {
       'Si querés volver a registrarte, enviá /start.'
     ).catch(() => {});
   } else {
-    await ctx.reply('❌ No se pudo completar la baja. Contactá al administrador.').catch(() => {});
+    await ctx.reply(textos.comandos.salir.noSePudoCompletarLa).catch(() => {});
   }
 
   return true;

@@ -11,6 +11,7 @@ const { bot } = require('../../lib/telegraf');
 const { esAdminOriginal } = require('../../auth');
 const quickNlp = require('../../services/quick_nlp.service');
 const geminiService = require('../../services/gemini.service');
+const textos = require('../../messages');
 
 function formatEntities(entities = {}) {
   const lines = [];
@@ -116,7 +117,7 @@ bot.command('nlptest', async (ctx) => {
   const userId = ctx.from.id;
 
   if (!esAdminOriginal(userId)) {
-    return ctx.reply('⛔ Solo disponible para el administrador.');
+    return ctx.reply(textos.comandos.nlptest.soloDisponibleParaElAdministrador);
   }
 
   const frase = ctx.message.text.replace(/^\/nlptest(@\w+)?\s*/i, '').trim();
@@ -133,7 +134,7 @@ bot.command('nlptest', async (ctx) => {
     );
   }
 
-  await ctx.reply('🔍 Analizando...').catch(() => {});
+  await ctx.reply(textos.comandos.nlptest.analizando).catch(() => {});
 
   const quickResult = quickNlp.quickParse(frase);
   const gemini = await consultarGemini(userId, frase);

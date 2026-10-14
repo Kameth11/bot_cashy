@@ -4,12 +4,13 @@ const state = require('../state');
 const cmd = require('../services/command.service');
 const { getRowDescripcion, getRowMonto, getRowMoneda, getRowFecha } = require('../utils/sheet-row');
 const { formatMonto, escapeMarkdown } = require('../utils/formatter');
+const textos = require('../messages');
 
 async function mostrarCobrar(ctx, resultado) {
   const userId = ctx.from.id;
 
   if (resultado.tipo === 'empty') {
-    return ctx.reply('✅ No hay movimientos pendientes.');
+    return ctx.reply(textos.cobrarConfirm.noHayMovimientosPendientes);
   }
 
   if (resultado.tipo === 'single') {
@@ -30,8 +31,8 @@ async function mostrarCobrar(ctx, resultado) {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
         [
-          Markup.button.callback('✅ Sí, cobrar', 'cobrar_confirm_si'),
-          Markup.button.callback('❌ Cancelar', 'cobrar_cancel'),
+          Markup.button.callback(textos.cobrarConfirm.siCobrar, 'cobrar_confirm_si'),
+          Markup.button.callback(textos.cobrarConfirm.cancelar, 'cobrar_cancel'),
         ]
       ])
     });
@@ -46,9 +47,9 @@ async function mostrarCobrar(ctx, resultado) {
     const label = `${desc.length > 22 ? desc.substring(0, 22) + '…' : desc} · ${formatMonto(getRowMonto(f, 0), getRowMoneda(f, 'Pesos'))}`;
     return [Markup.button.callback(label, `cobrar_pick_${i}`)];
   });
-  botones.push([Markup.button.callback('❌ Cancelar', 'cobrar_cancel')]);
+  botones.push([Markup.button.callback(textos.cobrarConfirm.cancelar, 'cobrar_cancel')]);
 
-  return ctx.reply('⏳ *¿Cuál pendiente querés cobrar?*', {
+  return ctx.reply(textos.cobrarConfirm.cualPendienteQueresCobrar, {
     parse_mode: 'Markdown',
     ...Markup.inlineKeyboard(botones)
   });
@@ -61,7 +62,7 @@ bot.action('cobrar_confirm_si', async (ctx) => {
   const pending = state.pendingCobros.get(userId);
 
   if (!pending || !pending.fila) {
-    return ctx.editMessageText('⚠️ Sesión expirada. Mandá el mensaje de nuevo.');
+    return ctx.editMessageText(textos.cobrarConfirm.sesionExpiradaMandaElMensaje);
   }
   state.pendingCobros.delete(userId);
 
@@ -70,7 +71,7 @@ bot.action('cobrar_confirm_si', async (ctx) => {
     return ctx.editMessageText(resultado, { parse_mode: 'Markdown' });
   } catch (err) {
     console.error('Error cobrar_confirm_si:', err.message);
-    return ctx.editMessageText('❌ Error al cobrar. Intentá de nuevo.');
+    return ctx.editMessageText(textos.cobrarConfirm.errorAlCobrarIntentaDe);
   }
 });
 
@@ -82,11 +83,11 @@ bot.action(/^cobrar_pick_(\d+)$/, async (ctx) => {
   const pending = state.pendingCobros.get(userId);
 
   if (!pending || !pending.filas) {
-    return ctx.editMessageText('⚠️ Sesión expirada. Mandá el mensaje de nuevo.');
+    return ctx.editMessageText(textos.cobrarConfirm.sesionExpiradaMandaElMensaje);
   }
 
   const fila = pending.filas[index];
-  if (!fila) return ctx.editMessageText('❌ Elemento no encontrado.');
+  if (!fila) return ctx.editMessageText(textos.cobrarConfirm.elementoNoEncontrado);
 
   state.pendingCobros.delete(userId);
 
@@ -95,7 +96,7 @@ bot.action(/^cobrar_pick_(\d+)$/, async (ctx) => {
     return ctx.editMessageText(resultado, { parse_mode: 'Markdown' });
   } catch (err) {
     console.error('Error cobrar_pick:', err.message);
-    return ctx.editMessageText('❌ Error al cobrar. Intentá de nuevo.');
+    return ctx.editMessageText(textos.cobrarConfirm.errorAlCobrarIntentaDe);
   }
 });
 
@@ -104,7 +105,7 @@ bot.action('cobrar_cancel', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   state.pendingCobros.delete(userId);
-  return ctx.editMessageText('❌ Cancelado.');
+  return ctx.editMessageText(textos.cobrarConfirm.cancelado);
 });
 
 module.exports = { mostrarCobrar };

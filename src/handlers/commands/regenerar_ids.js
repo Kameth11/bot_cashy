@@ -4,14 +4,15 @@ const { generarIDUnico } = require('../../services/movimiento.service');
 const { getRowIdUnico } = require('../../utils/sheet-row');
 const { withUserWriteLock } = require('../../lib/write-queue');
 const { requiereDuenoBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 bot.command('regenerar_ids', async (ctx) => {
   if (!requiereDuenoBot(ctx, '/regenerar_ids')) return;
   try {
-    await ctx.reply('🔄 Buscando filas sin ID...');
+    await ctx.reply(textos.comandos.regenerarIds.buscandoFilasSinId);
     
     const sheet = await getSheetCliente(ctx.from.id);
-    if (!sheet) return ctx.reply('❌ Error: No tienes un sheet configurado.');
+    if (!sheet) return ctx.reply(textos.comandos.regenerarIds.errorNoTienesUnSheet);
     
     const filas = await sheet.getRows();
     
@@ -52,7 +53,7 @@ bot.command('regenerar_ids', async (ctx) => {
     ctx.reply(msg, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Error /regenerar_ids:', error.message, error.stack);
-    ctx.reply('❌ Error al regenerar IDs. Verifica los logs.');
+    ctx.reply(textos.comandos.regenerarIds.errorAlRegenerarIdsVerifica);
   }
 });
 

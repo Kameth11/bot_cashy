@@ -2,13 +2,14 @@ const { bot } = require('../../lib/telegraf');
 const { esAdminOriginal } = require('../../auth');
 const state = require('../../state');
 const { confirmButtons } = require('../actions');
+const textos = require('../../messages');
 
 bot.command('reiniciar', async (ctx) => {
   try {
   const userId = ctx.from.id;
 
   if (!esAdminOriginal(userId)) {
-    return ctx.reply('⚠️ Solo el owner puede usar este comando.').catch(() => {});
+    return ctx.reply(textos.comandos.reiniciar.soloElOwnerPuedeUsar).catch(() => {});
   }
 
   state.pendingReinicios.set(userId, true);
@@ -27,7 +28,7 @@ bot.command('reiniciar', async (ctx) => {
   );
   } catch (error) {
     console.error('Error /reiniciar:', error.message);
-    ctx.reply('❌ Error al reiniciar.').catch(() => {});
+    ctx.reply(textos.comandos.reiniciar.errorAlReiniciar).catch(() => {});
   }
 });
 

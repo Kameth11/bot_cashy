@@ -40,6 +40,7 @@ const MENSAJES_ERROR = {
   no_miembro: 'Ya no sos parte de esa casa.',
   no_editable: 'Un pago entre miembros no se edita: borralo y volvé a cargarlo.',
 };
+const textos = require('../messages');
 const mensajeDe = (err) => MENSAJES_ERROR[err && (err.code || err.message)] || 'No pude completar la operación. Probá de nuevo.';
 
 // ── Qué ámbitos tiene la persona ─────────────────────────────────────────────
@@ -121,7 +122,7 @@ async function listar(ctx, userId, idxAmbito) {
   } catch (err) {
     state.pendingGestion.delete(userId);
     logger.error('BOT', 'gestion-gastos listar', { err: err.message });
-    return ctx.reply('❌ No pude cargar los movimientos. Probá de nuevo en un momento.');
+    return ctx.reply(textos.gestionGastos.noPudeCargarLosMovimientos);
   }
   if (items.length === 0) {
     state.pendingGestion.delete(userId);
@@ -133,7 +134,7 @@ async function listar(ctx, userId, idxAmbito) {
     `${ambito.nombre} — elegí el gasto a ${verbo(pend.accion)}:`,
     Markup.inlineKeyboard([
       ...items.map((it, i) => [Markup.button.callback(etiquetaItem(it), `gx_i:${i}`)]),
-      [Markup.button.callback('❌ Cancelar', 'gx_no')],
+      [Markup.button.callback(textos.gestionGastos.cancelar, 'gx_no')],
     ])
   );
 }
@@ -151,20 +152,20 @@ async function elegirItem(ctx, userId, idx) {
     state.pendingGestion.set(userId, { ...pend, item, step: 'confirmar' });
     return ctx.reply(
       `¿Borrar este gasto?\n\n${detalle}\n\nNo se puede deshacer.`,
-      Markup.inlineKeyboard([[Markup.button.callback('✅ Sí, borrar', 'gx_ok'), Markup.button.callback('❌ Cancelar', 'gx_no')]])
+      Markup.inlineKeyboard([[Markup.button.callback(textos.gestionGastos.siBorrar, 'gx_ok'), Markup.button.callback(textos.gestionGastos.cancelar, 'gx_no')]])
     );
   }
 
   if (!item.editable) {
-    return ctx.reply('Un pago entre miembros no se edita: borralo con /eliminar y volvé a cargarlo.');
+    return ctx.reply(textos.gestionGastos.unPagoEntreMiembrosNo);
   }
   state.pendingGestion.set(userId, { ...pend, item, step: 'campo' });
   return ctx.reply(
     `¿Qué querés cambiar?\n\n${detalle}`,
     Markup.inlineKeyboard([
-      [Markup.button.callback('📝 Descripción', 'gx_f:d'), Markup.button.callback('💲 Monto', 'gx_f:m')],
-      [Markup.button.callback('🏷 Categoría', 'gx_f:c'), Markup.button.callback('📅 Fecha', 'gx_f:f')],
-      [Markup.button.callback('❌ Cancelar', 'gx_no')],
+      [Markup.button.callback(textos.gestionGastos.descripcion, 'gx_f:d'), Markup.button.callback(textos.gestionGastos.monto, 'gx_f:m')],
+      [Markup.button.callback(textos.gestionGastos.categoria, 'gx_f:c'), Markup.button.callback(textos.gestionGastos.fecha, 'gx_f:f')],
+      [Markup.button.callback(textos.gestionGastos.cancelar, 'gx_no')],
     ])
   );
 }
@@ -186,8 +187,8 @@ async function elegirCampo(ctx, userId, clave) {
     for (let i = 0; i < categorias.length; i += 2) {
       filas.push(categorias.slice(i, i + 2).map((c, j) => Markup.button.callback(c.replace(/_/g, ' '), `gx_c:${i + j}`)));
     }
-    filas.push([Markup.button.callback('❌ Cancelar', 'gx_no')]);
-    return ctx.reply('🏷 Elegí la nueva categoría:', Markup.inlineKeyboard(filas));
+    filas.push([Markup.button.callback(textos.gestionGastos.cancelar, 'gx_no')]);
+    return ctx.reply(textos.gestionGastos.elegiLaNuevaCategoria, Markup.inlineKeyboard(filas));
   }
 
   state.pendingGestion.set(userId, { ...pend, campo: clave, step: 'valor' });
@@ -200,7 +201,7 @@ async function aplicarCambio(ctx, userId, pend, cambios) {
       ? await personalService.actualizarMovimientoPersonal(userId, pend.item.id, cambios)
       : await casaService.editarMovimiento(userId, pend.ambito.casaId, pend.item.id, cambios);
     state.pendingGestion.delete(userId);
-    if (!r) return ctx.reply('⚠️ No encontré ese gasto: puede que ya lo hayan borrado.');
+    if (!r) return ctx.reply(textos.gestionGastos.noEncontreEseGastoPuede);
     logger.audit('gestion_gasto_editado', { userId, ambito: pend.ambito.tipo, campos: Object.keys(cambios) });
     return ctx.reply(`✅ Listo. Ahora dice:\n«${r.descripcion}»\n${r.fecha} · ${formatMonto(r.monto, r.moneda)}${r.categoria ? ` · ${String(r.categoria).replace(/_/g, ' ')}` : ''}`);
   } catch (err) {
@@ -227,7 +228,7 @@ async function confirmarBorrado(ctx, userId) {
     const ok = pend.ambito.tipo === 'personal'
       ? await personalService.eliminarMovimientoPersonal(userId, pend.item.id)
       : await casaService.eliminarMovimiento(userId, pend.ambito.casaId, pend.item.id);
-    if (!ok) return ctx.reply('⚠️ No encontré ese gasto: puede que ya lo hayan borrado.');
+    if (!ok) return ctx.reply(textos.gestionGastos.noEncontreEseGastoPuede);
     logger.audit('gestion_gasto_eliminado', { userId, ambito: pend.ambito.tipo });
     return ctx.reply(`🗑 Borrado: «${pend.item.descripcion}»`);
   } catch (err) {
@@ -245,22 +246,22 @@ async function procesarTextoGestion(ctx, text) {
   if (!pend) return false;
 
   if (pend.step !== 'valor') {
-    await ctx.reply('⚠️ Tenés una operación pendiente. Usá los botones de arriba o /cancelar para descartarla.');
+    await ctx.reply(textos.gestionGastos.tenesUnaOperacionPendienteUsa);
     return true;
   }
 
   let cambios;
   if (pend.campo === 'd') {
     const d = normalizarDescripcion(text);
-    if (!d.ok) { await ctx.reply('⚠️ La descripción es inválida. Escribí un texto más claro y corto:'); return true; }
+    if (!d.ok) { await ctx.reply(textos.gestionGastos.laDescripcionEsInvalidaEscribi); return true; }
     cambios = { descripcion: d.valor };
   } else if (pend.campo === 'm') {
     const m = validarMonto(parseFloat(String(text).replace(',', '.')));
-    if (!m.ok) { await ctx.reply('⚠️ El monto es inválido. Escribí un número mayor a 0:'); return true; }
+    if (!m.ok) { await ctx.reply(textos.gestionGastos.elMontoEsInvalidoEscribi); return true; }
     cambios = { monto: Math.abs(m.valor) };
   } else if (pend.campo === 'f') {
     const f = /^hoy$/i.test(text.trim()) ? fechaArgentinaStr() : parsearFechaIngresada(text);
-    if (!f) { await ctx.reply('⚠️ No entendí la fecha. Escribila como DD/MM/AAAA, DD/MM o "hoy":'); return true; }
+    if (!f) { await ctx.reply(textos.gestionGastos.noEntendiLaFechaEscribila); return true; }
     cambios = { fecha: f };
   } else {
     return false;
@@ -286,7 +287,7 @@ bot.action(/^gx_(a|i|f|c):(\w+)$/, async (ctx) => {
     return await elegirCategoria(ctx, userId, Number(valor));
   } catch (err) {
     logger.error('BOT', 'gestion-gastos accion', { err: err.message });
-    return ctx.reply('❌ Algo salió mal. Probá de nuevo con /eliminar o /editar.').catch(() => {});
+    return ctx.reply(textos.gestionGastos.algoSalioMalProbaDe).catch(() => {});
   }
 });
 
@@ -299,7 +300,7 @@ bot.action('gx_ok', async (ctx) => {
 bot.action('gx_no', async (ctx) => {
   await ctx.answerCbQuery().catch(() => {});
   state.pendingGestion.delete(ctx.from.id);
-  return ctx.reply('❌ Cancelado.');
+  return ctx.reply(textos.gestionGastos.cancelado);
 });
 
 module.exports = { ofrecerAmbito, procesarTextoGestion, ambitosDe };

@@ -28,6 +28,7 @@ const MOTIVOS = {
   no_aplica: '⚠️ Esa cuenta ya es una cuenta de Telegram: no hace falta vincular nada.',
   no_disponible: '⚠️ Vincular Telegram no está disponible ahora.',
 };
+const textos = require('../messages');
 
 const esChatPrivado = (ctx) => !ctx.chat || ctx.chat.type === 'private';
 
@@ -53,7 +54,7 @@ function impedimento(telegramId, userIdDestino) {
 /** Se llama desde /start cuando el payload es vincular_<token>. Nunca inicia un alta de usuario. */
 async function iniciarVinculo(ctx, token) {
   if (!esChatPrivado(ctx)) {
-    return ctx.reply('🔒 Abrí este enlace en una conversación privada conmigo para vincular tu Telegram.');
+    return ctx.reply(textos.vinculoTelegram.abriEsteEnlaceEnUna);
   }
 
   const pedido = vinculo.obtenerPedido(token);
@@ -78,8 +79,8 @@ async function iniciarVinculo(ctx, token) {
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([[
-        Markup.button.callback('✅ Sí, vincular', `vinculo_ok:${token}`),
-        Markup.button.callback('❌ No fui yo', `vinculo_no:${token}`),
+        Markup.button.callback(textos.vinculoTelegram.siVincular, `vinculo_ok:${token}`),
+        Markup.button.callback(textos.vinculoTelegram.noFuiYo, `vinculo_no:${token}`),
       ]]),
     }
   );
@@ -89,7 +90,7 @@ async function handleVinculoDecision(ctx) {
   await ctx.answerCbQuery();
   const [, decision, token] = ctx.match;
 
-  if (!esChatPrivado(ctx)) return ctx.editMessageText('🔒 Esto solo se puede confirmar en una conversación privada.').catch(() => {});
+  if (!esChatPrivado(ctx)) return ctx.editMessageText(textos.vinculoTelegram.estoSoloSePuedeConfirmar).catch(() => {});
 
   const pedido = vinculo.obtenerPedido(token);
   if (!pedido) return ctx.editMessageText(MENSAJE_VENCIDO.replace(/\*/g, '')).catch(() => {});
@@ -97,7 +98,7 @@ async function handleVinculoDecision(ctx) {
   if (decision === 'no') {
     vinculo.consumir(token);
     logger.audit('telegram_vinculo_rechazado', { telegramId: telegramRealDe(ctx), userId: pedido.userId });
-    return ctx.editMessageText('❌ Pedido rechazado. No se vinculó nada.').catch(() => {});
+    return ctx.editMessageText(textos.vinculoTelegram.pedidoRechazadoNoSeVinculo).catch(() => {});
   }
 
   const telegramId = telegramRealDe(ctx);

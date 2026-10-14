@@ -12,12 +12,13 @@ const { guardarAgendaParaFecha, detectarDuplicados } = require('../services/agen
 const { fechaArgentinaStr, fechaMananaArgentinaStr, parsearFechaIngresada } = require('../utils/date');
 const { aplicarColorMontoEnFila } = require('../services/sheet-format.service');
 const { withUserWriteLock } = require('../lib/write-queue');
+const textos = require('../messages');
 
 function confirmButtons(confirmAction, cancelAction) {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('✅ Confirmar', confirmAction),
-      Markup.button.callback('❌ Cancelar', cancelAction)
+      Markup.button.callback(textos.actions.confirmar, confirmAction),
+      Markup.button.callback(textos.actions.cancelar, cancelAction)
     ]
   ]);
 }
@@ -34,7 +35,7 @@ function buildDeleteListKeyboard(items, query) {
     const label = `${fechaCorta ? fechaCorta + ' · ' : ''}${desc} · ${formatMonto(item.monto, item.moneda)}`;
     return [Markup.button.callback(label, `del_pick_${i}`)];
   });
-  filas.push([Markup.button.callback('❌ Cancelar', 'del_cancel')]);
+  filas.push([Markup.button.callback(textos.actions.cancelar, 'del_cancel')]);
 
   return { titulo, keyboard: Markup.inlineKeyboard(filas) };
 }
@@ -47,11 +48,11 @@ bot.action(/^del_pick_(\d+)$/, async (ctx) => {
 
   const pending = state.pendingDeletes.get(userId);
   if (!pending || pending.type !== 'list') {
-    return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /eliminar de nuevo.');
+    return ctx.editMessageText(textos.actions.sesionExpiradaEjecutaEliminarDe);
   }
 
   const item = pending.items[index];
-  if (!item) return ctx.editMessageText('❌ Elemento no encontrado.');
+  if (!item) return ctx.editMessageText(textos.actions.elementoNoEncontrado);
 
   pending.step = 'confirm';
   pending.selectedIndex = index;
@@ -70,8 +71,8 @@ bot.action(/^del_pick_(\d+)$/, async (ctx) => {
     parse_mode: 'Markdown',
     reply_markup: Markup.inlineKeyboard([
       [
-        Markup.button.callback('✅ Sí, eliminar', 'del_conf'),
-        Markup.button.callback('↩️ Volver', 'del_back'),
+        Markup.button.callback(textos.actions.siEliminar, 'del_conf'),
+        Markup.button.callback(textos.actions.volver, 'del_back'),
       ]
     ]).reply_markup,
   });
@@ -84,7 +85,7 @@ bot.action('del_conf', async (ctx) => {
   const pending = state.pendingDeletes.get(userId);
 
   if (!pending || pending.type !== 'list' || pending.step !== 'confirm') {
-    return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /eliminar de nuevo.');
+    return ctx.editMessageText(textos.actions.sesionExpiradaEjecutaEliminarDe);
   }
 
   const item = pending.items[pending.selectedIndex];
@@ -94,12 +95,12 @@ bot.action('del_conf', async (ctx) => {
     await withUserWriteLock(userId, () => item.fila.delete());
     invalidateCache(userId);
     await ctx.editMessageText(
-      `✅ *Eliminado*\n\n📝 ${escapeMarkdown(item.desc)}\n💰 ${formatMonto(Math.abs(item.monto), item.moneda)}`,
+      textos.actions.movimientoEliminadoConMonto(escapeMarkdown(item.desc), formatMonto(Math.abs(item.monto), item.moneda)),
       { parse_mode: 'Markdown' }
     );
   } catch (err) {
     console.error('Error al eliminar desde lista:', err.message);
-    await ctx.editMessageText('❌ Error al eliminar. Verificá los logs.');
+    await ctx.editMessageText(textos.actions.errorAlEliminarVerificaLos);
   }
 });
 
@@ -110,7 +111,7 @@ bot.action('del_back', async (ctx) => {
   const pending = state.pendingDeletes.get(userId);
 
   if (!pending || pending.type !== 'list') {
-    return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /eliminar de nuevo.');
+    return ctx.editMessageText(textos.actions.sesionExpiradaEjecutaEliminarDe);
   }
 
   pending.step = 'select';
@@ -125,7 +126,7 @@ bot.action('del_back', async (ctx) => {
 bot.action('del_cancel', async (ctx) => {
   await ctx.answerCbQuery();
   state.pendingDeletes.delete(ctx.from.id);
-  await ctx.editMessageText('❌ Cancelado.');
+  await ctx.editMessageText(textos.actions.cancelado);
 });
 
 bot.action('confirm_delete', async (ctx) => {
@@ -133,13 +134,13 @@ bot.action('confirm_delete', async (ctx) => {
   const userId = ctx.from.id;
 
   if (!state.pendingDeletes.has(userId)) {
-    return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+    return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
   }
 
   const pending = state.pendingDeletes.get(userId);
   // Si el estado es del nuevo formato (lista), ignorar — lo maneja del_conf
   if (pending.type === 'list') {
-    return ctx.editMessageText('⚠️ Usá los botones del mensaje anterior.');
+    return ctx.editMessageText(textos.actions.usaLosBotonesDelMensaje);
   }
 
   const { fila, index, desc } = pending;
@@ -149,12 +150,12 @@ bot.action('confirm_delete', async (ctx) => {
     await withUserWriteLock(userId, () => fila.delete());
     invalidateCache(userId);
     await ctx.editMessageText(
-      '✅ *Movimiento eliminado*\n\n' + `📝 ${escapeMarkdown(desc)}`,
+      textos.actions.movimientoEliminado(escapeMarkdown(desc)),
       { parse_mode: 'Markdown' }
     );
   } catch (error) {
     console.error('Error al eliminar:', error.message, error.stack);
-    await ctx.editMessageText('❌ Error al eliminar movimiento. Verifica los logs.');
+    await ctx.editMessageText(textos.actions.errorAlEliminarMovimientoVerifica);
   }
 });
 
@@ -162,7 +163,7 @@ bot.action('cancel_delete', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   state.pendingDeletes.delete(userId);
-  await ctx.editMessageText('❌ Eliminación cancelada.');
+  await ctx.editMessageText(textos.actions.eliminacionCancelada);
 });
 
 bot.action('confirm_clean', async (ctx) => {
@@ -170,14 +171,14 @@ bot.action('confirm_clean', async (ctx) => {
   const userId = ctx.from.id;
 
   if (!state.pendingLimpiezas.has(userId)) {
-    return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+    return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
   }
 
   const { filas } = state.pendingLimpiezas.get(userId);
   state.pendingLimpiezas.delete(userId);
 
   try {
-    await ctx.editMessageText('⏳ Eliminando filas...');
+    await ctx.editMessageText(textos.actions.eliminandoFilas);
     let eliminadas = 0;
     let errores = 0;
 
@@ -206,7 +207,7 @@ bot.action('confirm_clean', async (ctx) => {
     await ctx.editMessageText(msg, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Error en limpieza:', error.message, error.stack);
-    await ctx.editMessageText('❌ Error durante la limpieza. Intenta de nuevo.');
+    await ctx.editMessageText(textos.actions.errorDuranteLaLimpiezaIntenta);
   }
 });
 
@@ -214,7 +215,7 @@ bot.action('cancel_clean', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   state.pendingLimpiezas.delete(userId);
-  await ctx.editMessageText('✅ Limpieza cancelada. Ninguna fila fue eliminada.');
+  await ctx.editMessageText(textos.actions.limpiezaCanceladaNingunaFilaFue);
 });
 
 bot.action('confirm_reset', async (ctx) => {
@@ -222,7 +223,7 @@ bot.action('confirm_reset', async (ctx) => {
   const userId = ctx.from.id;
 
   if (!state.pendingReinicios.has(userId)) {
-    return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+    return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
   }
 
   state.pendingReinicios.delete(userId);
@@ -246,29 +247,19 @@ bot.action('confirm_reset', async (ctx) => {
         }
       });
       await ctx.editMessageText(
-        '✅ *Registro reiniciado*\n\n' +
-        'Se borraron:\n' +
-        '• Tus datos locales\n' +
-        '• Todos los movimientos del sheet\n\n' +
-        'Usa /start para registrarte de nuevo.',
+        textos.actions.registroReiniciadoConSheet,
         { parse_mode: 'Markdown' }
       );
     } catch (error) {
       console.error('Error al limpiar sheet:', error.message);
       await ctx.editMessageText(
-        '✅ *Registro reiniciado*\n\n' +
-        'Se borraron tus datos locales.\n' +
-        '⚠️ No se pudo limpiar el sheet (verifica que esté compartido).\n\n' +
-        'Usa /start para registrarte de nuevo.',
+        textos.actions.registroReiniciadoSheetSinLimpiar,
         { parse_mode: 'Markdown' }
       );
     }
   } else {
     await ctx.editMessageText(
-      '✅ *Registro reiniciado*\n\n' +
-      'Tus datos han sido borrados.\n' +
-      'No tenías sheet configurado.\n\n' +
-      'Usa /start para registrarte de nuevo.',
+      textos.actions.registroReiniciadoSinSheet,
       { parse_mode: 'Markdown' }
     );
   }
@@ -278,7 +269,7 @@ bot.action('cancel_reset', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   state.pendingReinicios.delete(userId);
-  await ctx.editMessageText('❌ Reinicio cancelado.');
+  await ctx.editMessageText(textos.actions.reinicioCancelado);
 });
 
 bot.action('confirm_edit', async (ctx) => {
@@ -286,7 +277,7 @@ bot.action('confirm_edit', async (ctx) => {
   const userId = ctx.from.id;
 
   if (!state.pendingEdits.has(userId)) {
-    return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+    return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
   }
 
   const editData = state.pendingEdits.get(userId);
@@ -313,14 +304,15 @@ bot.action('confirm_edit', async (ctx) => {
     });
 
     await ctx.editMessageText(
-      `✅ *Movimiento actualizado*\n\n` +
-      `📝 ${escapeMarkdown(fila.get('Descripcion'))}\n` +
-      `💰 ${formatMonto(parseFloat(fila.get('Monto')), editData.moneda)}`,
+      textos.actions.movimientoActualizado(
+        escapeMarkdown(fila.get('Descripcion')),
+        formatMonto(parseFloat(fila.get('Monto')), editData.moneda)
+      ),
       { parse_mode: 'Markdown' }
     );
   } catch (error) {
     console.error('Error al editar:', error.message);
-    await ctx.editMessageText('❌ Error al guardar cambios.');
+    await ctx.editMessageText(textos.actions.errorAlGuardarCambios);
   }
 });
 
@@ -328,14 +320,14 @@ bot.action('cancel_edit', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   state.pendingEdits.delete(userId);
-  await ctx.editMessageText('❌ Edición cancelada.');
+  await ctx.editMessageText(textos.actions.edicionCancelada);
 });
 
 function fechaPickerKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('Hoy', 'agenda_fecha_hoy'), Markup.button.callback('Mañana', 'agenda_fecha_manana')],
-    [Markup.button.callback('📆 Otra fecha', 'agenda_fecha_otra')],
-    [Markup.button.callback('❌ Cancelar', 'cancel_agenda')],
+    [Markup.button.callback(textos.actions.hoy, 'agenda_fecha_hoy'), Markup.button.callback(textos.actions.manana, 'agenda_fecha_manana')],
+    [Markup.button.callback(textos.actions.otraFecha, 'agenda_fecha_otra')],
+    [Markup.button.callback(textos.actions.cancelar, 'cancel_agenda')],
   ]);
 }
 
@@ -344,14 +336,14 @@ bot.action('confirm_agenda', async (ctx) => {
   const userId = ctx.from.id;
 
   if (!state.pendingAgendaConfirm.has(userId)) {
-    return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+    return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
   }
 
   const { turnos } = state.pendingAgendaConfirm.get(userId);
   state.pendingAgendaConfirm.delete(userId);
   state.pendingAgendaFecha.set(userId, { turnos });
 
-  await ctx.editMessageText('📅 *¿Para qué día es esta agenda?*', {
+  await ctx.editMessageText(textos.actions.paraQueDiaEsEsta, {
     parse_mode: 'Markdown',
     ...fechaPickerKeyboard(),
   });
@@ -363,7 +355,7 @@ bot.action('cancel_agenda', async (ctx) => {
   state.pendingAgendaConfirm.delete(userId);
   state.pendingAgendaFecha.delete(userId);
   state.pendingAgendaDuplicados.delete(userId);
-  await ctx.editMessageText('❌ Turnos descartados.');
+  await ctx.editMessageText(textos.actions.turnosDescartados);
 });
 
 // Punto único de guardado una vez que ya se sabe la fecha: detecta duplicados
@@ -378,12 +370,10 @@ async function procesarFechaAgendaElegida(ctx, userId, turnos, fecha) {
     const duplicados = await detectarDuplicados(userId, turnos, fecha);
 
     if (duplicados.length === 0) {
-      await ctx.reply('⏳ Guardando turnos en Agenda...');
+      await ctx.reply(textos.actions.guardandoTurnosEnAgenda);
       const { guardados, fechaStr } = await guardarAgendaParaFecha(userId, turnos, fecha);
       return ctx.reply(
-        `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
-        `📅 Fecha: ${fechaStr}\n` +
-        `📊 Ver en tu Google Sheet (tabs "Agenda" y "Turnos")`,
+        textos.actions.turnosGuardados(guardados, fechaStr),
         { parse_mode: 'Markdown' }
       );
     }
@@ -393,20 +383,19 @@ async function procesarFechaAgendaElegida(ctx, userId, turnos, fecha) {
       .map(d => escapeMarkdown(d.existente.cliente || d.existente.hora))
       .join(', ');
     return ctx.reply(
-      `⚠️ *Encontré ${duplicados.length} turno${duplicados.length !== 1 ? 's' : ''} que ya ${duplicados.length !== 1 ? 'existen' : 'existe'} para el ${fecha}* (misma hora y paciente): ${nombres}\n\n` +
-      `¿Reemplazo esos turnos o agrego todo como nuevo?`,
+      textos.actions.turnosDuplicados(duplicados.length, fecha, nombres),
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('🔄 Reemplazar duplicados', 'agenda_dup_reemplazar')],
-          [Markup.button.callback('➕ Agregar todo', 'agenda_dup_agregar')],
-          [Markup.button.callback('❌ Cancelar', 'cancel_agenda')],
+          [Markup.button.callback(textos.actions.reemplazarDuplicados, 'agenda_dup_reemplazar')],
+          [Markup.button.callback(textos.actions.agregarTodo, 'agenda_dup_agregar')],
+          [Markup.button.callback(textos.actions.cancelar, 'cancel_agenda')],
         ]),
       }
     );
   } catch (error) {
     console.error('Error al guardar agenda:', error.message);
-    return ctx.reply('❌ Error al guardar los turnos en la agenda.');
+    return ctx.reply(textos.actions.errorAlGuardarLosTurnos);
   }
 }
 
@@ -414,8 +403,8 @@ bot.action('agenda_fecha_hoy', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingAgendaFecha.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
-  await ctx.editMessageText('⏳ Procesando...');
+  if (!pending) return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
+  await ctx.editMessageText(textos.actions.procesando);
   await procesarFechaAgendaElegida(ctx, userId, pending.turnos, fechaArgentinaStr());
 });
 
@@ -423,8 +412,8 @@ bot.action('agenda_fecha_manana', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingAgendaFecha.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
-  await ctx.editMessageText('⏳ Procesando...');
+  if (!pending) return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
+  await ctx.editMessageText(textos.actions.procesando);
   await procesarFechaAgendaElegida(ctx, userId, pending.turnos, fechaMananaArgentinaStr());
 });
 
@@ -432,32 +421,29 @@ bot.action('agenda_fecha_otra', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingAgendaFecha.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  if (!pending) return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
   state.pendingAgendaFecha.set(userId, { turnos: pending.turnos, esperandoTexto: true });
-  await ctx.editMessageText('📆 Escribí la fecha (DD/MM o DD/MM/AAAA), ej: 25/09 o 25/09/2026:');
+  await ctx.editMessageText(textos.actions.escribiLaFechaDdMm);
 });
 
 bot.action('agenda_dup_reemplazar', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingAgendaDuplicados.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  if (!pending) return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
   state.pendingAgendaDuplicados.delete(userId);
 
   try {
-    await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
+    await ctx.editMessageText(textos.actions.guardandoTurnosEnAgenda);
     const idsAEliminar = pending.duplicados.map(d => d.existente.idTurno).filter(Boolean);
     const { guardados, fechaStr } = await guardarAgendaParaFecha(userId, pending.turnos, pending.fecha, { idsAEliminar });
     await ctx.editMessageText(
-      `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
-      `📅 Fecha: ${fechaStr}\n` +
-      `🔄 Se reemplazaron ${idsAEliminar.length} turno${idsAEliminar.length !== 1 ? 's' : ''} duplicado${idsAEliminar.length !== 1 ? 's' : ''}\n` +
-      `📊 Ver en tu Google Sheet (tabs "Agenda" y "Turnos")`,
+      textos.actions.turnosGuardados(guardados, fechaStr, idsAEliminar.length),
       { parse_mode: 'Markdown' }
     );
   } catch (error) {
     console.error('Error al guardar agenda:', error.message);
-    await ctx.editMessageText('❌ Error al guardar los turnos en la agenda.');
+    await ctx.editMessageText(textos.actions.errorAlGuardarLosTurnos);
   }
 });
 
@@ -465,21 +451,19 @@ bot.action('agenda_dup_agregar', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingAgendaDuplicados.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ Esta acción ya fue procesada o expiró.');
+  if (!pending) return ctx.editMessageText(textos.actions.estaAccionYaFueProcesada);
   state.pendingAgendaDuplicados.delete(userId);
 
   try {
-    await ctx.editMessageText('⏳ Guardando turnos en Agenda...');
+    await ctx.editMessageText(textos.actions.guardandoTurnosEnAgenda);
     const { guardados, fechaStr } = await guardarAgendaParaFecha(userId, pending.turnos, pending.fecha);
     await ctx.editMessageText(
-      `✅ *${guardados} turno${guardados !== 1 ? 's' : ''} guardado${guardados !== 1 ? 's' : ''} en tu Agenda*\n\n` +
-      `📅 Fecha: ${fechaStr}\n` +
-      `📊 Ver en tu Google Sheet (tabs "Agenda" y "Turnos")`,
+      textos.actions.turnosGuardados(guardados, fechaStr),
       { parse_mode: 'Markdown' }
     );
   } catch (error) {
     console.error('Error al guardar agenda:', error.message);
-    await ctx.editMessageText('❌ Error al guardar los turnos en la agenda.');
+    await ctx.editMessageText(textos.actions.errorAlGuardarLosTurnos);
   }
 });
 
@@ -494,7 +478,7 @@ const CAMPOS_TURNO = [
 
 function buildCamposKeyboard() {
   const botones = CAMPOS_TURNO.map(c => [Markup.button.callback(c.label, `agenda_edit_campo_${c.key}`)]);
-  botones.push([Markup.button.callback('❌ Cancelar', 'agenda_edit_cancel')]);
+  botones.push([Markup.button.callback(textos.actions.cancelar, 'agenda_edit_cancel')]);
   return Markup.inlineKeyboard(botones);
 }
 
@@ -502,21 +486,21 @@ bot.action(/^agenda_edit_pick_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingTurnoEdits.get(userId);
-  if (!pending) return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /editarturno de nuevo.');
+  if (!pending) return ctx.editMessageText(textos.actions.sesionExpiradaEjecutaEditarturnoDe);
 
   const index = parseInt(ctx.match[1]);
   const turno = pending.turnos[index];
-  if (!turno) return ctx.editMessageText('❌ Turno no encontrado.');
+  if (!turno) return ctx.editMessageText(textos.actions.turnoNoEncontrado);
 
   const hora = turno.hora ? turno.hora.substring(0, 5) : '??:??';
   try {
     await ctx.editMessageText(
-      `✏️ *${escapeMarkdown(hora)} · ${escapeMarkdown(turno.cliente || 'Sin nombre')}*\n\n¿Qué campo querés editar?`,
+      textos.actions.editarTurnoPregunta(escapeMarkdown(hora), escapeMarkdown(turno.cliente || textos.actions.turnoSinNombre)),
       { parse_mode: 'Markdown', ...buildCamposKeyboard() }
     );
   } catch (error) {
     console.error('Error en agenda_edit_pick:', error.message);
-    return ctx.editMessageText('❌ Error al mostrar el turno. Usá /editarturno de nuevo.').catch(() => {});
+    return ctx.editMessageText(textos.actions.errorAlMostrarElTurno).catch(() => {});
   }
 
   // El estado se setea DESPUÉS de que el envío salga bien (ver photo.js
@@ -532,19 +516,19 @@ bot.action(/^agenda_edit_campo_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const pending = state.pendingTurnoEdits.get(userId);
-  if (!pending || !pending.turno) return ctx.editMessageText('⚠️ Sesión expirada. Ejecutá /editarturno de nuevo.');
+  if (!pending || !pending.turno) return ctx.editMessageText(textos.actions.sesionExpiradaEjecutaEditarturnoDe);
 
   const key = ctx.match[1];
   const campo = CAMPOS_TURNO.find(c => c.key === key);
-  if (!campo) return ctx.editMessageText('❌ Campo inválido.');
+  if (!campo) return ctx.editMessageText(textos.actions.campoInvalido);
 
   pending.campo = campo;
   pending.step = 'ingresar_valor';
   state.pendingTurnoEdits.set(userId, pending);
 
-  const valorActual = pending.turno[campo.key] || '(vacío)';
+  const valorActual = pending.turno[campo.key] || textos.actions.campoVacio;
   await ctx.editMessageText(
-    `✏️ *${campo.label}*\nValor actual: \`${valorActual}\`\n\nEscribí el nuevo valor:`,
+    textos.actions.campoValorActual(campo.label, valorActual),
     { parse_mode: 'Markdown' }
   );
 });
@@ -552,7 +536,7 @@ bot.action(/^agenda_edit_campo_(.+)$/, async (ctx) => {
 bot.action('agenda_edit_cancel', async (ctx) => {
   await ctx.answerCbQuery();
   state.pendingTurnoEdits.delete(ctx.from.id);
-  await ctx.editMessageText('❌ Edición cancelada.');
+  await ctx.editMessageText(textos.actions.edicionCancelada);
 });
 
 module.exports = { confirmButtons, buildDeleteListKeyboard, procesarFechaAgendaElegida };

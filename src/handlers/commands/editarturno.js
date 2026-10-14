@@ -3,6 +3,7 @@ const { Markup } = require('telegraf');
 const { obtenerTurnosPorFecha, fechaHoyStr } = require('../../services/agenda.service');
 const state = require('../../state');
 const { requierePermisoBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 bot.command('editarturno', async (ctx) => {
   if (!requierePermisoBot(ctx, 'editar_agenda', '/editarturno')) return;
@@ -12,11 +13,11 @@ bot.command('editarturno', async (ctx) => {
   try {
     turnos = await obtenerTurnosPorFecha(userId, fechaHoyStr());
   } catch {
-    return ctx.reply('❌ No se pudo acceder a la agenda. ¿Está configurado el sheet?');
+    return ctx.reply(textos.comandos.editarturno.noSePudoAccederA);
   }
 
   if (!turnos || turnos.length === 0) {
-    return ctx.reply('📅 No hay turnos cargados para hoy.');
+    return ctx.reply(textos.comandos.editarturno.noHayTurnosCargadosPara);
   }
 
   state.pendingTurnoEdits.set(userId, { step: 'select_turno', turnos });
@@ -27,9 +28,9 @@ bot.command('editarturno', async (ctx) => {
     const label = `${hora} · ${nombre.length > 20 ? nombre.substring(0, 20) + '…' : nombre}`;
     return [Markup.button.callback(label, `agenda_edit_pick_${i}`)];
   });
-  botones.push([Markup.button.callback('❌ Cancelar', 'agenda_edit_cancel')]);
+  botones.push([Markup.button.callback(textos.comandos.editarturno.cancelar, 'agenda_edit_cancel')]);
 
-  return ctx.reply('📅 *¿Qué turno querés editar?*', {
+  return ctx.reply(textos.comandos.editarturno.queTurnoQueresEditar, {
     parse_mode: 'Markdown',
     ...Markup.inlineKeyboard(botones),
   });

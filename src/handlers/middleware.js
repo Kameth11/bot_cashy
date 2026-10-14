@@ -4,6 +4,7 @@ const { esAdminOriginal, obtenerClientePorUserId } = require('../auth');
 const { RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_EVENTS, MAX_TEXT_LENGTH } = require('../config');
 const logger = require('../lib/logger');
 const clienteService = require('../services/cliente.service');
+const textos = require('../messages');
 
 const COMANDOS_PUBLICOS = new Set(['/start', '/unir', '/cancelar']);
 
@@ -58,7 +59,7 @@ bot.use((ctx, next) => {
     });
 
     if (puedeNotificar && ctx.reply) {
-      ctx.reply('⚠️ Demasiadas acciones seguidas. Esperá unos segundos e intentá otra vez.').catch(() => {});
+      ctx.reply(textos.middleware.demasiadasAccionesSeguidasEsperaUnos).catch(() => {});
     }
     return;
   }
@@ -72,7 +73,7 @@ bot.use((ctx, next) => {
   const text = ctx.message && typeof ctx.message.text === 'string' ? ctx.message.text : null;
   if (text && text.length > MAX_TEXT_LENGTH) {
     if (ctx.reply) {
-      ctx.reply(`⚠️ El mensaje es demasiado largo. Máximo: ${MAX_TEXT_LENGTH} caracteres.`).catch(() => {});
+      ctx.reply(textos.limites.mensajeLargo(MAX_TEXT_LENGTH)).catch(() => {});
     }
     return;
   }
@@ -92,7 +93,7 @@ bot.use((ctx, next) => {
 
   logger.audit('bot_unauthorized_access', { userId });
   if (ctx.reply) {
-    ctx.reply('No estas autorizado para usar este bot. Usa /start para registrarte o /unir CODIGO si te invitaron.').catch(() => {});
+    ctx.reply(textos.middleware.noEstasAutorizadoParaUsar).catch(() => {});
   }
   return;
 });

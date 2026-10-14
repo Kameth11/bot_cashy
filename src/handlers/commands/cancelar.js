@@ -1,5 +1,6 @@
 const { bot } = require('../../lib/telegraf');
 const state = require('../../state');
+const textos = require('../../messages');
 
 bot.command('cancelar', (ctx) => {
   const userId = ctx.from.id;
@@ -17,7 +18,7 @@ bot.command('cancelar', (ctx) => {
   state.pendingAgendaFecha.delete(userId);
   state.pendingAgendaDuplicados.delete(userId);
   state.pendingIngresoPacientes.delete(userId);
-  ctx.reply('❌ Proceso cancelado.');
+  ctx.reply(textos.comandos.cancelar.procesoCancelado);
 });
 
 module.exports = {};

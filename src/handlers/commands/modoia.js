@@ -3,17 +3,18 @@ const { obtenerClientePorUserId } = require('../../auth');
 const clienteService = require('../../services/cliente.service');
 const { canAttemptFullIA } = require('../../services/openrouter.service');
 const { requiereDuenoBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 bot.command('modoia', async (ctx) => {
   const userId = ctx.from.id;
   const cliente = obtenerClientePorUserId(userId);
 
   if (!cliente) {
-    return ctx.reply('⚠️ No tenés una cuenta registrada.');
+    return ctx.reply(textos.comandos.modoia.noTenesUnaCuentaRegistrada);
   }
 
   if (!canAttemptFullIA()) {
-    return ctx.reply('⚠️ El modo Full IA no está disponible todavía (falta configurar OpenRouter).');
+    return ctx.reply(textos.comandos.modoia.elModoFullIaNo);
   }
 
   const arg = ctx.message.text.replace('/modoia', '').trim().toLowerCase();
@@ -30,7 +31,7 @@ bot.command('modoia', async (ctx) => {
   }
 
   if (!['on', 'off'].includes(arg)) {
-    return ctx.reply('⚠️ Usá `/modoia on` o `/modoia off`.', { parse_mode: 'Markdown' });
+    return ctx.reply(textos.comandos.modoia.usaModoiaOnOModoia, { parse_mode: 'Markdown' });
   }
 
   // Activarlo genera costo en OpenRouter para todo el consultorio — solo

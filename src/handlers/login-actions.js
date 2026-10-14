@@ -15,6 +15,7 @@ const loginTelegram = require('../services/login-telegram.service');
 const clienteService = require('../services/cliente.service');
 const { escapeMarkdown } = require('../utils/formatter');
 const logger = require('../lib/logger');
+const textos = require('../messages');
 
 const MENSAJE_VENCIDO = '⚠️ Este pedido venció o ya se usó.\n\nVolvé al navegador y tocá *Entrar con Telegram* de nuevo.';
 const MENSAJE_NO_REGISTRADO = '⚠️ Tu cuenta todavía no está registrada en Cashy, así que no puedo darte acceso al dashboard.\n\nUsá /start para registrarte.';
@@ -78,7 +79,7 @@ async function iniciarAprobacionLogin(ctx, id) {
 
   // La aprobación solo vale en el chat privado con la persona (no en grupos).
   if (!esChatPrivado(ctx)) {
-    return ctx.reply('🔒 Abrí este enlace en una conversación privada conmigo para entrar al dashboard.');
+    return ctx.reply(textos.loginActions.abriEsteEnlaceEnUna);
   }
 
   if (!estaRegistrado(userId)) {
@@ -92,8 +93,8 @@ async function iniciarAprobacionLogin(ctx, id) {
   return ctx.reply(mensajeConfirmacion(pedido), {
     parse_mode: 'Markdown',
     ...Markup.inlineKeyboard([[
-      Markup.button.callback('✅ Sí, soy yo', `login_ok:${id}`),
-      Markup.button.callback('❌ No fui yo', `login_no:${id}`),
+      Markup.button.callback(textos.loginActions.siSoyYo, `login_ok:${id}`),
+      Markup.button.callback(textos.loginActions.noFuiYo, `login_no:${id}`),
     ]]),
   });
 }
@@ -129,13 +130,13 @@ async function handleLoginDecision(ctx) {
       return ctx.editMessageText(MENSAJE_VENCIDO.replace(/\*/g, ''));
     }
     logger.audit('auth_telegram_login_aprobado', { loginId: id, userId });
-    return ctx.editMessageText('✅ Listo, ya podés volver al navegador: va a entrar solo.\n\nSi no fuiste vos, avisá al administrador.');
+    return ctx.editMessageText(textos.loginActions.listoYaPodesVolverAl);
   }
 
   const rechazado = loginTelegram.rechazar(id);
   if (!rechazado) return ctx.editMessageText(MENSAJE_VENCIDO.replace(/\*/g, ''));
   logger.audit('auth_telegram_login_rechazado', { loginId: id, userId, motivo: 'rechazado_por_la_persona' });
-  return ctx.editMessageText('❌ Pedido rechazado. Tu cuenta sigue segura.');
+  return ctx.editMessageText(textos.loginActions.pedidoRechazadoTuCuentaSigue);
 }
 
 bot.action(/^login_(ok|no):([A-Za-z0-9_-]{22})$/, handleLoginDecision);

@@ -14,6 +14,7 @@ const aiQuota = require('../lib/ai-quota');
 const { requierePermisoBot, tienePermisoBot } = require('../auth/bot-permisos');
 const { escapeMarkdown } = require('../utils/formatter');
 const { esArchivoWeb } = require('../lib/archivo-web');
+const textos = require('../messages');
 
 // ── Entrada común: foto o archivo (PDF / imagen sin comprimir) ───────────────
 
@@ -48,7 +49,7 @@ function consumirCuotaMedia(ctx, userId) {
   const cuota = aiQuota.consumir(userId, 'media');
   if (cuota.ok) return true;
   if (cuota.avisar) {
-    ctx.reply(`⚠️ Se alcanzó el límite diario de lectura de fotos y audios de tu consultorio (${cuota.limite}). Mañana se renueva. Mientras tanto podés cargar los movimientos por texto.`).catch(() => {});
+    ctx.reply(textos.limites.mediaDiarioIA(cuota.limite)).catch(() => {});
   }
   return false;
 }
@@ -57,7 +58,7 @@ async function procesarArchivoRecibido(ctx, { fileId, fileSize, mimeType, captio
   const userId = ctx.from.id;
 
   if (!obtenerClientePorUserId(userId) && !esAdminOriginal(userId)) {
-    return ctx.reply('⚠️ No tienes una cuenta registrada.\n\nUsa /start para registrarte.');
+    return ctx.reply(textos.photo.noTienesUnaCuentaRegistrada);
   }
 
   // Una foto puede ser una agenda (editar_agenda) o un comprobante
@@ -70,16 +71,16 @@ async function procesarArchivoRecibido(ctx, { fileId, fileSize, mimeType, captio
   }
 
   if (tieneProcesoPendiente(userId)) {
-    return ctx.reply('⚠️ Tenés un proceso pendiente. Usá /cancelar primero.');
+    return ctx.reply(textos.photo.tenesUnProcesoPendienteUsa);
   }
 
   if (!consumirCuotaMedia(ctx, userId)) return;
 
   try {
-    await ctx.reply(puedeComprobante ? '📸 Procesando imagen...' : '📸 Procesando agenda...');
+    await ctx.reply(puedeComprobante ? textos.limites.procesandoImagen : textos.limites.procesandoAgenda);
 
     if (fileSize && fileSize > MAX_PHOTO_SIZE_BYTES) {
-      return ctx.reply(`⚠️ El archivo es demasiado pesado. Máximo: ${Math.round(MAX_PHOTO_SIZE_BYTES / (1024 * 1024))} MB.`);
+      return ctx.reply(textos.limites.archivoPesado(Math.round(MAX_PHOTO_SIZE_BYTES / (1024 * 1024))));
     }
 
     const buffer = await descargarArchivo(ctx, fileId, MAX_PHOTO_SIZE_BYTES);
@@ -109,10 +110,10 @@ async function procesarArchivoRecibido(ctx, { fileId, fileSize, mimeType, captio
     return await derivarPorTipo(ctx, tipo, archivo);
   } catch (error) {
     if (error.code === 'SEMAPHORE_QUEUE_FULL') {
-      return ctx.reply('⏳ Estoy procesando varias imágenes ahora mismo. Probá de nuevo en unos segundos.');
+      return ctx.reply(textos.photo.estoyProcesandoVariasImagenesAhora);
     }
     console.error('Error al procesar foto:', error.message);
-    await ctx.reply('❌ Error al procesar la imagen. Intenta de nuevo.');
+    await ctx.reply(textos.photo.errorAlProcesarLaImagen);
   }
 }
 
@@ -136,12 +137,12 @@ async function derivarPorTipo(ctx, tipo, archivo) {
 async function preguntarTipo(ctx, archivo, { puedeAgenda }) {
   const userId = ctx.from.id;
   const fila = [];
-  if (puedeAgenda) fila.push(Markup.button.callback('📅 Agenda', 'doc_tipo_agenda'));
-  fila.push(Markup.button.callback('🧾 Gasto', 'doc_tipo_factura'));
-  fila.push(Markup.button.callback('💸 Cobro', 'doc_tipo_transferencia'));
-  await ctx.reply('🤔 No estoy seguro de qué es esta imagen. ¿Qué querés cargar?', Markup.inlineKeyboard([
+  if (puedeAgenda) fila.push(Markup.button.callback(textos.photo.agenda, 'doc_tipo_agenda'));
+  fila.push(Markup.button.callback(textos.photo.gasto, 'doc_tipo_factura'));
+  fila.push(Markup.button.callback(textos.photo.cobro, 'doc_tipo_transferencia'));
+  await ctx.reply(textos.photo.noEstoySeguroDeQue, Markup.inlineKeyboard([
     fila,
-    [Markup.button.callback('❌ Nada', 'doc_tipo_cancelar')],
+    [Markup.button.callback(textos.photo.nada, 'doc_tipo_cancelar')],
   ]));
   state.pendingDocumentoTipo.set(userId, archivo);
 }
@@ -151,17 +152,17 @@ async function handleElegirTipo(ctx, tipo) {
   const userId = ctx.from.id;
   const archivo = state.pendingDocumentoTipo.get(userId);
   state.pendingDocumentoTipo.delete(userId);
-  if (!archivo) return ctx.editMessageText('⚠️ La imagen expiró. Mandala de nuevo.');
-  if (tipo === 'cancelar') return ctx.editMessageText('❌ Listo, no cargué nada.');
-  await ctx.editMessageText('📸 Procesando...');
+  if (!archivo) return ctx.editMessageText(textos.photo.laImagenExpiroMandalaDe);
+  if (tipo === 'cancelar') return ctx.editMessageText(textos.photo.listoNoCargueNada);
+  await ctx.editMessageText(textos.photo.procesando);
   try {
     return await derivarPorTipo(ctx, tipo, archivo);
   } catch (error) {
     if (error.code === 'SEMAPHORE_QUEUE_FULL') {
-      return ctx.reply('⏳ Estoy procesando varias imágenes ahora mismo. Probá de nuevo en unos segundos.');
+      return ctx.reply(textos.photo.estoyProcesandoVariasImagenesAhora);
     }
     console.error('Error al procesar archivo:', error.message);
-    return ctx.reply('❌ Error al procesar la imagen. Intenta de nuevo.');
+    return ctx.reply(textos.photo.errorAlProcesarLaImagen);
   }
 }
 
@@ -174,7 +175,7 @@ bot.on('photo', async (ctx) => {
   const photos = ctx.message.photo || [];
   const photo = photos[photos.length - 1];
   if (!photo) {
-    return ctx.reply('❌ No encontré una foto válida.');
+    return ctx.reply(textos.photo.noEncontreUnaFotoValida);
   }
   return procesarArchivoRecibido(ctx, {
     fileId: photo.file_id,
@@ -189,7 +190,7 @@ bot.on('document', async (ctx) => {
   const doc = ctx.message.document || {};
   const mimeType = String(doc.mime_type || '').toLowerCase();
   if (!MIME_ACEPTADOS.has(mimeType)) {
-    return ctx.reply('⚠️ Por ahora leo fotos y PDFs. Mandá la factura, ticket o agenda como foto o PDF.');
+    return ctx.reply(textos.photo.porAhoraLeoFotosY);
   }
   return procesarArchivoRecibido(ctx, {
     fileId: doc.file_id,
@@ -209,35 +210,32 @@ async function procesarAgenda(ctx, { buffer, mimeType }) {
     resultado = await geminiMediaSemaphore.run(() => procesarFotoAgenda(buffer, mimeType === 'application/pdf' ? mimeType : 'image/jpeg'));
   } catch (e) {
     if (e.code === 'SEMAPHORE_QUEUE_FULL') {
-      return ctx.reply('⏳ Estoy procesando varias imágenes ahora mismo. Probá de nuevo en unos segundos.');
+      return ctx.reply(textos.photo.estoyProcesandoVariasImagenesAhora);
     }
     throw e;
   }
   if (!resultado) {
-    return ctx.reply('❌ No pude procesar la imagen. Intenta con otra foto más clara.');
+    return ctx.reply(textos.photo.noPudeProcesarLaImagen);
   }
 
   if (resultado.error === 'vision_no_configurada') {
-    return ctx.reply('⚠️ La lectura de imágenes no está configurada. Revisá `GEMINI_API_KEY`.');
+    return ctx.reply(textos.photo.laLecturaDeImagenesNo);
   }
 
   if (resultado.error === 'vision_dependencia_faltante') {
-    return ctx.reply('⚠️ Falta instalar la dependencia de Vision. Revisá `@google/generative-ai`.');
+    return ctx.reply(textos.photo.faltaInstalarLaDependenciaDe);
   }
 
   if (resultado.error === 'no_es_agenda') {
-    return ctx.reply(
-      '⚠️ La imagen no parece ser una agenda o turnero.\n\n' +
-      'Enviale una foto de una agenda con turnos para que los registre.'
-    );
+    return ctx.reply(textos.limites.imagenNoEsAgenda);
   }
 
   if (!resultado.turnos || resultado.turnos.length === 0) {
-    return ctx.reply('📭 No encontré turnos en la imagen. Probá con una foto más clara.');
+    return ctx.reply(textos.photo.noEncontreTurnosEnLa);
   }
 
   if (resultado.turnos.length > MAX_TURNOS_POR_IMAGEN) {
-    return ctx.reply(`⚠️ Detecté demasiados turnos (${resultado.turnos.length}). Probá recortando la imagen antes de enviarla.`);
+    return ctx.reply(textos.limites.demasiadosTurnos(resultado.turnos.length));
   }
 
   const mapaConsultorios = await obtenerConsultorioMap(await resolveTenantId(userId));

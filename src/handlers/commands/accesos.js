@@ -11,6 +11,7 @@ const PRESET_LABELS = {
   recepcion:  'Recepción',
   contadora:  'Contadora',
 };
+const textos = require('../../messages');
 
 function formatearPermisos(permisos) {
   const preset = detectarPreset(permisos);
@@ -32,7 +33,7 @@ bot.command('accesos', async (ctx) => {
   if (!esAdminOriginal(userId)) {
     const cliente = obtenerClientePorUserId(userId);
     if (!cliente?.isOwner) {
-      return ctx.reply('⛔ Solo el dueño del consultorio puede gestionar accesos.');
+      return ctx.reply(textos.comandos.accesos.soloElDuenoDelConsultorio);
     }
   }
 
@@ -41,7 +42,7 @@ bot.command('accesos', async (ctx) => {
     : String(obtenerClientePorUserId(userId).ownerId);
 
   const owner = clienteService.clientes[ownerKey];
-  if (!owner) return ctx.reply('❌ No se encontró el perfil del consultorio.');
+  if (!owner) return ctx.reply(textos.comandos.accesos.noSeEncontroElPerfil);
 
   const invitados = owner.usuarios || [];
   if (invitados.length === 0) {
@@ -85,7 +86,7 @@ bot.action(/^accesos_elegir:(.+):(.+)$/, async (ctx) => {
   if (!esAdminOriginal(ctx.from.id)) {
     const cliente = obtenerClientePorUserId(ctx.from.id);
     if (!cliente?.isOwner || String(cliente.ownerId) !== ownerKey) {
-      return ctx.answerCbQuery('Sin permiso');
+      return ctx.answerCbQuery(textos.comandos.accesos.sinPermiso);
     }
   }
 
@@ -110,11 +111,11 @@ bot.action(/^accesos_preset:(.+):(.+):(.+)$/, async (ctx) => {
   if (!esAdminOriginal(ctx.from.id)) {
     const cliente = obtenerClientePorUserId(ctx.from.id);
     if (!cliente?.isOwner || String(cliente.ownerId) !== ownerKey) {
-      return ctx.answerCbQuery('Sin permiso');
+      return ctx.answerCbQuery(textos.comandos.accesos.sinPermiso);
     }
   }
 
-  if (!PRESETS[presetKey]) return ctx.answerCbQuery('Preset inválido');
+  if (!PRESETS[presetKey]) return ctx.answerCbQuery(textos.comandos.accesos.presetInvalido);
 
   try {
     await setPermisos(ownerKey, guestKey, PRESETS[presetKey]);
@@ -125,7 +126,7 @@ bot.action(/^accesos_preset:(.+):(.+):(.+)$/, async (ctx) => {
     );
   } catch (err) {
     logger.error('CMD', 'Error en accesos_preset', { err: err.message });
-    await ctx.editMessageText('❌ Error al guardar permisos. Intentá de nuevo.');
+    await ctx.editMessageText(textos.comandos.accesos.errorAlGuardarPermisosIntenta);
   }
 });
 

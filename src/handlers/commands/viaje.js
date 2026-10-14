@@ -2,6 +2,7 @@ const { bot } = require('../../lib/telegraf');
 const personalService = require('../../services/personal.service');
 const { formatMonto, escapeMarkdown } = require('../../utils/formatter');
 const { requierePersonalBot } = require('../../auth/bot-permisos');
+const textos = require('../../messages');
 
 const USO =
   '✈️ *Viajes*\n\n' +
@@ -89,7 +90,7 @@ bot.command('viaje', async (ctx) => {
 
     if (sub === 'cerrar' || sub === 'fin') {
       const cerrado = await personalService.cerrarViaje(userId);
-      if (!cerrado) return ctx.reply('✈️ No hay ningún viaje activo para cerrar.');
+      if (!cerrado) return ctx.reply(textos.comandos.viaje.noHayNingunViajeActivo);
       return ctx.reply(
         `✅ Viaje *${escapeMarkdown(cerrado.nombre)}* cerrado.\n\n` +
         'Los gastos nuevos ya no se le atribuyen.',
@@ -144,7 +145,7 @@ bot.command('viaje', async (ctx) => {
     return ctx.reply(USO, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Error en /viaje:', error.message);
-    return ctx.reply('❌ No pude procesar el comando de viaje. Intentá de nuevo.');
+    return ctx.reply(textos.comandos.viaje.noPudeProcesarElComando);
   }
 });
 
